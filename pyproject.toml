@@ -18,3 +18,7 @@ manifest-path = "crates/ambers-py/Cargo.toml"
 module-name = "ambers._ambers"
 python-source = "python"
 features = ["pyo3/extension-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"

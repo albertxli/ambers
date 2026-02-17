@@ -1,4 +1,8 @@
-"""Benchmark: ambers (Python/Rust) vs pyreadstat (Python/C) on the same .sav file."""
+"""Benchmark: ambers (Python/Rust) vs pyreadstat (Python/C) on the same .sav file.
+
+Usage:
+    python tests/bench_read.py [path_to_sav_file] [num_runs]
+"""
 
 import time
 import statistics
@@ -7,17 +11,17 @@ import sys
 import ambers
 import pyreadstat
 
-FILE = r"C:\Users\lipov\SynologyDrive\_PMI\Multi-Wave\RPM\2025\Data\251001.sav"
-RUNS = 5
+DEFAULT_FILE = r"C:\Users\lipov\SynologyDrive\_PMI\Multi-Wave\RPM\2025\Data\251001.sav"
+DEFAULT_RUNS = 5
 
 
-def bench_ambers():
+def bench_ambers(file_path, runs):
     """Time ambers.read_sav (Rust via PyO3 -> Polars DataFrame)."""
     times = []
     rows = cols = None
-    for i in range(RUNS):
+    for i in range(runs):
         t0 = time.perf_counter()
-        df, meta = ambers.read_sav(FILE)
+        df, meta = ambers.read_sav(file_path)
         elapsed = time.perf_counter() - t0
         times.append(elapsed)
         rows = df.height
@@ -26,13 +30,13 @@ def bench_ambers():
     return times, rows, cols
 
 
-def bench_pyreadstat():
+def bench_pyreadstat(file_path, runs):
     """Time pyreadstat.read_sav with polars output."""
     times = []
     rows = cols = None
-    for i in range(RUNS):
+    for i in range(runs):
         t0 = time.perf_counter()
-        df, meta = pyreadstat.read_sav(FILE, output_format="polars")
+        df, meta = pyreadstat.read_sav(file_path, output_format="polars")
         elapsed = time.perf_counter() - t0
         times.append(elapsed)
         rows = df.height
@@ -42,14 +46,17 @@ def bench_pyreadstat():
 
 
 def main():
-    print(f"Benchmarking: {FILE}")
-    print(f"Runs per tool: {RUNS}\n")
+    file_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_FILE
+    runs = int(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_RUNS
+
+    print(f"Benchmarking: {file_path}")
+    print(f"Runs per tool: {runs}\n")
 
     print("--- ambers (Python/Rust via PyO3) ---")
-    a_times, a_rows, a_cols = bench_ambers()
+    a_times, a_rows, a_cols = bench_ambers(file_path, runs)
 
     print("\n--- pyreadstat (Python/C) ---")
-    p_times, p_rows, p_cols = bench_pyreadstat()
+    p_times, p_rows, p_cols = bench_pyreadstat(file_path, runs)
 
     # Results
     a_min = min(a_times)
@@ -68,10 +75,10 @@ def main():
 
     if a_min < p_min:
         ratio = p_min / a_min
-        print(f"ambers is {ratio:.1f}x faster (best of {RUNS})")
+        print(f"ambers is {ratio:.1f}x faster (best of {runs})")
     else:
         ratio = a_min / p_min
-        print(f"pyreadstat is {ratio:.1f}x faster (best of {RUNS})")
+        print(f"pyreadstat is {ratio:.1f}x faster (best of {runs})")
 
     print("=" * 60)
 
