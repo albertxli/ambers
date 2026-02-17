@@ -1,8 +1,8 @@
 """ambers: Pure Rust SPSS .sav/.zsav reader."""
 
-from ambers._ambers import SpssMetadata, _read_sav, _read_sav_metadata
+from ambers._ambers import MetaDiff, SpssMetadata, _read_sav, _read_sav_metadata
 
-__all__ = ["read_sav", "read_sav_metadata", "SpssMetadata"]
+__all__ = ["read_sav", "read_sav_metadata", "SpssMetadata", "MetaDiff"]
 
 
 def read_sav(path: str) -> tuple:
