@@ -12,24 +12,27 @@
 //! let (batch, meta) = read_sav("survey.sav").unwrap();
 //! println!("Rows: {}", batch.num_rows());
 //! println!("Columns: {}", batch.num_columns());
-//! meta.summary();
+//! println!("Variables: {:?}", meta.variable_names);
 //! ```
 
-pub mod arrow_convert;
-pub mod compression;
+pub(crate) mod arrow_convert;
+pub(crate) mod compression;
 pub mod constants;
-pub mod data;
-pub mod dictionary;
-pub mod document;
-pub mod encoding;
+pub(crate) mod data;
+pub(crate) mod dictionary;
+pub(crate) mod document;
+pub(crate) mod encoding;
 pub mod error;
-pub mod header;
-pub mod info_records;
-pub mod io_utils;
+pub(crate) mod header;
+pub(crate) mod info_records;
+pub(crate) mod io_utils;
 pub mod metadata;
 pub mod scanner;
-pub mod value_labels;
-pub mod variable;
+pub(crate) mod value_labels;
+pub(crate) mod variable;
+
+#[cfg(feature = "python")]
+mod python;
 
 use std::fs::File;
 use std::io::{BufReader, Read, Seek};

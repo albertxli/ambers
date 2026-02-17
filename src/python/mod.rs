@@ -8,14 +8,14 @@ use pyo3::types::{PyDict, PyList, PyTuple};
 
 use arrow::pyarrow::ToPyArrow;
 
-use ambers::constants::Compression;
-use ambers::metadata::{MissingSpec, MrSet, MrType, SpssMetadata, Value};
+use crate::constants::Compression;
+use crate::metadata::{MissingSpec, MrSet, MrType, SpssMetadata, Value};
 
 // ---------------------------------------------------------------------------
 // Error conversion
 // ---------------------------------------------------------------------------
 
-fn spss_err(e: ambers::error::SpssError) -> PyErr {
+fn spss_err(e: crate::error::SpssError) -> PyErr {
     PyIOError::new_err(format!("{e}"))
 }
 
@@ -317,7 +317,7 @@ impl PySpssMetadata {
 
     /// Print a formatted summary of the metadata.
     fn summary(&self) {
-        use ambers::constants::Measure;
+        use crate::constants::Measure;
 
         let m = &self.inner;
         let ncols = m.number_columns;
@@ -960,8 +960,8 @@ fn diff_string_maps<'py>(
 /// Diff measure maps.
 fn diff_measure_maps<'py>(
     py: Python<'py>,
-    a: &IndexMap<String, ambers::constants::Measure>,
-    b: &IndexMap<String, ambers::constants::Measure>,
+    a: &IndexMap<String, crate::constants::Measure>,
+    b: &IndexMap<String, crate::constants::Measure>,
     shared: &HashSet<&str>,
 ) -> PyResult<Py<PyAny>> {
     let list = PyList::empty(py);
@@ -1106,7 +1106,7 @@ fn diff_key_sets<'py, V>(
 /// Read an SPSS .sav/.zsav file. Returns (PyArrow RecordBatch, SpssMetadata).
 #[pyfunction]
 fn _read_sav(py: Python<'_>, path: &str) -> PyResult<(Py<PyAny>, PySpssMetadata)> {
-    let (batch, meta) = ambers::read_sav(path).map_err(spss_err)?;
+    let (batch, meta) = crate::read_sav(path).map_err(spss_err)?;
     let py_batch = batch.to_pyarrow(py)?.unbind();
     let py_meta = PySpssMetadata { inner: meta };
     Ok((py_batch, py_meta))
@@ -1115,7 +1115,7 @@ fn _read_sav(py: Python<'_>, path: &str) -> PyResult<(Py<PyAny>, PySpssMetadata)
 /// Read only metadata from an SPSS file (no data).
 #[pyfunction]
 fn _read_sav_metadata(path: &str) -> PyResult<PySpssMetadata> {
-    let meta = ambers::read_sav_metadata(path).map_err(spss_err)?;
+    let meta = crate::read_sav_metadata(path).map_err(spss_err)?;
     Ok(PySpssMetadata { inner: meta })
 }
 

@@ -39,19 +39,10 @@ dependencies = [
  "encoding_rs",
  "flate2",
  "indexmap",
+ "pyo3",
  "rayon",
  "tempfile",
  "thiserror",
-]
-
-[[package]]
-name = "ambers-py"
-version = "0.1.0"
-dependencies = [
- "ambers",
- "arrow",
- "indexmap",
- "pyo3",
 ]
 
 [[package]]

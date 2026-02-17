@@ -197,37 +197,6 @@ impl SpssMetadata {
         self.variable_measure.get(name).copied()
     }
 
-    /// Print a summary of the metadata.
-    pub fn summary(&self) {
-        println!("SPSS File Metadata");
-        println!("==================");
-        println!("File label: {}", self.file_label);
-        println!("Encoding: {}", self.file_encoding);
-        println!("Compression: {:?}", self.compression);
-        println!("Format: {}", self.file_format);
-        println!(
-            "Rows: {}",
-            self.number_rows
-                .map(|n| n.to_string())
-                .unwrap_or_else(|| "unknown".to_string())
-        );
-        println!("Columns: {}", self.number_columns);
-        println!("Created: {} {}", self.creation_time, self.modification_time);
-
-        if !self.variable_names.is_empty() {
-            println!("\nVariables:");
-            for name in &self.variable_names {
-                let label = self.variable_labels.get(name).map(|s| s.as_str()).unwrap_or("");
-                let fmt = self.spss_variable_types.get(name).map(|s| s.as_str()).unwrap_or("?");
-                let measure = self
-                    .variable_measure
-                    .get(name)
-                    .map(|m| m.as_str())
-                    .unwrap_or("?");
-                println!("  {name:<20} {fmt:<10} {measure:<10} {label}");
-            }
-        }
-    }
 }
 
 impl Default for SpssMetadata {

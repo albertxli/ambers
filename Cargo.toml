@@ -1,11 +1,35 @@
-[workspace]
-resolver = "3"
-members = ["crates/ambers", "crates/ambers-py"]
-
-[workspace.package]
+[package]
+name = "ambers"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+description = "Pure Rust reader for SPSS .sav and .zsav files"
+repository = "https://github.com/your-username/ambers"
+
+[lib]
+name = "ambers"
+crate-type = ["rlib"]
+
+[features]
+default = []
+python = [
+    "dep:pyo3",
+    "arrow/pyarrow",
+]
+
+[dependencies]
+arrow = { version = "57", default-features = false, features = ["ffi"] }
+flate2 = "1"
+encoding_rs = "0.8"
+thiserror = "2"
+rayon = "1"
+indexmap = "2"
+
+# Python-only (optional)
+pyo3 = { version = "0.26", features = ["extension-module", "indexmap"], optional = true }
+
+[dev-dependencies]
+tempfile = "3"
 
 [profile.release]
 lto = "fat"
