@@ -5,6 +5,7 @@ edition = "2024"
 license = "MIT"
 description = "Pure Rust reader for SPSS .sav and .zsav files"
 repository = "https://github.com/albertxli/ambers"
+readme = "README.md"
 
 [lib]
 name = "ambers"

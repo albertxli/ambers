@@ -7,6 +7,7 @@ name = "ambers"
 version = "0.1.0"
 description = "Pure Rust SPSS .sav/.zsav reader with Polars DataFrame output"
 license = { text = "MIT" }
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "polars>=1.0",
