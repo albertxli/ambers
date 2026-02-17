@@ -162,7 +162,7 @@ pub fn read_zlib_compressed<R: Read + Seek>(
 }
 
 /// Convert raw 8-byte slots into typed cell values for one row.
-fn slots_to_row(
+pub(crate) fn slots_to_row(
     raw_slots: &[[u8; 8]],
     all_slots: &[VariableRecord],
     visible_vars: &[VariableRecord],
@@ -205,7 +205,7 @@ fn slots_to_row(
 
 /// Convert SlotValues from bytecode decompression into typed cell values.
 /// Direct conversion without intermediate Vec<[u8;8]>.
-fn slot_values_to_row(
+pub(crate) fn slot_values_to_row(
     slot_values: &[SlotValue],
     all_slots: &[VariableRecord],
     visible_vars: &[VariableRecord],
@@ -369,4 +369,108 @@ fn read_string_from_slot_values(
     bytes.truncate(width);
     let trimmed = io_utils::trim_trailing_padding(&bytes);
     encoding::decode_str_lossy(trimmed, file_encoding)
+}
+
+/// Convert SlotValues to CellValues for a projected subset of variables.
+/// `projected_vars` is a slice of indices into `visible_vars`.
+/// Returns Vec<CellValue> with length = projected_vars.len().
+pub(crate) fn slot_values_to_row_projected(
+    slot_values: &[SlotValue],
+    all_slots: &[VariableRecord],
+    visible_vars: &[VariableRecord],
+    projected_vars: &[usize],
+    file_encoding: &'static Encoding,
+) -> Result<Vec<CellValue>> {
+    let mut row = Vec::with_capacity(projected_vars.len());
+
+    for &var_idx in projected_vars {
+        let var = &visible_vars[var_idx];
+        let slot_idx = var.slot_index;
+
+        match &var.var_type {
+            VarType::Numeric => {
+                if slot_idx < slot_values.len() {
+                    match &slot_values[slot_idx] {
+                        SlotValue::Numeric(v) => {
+                            if is_sysmis(*v) {
+                                row.push(CellValue::Missing);
+                            } else {
+                                row.push(CellValue::Numeric(*v));
+                            }
+                        }
+                        SlotValue::Sysmis => row.push(CellValue::Missing),
+                        SlotValue::Raw(bytes) => {
+                            let val = f64::from_le_bytes(*bytes);
+                            if is_sysmis(val) {
+                                row.push(CellValue::Missing);
+                            } else {
+                                row.push(CellValue::Numeric(val));
+                            }
+                        }
+                        SlotValue::EndOfFile => row.push(CellValue::Missing),
+                        SlotValue::Spaces => row.push(CellValue::Missing),
+                    }
+                } else {
+                    row.push(CellValue::Missing);
+                }
+            }
+            VarType::String(width) => {
+                let text = read_string_from_slot_values(
+                    slot_values,
+                    slot_idx,
+                    *width,
+                    var.n_segments,
+                    all_slots,
+                    file_encoding,
+                );
+                row.push(CellValue::Text(text));
+            }
+        }
+    }
+
+    Ok(row)
+}
+
+/// Convert raw 8-byte slots to CellValues for a projected subset of variables.
+pub(crate) fn slots_to_row_projected(
+    raw_slots: &[[u8; 8]],
+    all_slots: &[VariableRecord],
+    visible_vars: &[VariableRecord],
+    projected_vars: &[usize],
+    file_encoding: &'static Encoding,
+) -> Result<Vec<CellValue>> {
+    let mut row = Vec::with_capacity(projected_vars.len());
+
+    for &var_idx in projected_vars {
+        let var = &visible_vars[var_idx];
+        let slot_idx = var.slot_index;
+
+        match &var.var_type {
+            VarType::Numeric => {
+                if slot_idx < raw_slots.len() {
+                    let val = f64::from_le_bytes(raw_slots[slot_idx]);
+                    if is_sysmis(val) {
+                        row.push(CellValue::Missing);
+                    } else {
+                        row.push(CellValue::Numeric(val));
+                    }
+                } else {
+                    row.push(CellValue::Missing);
+                }
+            }
+            VarType::String(width) => {
+                let text = read_string_from_slots(
+                    raw_slots,
+                    slot_idx,
+                    *width,
+                    var.n_segments,
+                    all_slots,
+                    file_encoding,
+                );
+                row.push(CellValue::Text(text));
+            }
+        }
+    }
+
+    Ok(row)
 }
