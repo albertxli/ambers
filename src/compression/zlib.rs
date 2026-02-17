@@ -1,6 +1,7 @@
 use std::io::{Read, Seek, SeekFrom};
 
 use flate2::Decompress;
+use rayon::prelude::*;
 
 use crate::error::{Result, SpssError};
 use crate::io_utils::SavReader;
@@ -81,42 +82,60 @@ pub fn read_ztrailer<R: Read + Seek>(
 /// Each block is zlib-compressed. The decompressed blocks contain
 /// bytecode-compressed data that must be further processed by the
 /// bytecode decompressor.
+///
+/// Phase 1: Read all compressed blocks sequentially (I/O-bound).
+/// Phase 2: Decompress all blocks in parallel (CPU-bound).
 pub fn decompress_zsav_blocks<R: Read + Seek>(
     reader: &mut SavReader<R>,
     trailer: &ZTrailer,
 ) -> Result<Vec<u8>> {
-    let mut output = Vec::new();
+    // Phase 1: Sequential I/O — read all compressed blocks
+    let compressed_blocks: Vec<(Vec<u8>, usize)> = trailer
+        .entries
+        .iter()
+        .map(|entry| {
+            reader
+                .inner_mut()
+                .seek(SeekFrom::Start(entry.compressed_offset as u64))?;
+            let compressed = reader.read_bytes(entry.compressed_size as usize)?;
+            Ok((compressed, entry.uncompressed_size as usize))
+        })
+        .collect::<Result<Vec<_>>>()?;
 
-    for entry in &trailer.entries {
-        // Seek to the compressed block
-        reader
-            .inner_mut()
-            .seek(SeekFrom::Start(entry.compressed_offset as u64))?;
+    // Phase 2: Parallel decompression — each thread gets its own Decompress instance
+    let decompressed_blocks: Vec<Vec<u8>> = compressed_blocks
+        .par_iter()
+        .map(|(compressed, uncompressed_size)| {
+            let mut decompressed = vec![0u8; *uncompressed_size];
+            let mut decompressor = Decompress::new(true);
 
-        // Read compressed data
-        let compressed = reader.read_bytes(entry.compressed_size as usize)?;
-
-        // Decompress using zlib
-        let mut decompressed = vec![0u8; entry.uncompressed_size as usize];
-        let mut decompressor = Decompress::new(true); // zlib format
-
-        match decompressor.decompress(&compressed, &mut decompressed, flate2::FlushDecompress::Finish) {
-            Ok(flate2::Status::Ok | flate2::Status::StreamEnd) => {}
-            Ok(flate2::Status::BufError) => {
-                return Err(SpssError::Zlib(
-                    "decompression buffer too small".to_string(),
-                ));
+            match decompressor.decompress(
+                compressed,
+                &mut decompressed,
+                flate2::FlushDecompress::Finish,
+            ) {
+                Ok(flate2::Status::Ok | flate2::Status::StreamEnd) => {}
+                Ok(flate2::Status::BufError) => {
+                    return Err(SpssError::Zlib(
+                        "decompression buffer too small".to_string(),
+                    ));
+                }
+                Err(e) => {
+                    return Err(SpssError::Zlib(format!("zlib decompression error: {e}")));
+                }
             }
-            Err(e) => {
-                return Err(SpssError::Zlib(format!("zlib decompression error: {e}")));
-            }
-        }
 
-        // Trim to actual decompressed size
-        let actual_out = decompressor.total_out() as usize;
-        decompressed.truncate(actual_out);
+            let actual_out = decompressor.total_out() as usize;
+            decompressed.truncate(actual_out);
+            Ok(decompressed)
+        })
+        .collect::<Result<Vec<_>>>()?;
 
-        output.extend_from_slice(&decompressed);
+    // Concatenate in order
+    let total_uncompressed: usize = decompressed_blocks.iter().map(|b| b.len()).sum();
+    let mut output = Vec::with_capacity(total_uncompressed);
+    for block in decompressed_blocks {
+        output.extend_from_slice(&block);
     }
 
     Ok(output)

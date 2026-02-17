@@ -83,6 +83,13 @@ pub fn decode_str(bytes: &[u8], encoding: &'static Encoding) -> Result<String> {
 
 /// Decode a byte slice using the given encoding, never failing (lossy).
 pub fn decode_str_lossy(bytes: &[u8], encoding: &'static Encoding) -> String {
+    if encoding == encoding_rs::UTF_8 {
+        // Fast path: just validate UTF-8, no conversion needed
+        match std::str::from_utf8(bytes) {
+            Ok(s) => return s.to_string(),
+            Err(_) => {} // fall through to encoding_rs for lossy decode
+        }
+    }
     let (decoded, _, _) = encoding.decode(bytes);
     decoded.into_owned()
 }
