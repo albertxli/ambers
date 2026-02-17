@@ -6,3 +6,5 @@ __pycache__/
 dist/
 .venv/
 .pytest_cache/
+docs/
+architecture.md
