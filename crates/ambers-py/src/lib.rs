@@ -317,43 +317,54 @@ impl PySpssMetadata {
 
     /// Print a formatted summary of the metadata.
     fn summary(&self) {
+        use ambers::constants::Measure;
+
         let m = &self.inner;
         let ncols = m.number_columns;
         let rows_str = m
             .number_rows
             .map(|n| format_count(n as usize))
             .unwrap_or_else(|| "unknown".into());
+        let datetime = format_spss_datetime(&m.creation_time, &m.modification_time);
 
         println!("SPSS Metadata Summary");
-        println!("=====================");
+        println!("\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}");
+
+        // File section
+        println!();
+        println!("File");
         println!(
-            "File label:  {}",
+            "  Label:        {}",
             if m.file_label.is_empty() {
                 "(none)"
             } else {
                 &m.file_label
             }
         );
-        println!("Encoding:    {}", m.file_encoding);
+        println!("  Format:       {}", m.file_format);
+        println!("  Encoding:     {}", m.file_encoding);
+        println!("  Created:      {}", datetime);
+        println!("  Rows:         {}", rows_str);
+        println!("  Columns:      {}", format_count(ncols));
         println!(
-            "Format:      {} ({})",
-            m.file_format,
-            self.compression()
-        );
-        println!("Created:     {} {}", m.creation_time, m.modification_time);
-        println!("Rows:        {}", rows_str);
-        println!("Columns:     {}", format_count(ncols));
-        println!(
-            "Weight:      {}",
+            "  Weight:       {}",
             m.weight_variable.as_deref().unwrap_or("(none)")
         );
-        if m.notes.is_empty() {
-            println!("Notes:       (none)");
-        } else {
-            println!("Notes:       {} document record(s)", m.notes.len());
+        if !m.notes.is_empty() {
+            let first_line = m.notes[0].trim();
+            let preview = if first_line.len() > 40 {
+                format!("{}...", &first_line[..40])
+            } else {
+                first_line.to_string()
+            };
+            println!(
+                "  Notes:        {} record(s) \u{2502} {}",
+                m.notes.len(),
+                preview
+            );
         }
 
-        // Variable breakdown
+        // Variables section
         let mut n_numeric = 0usize;
         let mut n_string = 0usize;
         for fmt in m.spss_variable_types.values() {
@@ -363,31 +374,71 @@ impl PySpssMetadata {
                 n_numeric += 1;
             }
         }
+
+        println!();
+        println!("Variables");
+        let pct = |n: usize| -> String {
+            if ncols > 0 {
+                format!("{:>5.1}%", 100.0 * n as f64 / ncols as f64)
+            } else {
+                String::new()
+            }
+        };
+        println!(
+            "  Numeric       {:>5}    {}",
+            format_count(n_numeric),
+            pct(n_numeric)
+        );
+        println!(
+            "  String        {:>5}    {}",
+            format_count(n_string),
+            pct(n_string)
+        );
+
+        // Measure level distribution
+        let mut n_nominal = 0usize;
+        let mut n_ordinal = 0usize;
+        let mut n_scale = 0usize;
+        let mut n_unknown = 0usize;
+        for var in &m.variable_names {
+            match m.variable_measure.get(var) {
+                Some(Measure::Nominal) => n_nominal += 1,
+                Some(Measure::Ordinal) => n_ordinal += 1,
+                Some(Measure::Scale) => n_scale += 1,
+                _ => n_unknown += 1,
+            }
+        }
+        println!();
+        println!("  Nominal       {:>5}", format_count(n_nominal));
+        println!("  Ordinal       {:>5}", format_count(n_ordinal));
+        println!("  Scale         {:>5}", format_count(n_scale));
+        if n_unknown > 0 {
+            println!("  Unknown       {:>5}", format_count(n_unknown));
+        }
+
+        // Annotations section
         let n_with_labels = m.variable_labels.len();
         let n_with_values = m.variable_value_labels.len();
         let n_with_missing = m.variable_missing.len();
         let n_mr = m.mr_sets.len();
 
         println!();
-        println!("Variable Breakdown:");
-        println!("  Numeric       {:>5}", format_count(n_numeric));
-        println!("  String        {:>5}", format_count(n_string));
-        println!();
-        println!(
-            "  With labels:  {:>5} / {}",
-            format_count(n_with_labels),
-            ncols
-        );
-        println!(
-            "  With values:  {:>5} / {}",
-            format_count(n_with_values),
-            ncols
-        );
-        println!(
-            "  With missing: {:>5} / {}",
-            format_count(n_with_missing),
-            ncols
-        );
+        println!("Annotations");
+        let ratio = |n: usize| -> String {
+            if ncols > 0 && n > 0 {
+                format!(
+                    "{:>5} / {:<5}  {:>5.1}%",
+                    format_count(n),
+                    format_count(ncols),
+                    100.0 * n as f64 / ncols as f64
+                )
+            } else {
+                format!("{:>5} / {}", format_count(n), format_count(ncols))
+            }
+        };
+        println!("  Labeled:      {}", ratio(n_with_labels));
+        println!("  Value labels: {}", ratio(n_with_values));
+        println!("  Missing:      {}", ratio(n_with_missing));
         println!("  MR sets:      {:>5}", format_count(n_mr));
     }
 
