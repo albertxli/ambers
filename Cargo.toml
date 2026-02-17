@@ -1,19 +1,11 @@
-[package]
-name = "ambers"
+[workspace]
+resolver = "3"
+members = ["crates/ambers", "crates/ambers-py"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
-description = "Pure Rust reader for SPSS .sav and .zsav files"
 license = "MIT"
-
-[dependencies]
-arrow = { version = "55", default-features = false, features = ["ffi"] }
-flate2 = "1"
-encoding_rs = "0.8"
-thiserror = "2"
-rayon = "1"
-
-[dev-dependencies]
-tempfile = "3"
 
 [profile.release]
 lto = "fat"

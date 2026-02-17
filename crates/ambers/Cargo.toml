@@ -1,0 +1,20 @@
+[package]
+name = "ambers"
+description = "Pure Rust reader for SPSS .sav and .zsav files"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+arrow = { version = "57", default-features = false, features = ["ffi"] }
+flate2 = "1"
+encoding_rs = "0.8"
+thiserror = "2"
+rayon = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "ambers"
+path = "src/main.rs"

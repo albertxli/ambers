@@ -6,18 +6,23 @@ Like amber preserving ancient life, ambers safely captures and preserves data fr
 
 ## Milestone 1: SPSS Reader (COMPLETE)
 
-### Public API (`src/lib.rs`)
+### Rust API (`crates/ambers/src/lib.rs`)
 
 ```rust
-read_sav(path) -> Result<(RecordBatch, SpssMetadata)>        // file path
-read_sav_from_reader(reader) -> Result<(RecordBatch, SpssMetadata)>  // any Read+Seek source
-read_sav_metadata(path) -> Result<SpssMetadata>               // metadata only, skips data
+// Eager read
+read_sav(path) -> Result<(RecordBatch, SpssMetadata)>
+read_sav_from_reader(reader) -> Result<(RecordBatch, SpssMetadata)>
+read_sav_metadata(path) -> Result<SpssMetadata>
+
+// Streaming scanner with column projection + row limits
+scan_sav(path) -> Result<SavScanner<BufReader<File>>>
+scan_sav_from_reader(reader, batch_size) -> Result<SavScanner<R>>
 ```
 
 - **Data output:** Arrow `RecordBatch` — zero-copy to Polars, DataFusion, DuckDB
 - **Metadata output:** `SpssMetadata` — HashMap-based, all fields use `variable_` prefix
 - **Compression:** Uncompressed, bytecode (.sav), zlib (.zsav)
-- **Tests:** 32 unit tests + 1 doc-test, verified against 7 real-world files (3–22,070 rows, 75–677 columns)
+- **Tests:** 37 unit tests + 2 doc-tests, verified against 7 real-world files (3–22,070 rows, 75–677 columns)
 
 ### SpssMetadata fields
 
@@ -49,38 +54,96 @@ Convenience methods: `label()`, `value_labels()`, `format()`, `measure()`
 
 ---
 
-## Crate Structure
+## Milestone 2: PyO3 Python Bindings (COMPLETE)
+
+### Python API
+
+```python
+import ambers
+
+df, meta = ambers.read_sav("file.sav")            # Polars DataFrame + SpssMetadata
+meta = ambers.read_sav_metadata("file.sav")        # metadata only (fast)
+
+# SpssMetadata properties (same fields as Rust)
+meta.variable_names       # list[str]
+meta.variable_labels      # dict[str, str]
+meta.variable_value_labels # dict[str, dict[float|str, str]]
+meta.compression          # str: "none", "bytecode", "zlib"
+meta.variable_measure     # dict[str, str]: "nominal", "ordinal", "scale"
+
+# Convenience methods
+meta.label("age")         # str | None
+meta.format("age")        # str | None (e.g. "F8.2")
+meta.measure("age")       # str | None
+```
+
+### Architecture
 
 ```
-src/
-  lib.rs                          Public API + re-exports
-  main.rs                         CLI binary for testing
-  error.rs                        SpssError enum (thiserror)
-  constants.rs                    SYSMIS, bytecode codes, record types, enums (Compression, Measure, Alignment, VarType, FormatType, SpssFormat)
-  io_utils.rs                     SavReader<R> with endian-aware read_i32/read_f64/etc.
-  header.rs                       176-byte file header parsing
-  encoding.rs                     Code page -> encoding_rs mapping, decode_str helpers
-  variable.rs                     Type 2 variable records, MissingValues enum
-  value_labels.rs                 Type 3+4 value label records
-  document.rs                     Type 6 document records
-  metadata.rs                     SpssMetadata struct, Value enum (with Ord), MissingSpec, MrSet
-  dictionary.rs                   Record dispatch loop + post-dictionary resolution (the core orchestrator)
-  data.rs                         Row reading: uncompressed, bytecode, zlib. String reassembly.
-  arrow_convert.rs                Arrow Schema + RecordBatch builders
-  info_records/
-    mod.rs                        Subtype dispatch
-    integer_info.rs               Subtype 3: machine info + character_code
-    float_info.rs                 Subtype 4: SYSMIS/highest/lowest
-    var_display.rs                Subtype 11: measure/width/alignment per variable
-    long_var_names.rs             Subtype 13: short->long name mapping
-    very_long_strings.rs          Subtype 14: true widths for >255-byte strings
-    encoding_record.rs            Subtype 20: encoding name override
-    long_string_labels.rs         Subtype 21: value labels for long strings
-    long_string_missing.rs        Subtype 22: missing values for long strings
-  compression/
-    mod.rs                        Module declaration
-    bytecode.rs                   Stateful bytecode decompressor (cross-row state preservation)
-    zlib.rs                       ZSAV zheader/ztrailer + flate2 block decompression
+Cargo workspace
+├── crates/ambers/          Pure Rust library (crates.io)
+├── crates/ambers-py/       PyO3 bindings (cdylib "_ambers")
+├── python/ambers/          Python package (PyPI: "ambers")
+│   ├── __init__.py         Wraps native module, PyArrow → Polars
+│   └── __init__.pyi        Type stubs
+└── pyproject.toml          maturin build config
+```
+
+**Data flow:** Rust RecordBatch → `to_pyarrow(py)` (zero-copy Arrow FFI) → `pl.from_arrow()` → Polars DataFrame
+
+### Build & Install
+
+```bash
+# Development build
+uv venv --python 3.13 .venv
+source .venv/Scripts/activate  # or .venv/bin/activate on Linux/Mac
+uv pip install maturin polars pyarrow
+maturin develop --release
+
+# Verify
+python -c "import ambers; df, meta = ambers.read_sav('file.sav'); print(df.shape)"
+```
+
+---
+
+## Project Structure
+
+```
+ambers/                             Repo root (Cargo workspace)
+  Cargo.toml                        Workspace definition
+  pyproject.toml                    maturin build config
+  CLAUDE.md                         This file
+  python/
+    ambers/
+      __init__.py                   Python API wrapper
+      __init__.pyi                  Type stubs
+  crates/
+    ambers/                         Pure Rust SPSS reader library
+      Cargo.toml
+      src/
+        lib.rs                      Public API + re-exports
+        main.rs                     CLI binary for testing
+        scanner.rs                  SavScanner: streaming batch reader
+        error.rs                    SpssError enum (thiserror)
+        constants.rs                SYSMIS, enums (Compression, Measure, Alignment, VarType)
+        io_utils.rs                 SavReader<R> with endian-aware reads
+        header.rs                   176-byte file header parsing
+        encoding.rs                 Code page -> encoding_rs mapping
+        variable.rs                 Type 2 variable records, MissingValues enum
+        value_labels.rs             Type 3+4 value label records
+        document.rs                 Type 6 document records
+        metadata.rs                 SpssMetadata struct, Value enum, MissingSpec, MrSet
+        dictionary.rs               Record dispatch + post-dictionary resolution
+        data.rs                     Row reading + string reassembly
+        arrow_convert.rs            Arrow Schema + RecordBatch builders
+        info_records/               Subtype dispatch (3,4,11,13,14,20,21,22)
+        compression/
+          bytecode.rs               Stateful bytecode decompressor
+          zlib.rs                   ZSAV zheader/ztrailer + flate2
+    ambers-py/                      PyO3 binding crate
+      Cargo.toml
+      src/
+        lib.rs                      #[pymodule], #[pyclass] SpssMetadata, type conversions
 ```
 
 ---
@@ -142,8 +205,8 @@ After type 999, data is stored as rows of 8-byte slots:
 ## Testing
 
 ```bash
-cargo test              # 32 unit tests + 1 doc-test
-cargo run -- file.sav   # Quick CLI test with any .sav file
+cargo test -p ambers      # 37 unit tests + 2 doc-tests
+cargo run -p ambers -- file.sav  # CLI test with any .sav file
 ```
 
 ### Verified test files
@@ -161,32 +224,49 @@ cargo run -- file.sav   # Quick CLI test with any .sav file
 
 ## Dependencies
 
+### Core Rust library (`crates/ambers`)
+
 | Crate | Version | Purpose |
 |-------|---------|---------|
-| `arrow` | 55 | Arrow RecordBatch output |
+| `arrow` | 57 | Arrow RecordBatch output |
 | `flate2` | 1 | Zlib decompression for .zsav |
 | `encoding_rs` | 0.8 | Character encoding conversion |
 | `thiserror` | 2 | Error type derivation |
+| `rayon` | 1 | Parallel row/column processing |
+
+### Python bindings (`crates/ambers-py`)
+
+| Crate | Version | Purpose |
+|-------|---------|---------|
+| `pyo3` | 0.26 | Python extension module |
+| `arrow` | 57 (pyarrow feature) | Arrow ↔ PyArrow FFI conversion |
+
+### Python dependencies
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `polars` | >=1.0 | DataFrame output |
+| `pyarrow` | >=14.0 | Arrow FFI bridge |
 
 ---
 
 ## Next Steps
 
-### Milestone 2: SAV/ZSAV Writer
+### Milestone 3: SAV/ZSAV Writer
 - Write `RecordBatch` + `SpssMetadata` back to `.sav`/`.zsav` files
 - Reverse the data flow: Arrow -> rows -> bytecode/zlib compression -> binary
+- Update Python bindings with `write_sav()` function
 
-### Milestone 3: PyO3 Python Bindings
-- Expose `read_sav()` to Python via PyO3
-- Return PyArrow Table + metadata dict for Polars workflow (`pl.from_arrow()`)
-- Python: `import ambers` (or `import ambers as am`)
-- Target: drop-in replacement for pyreadstat in the user's data science pipeline
+### Future: scan_sav → Polars LazyFrame
+- Implement `AnonymousScan` trait for Polars lazy evaluation
+- Requires adding `polars` as Rust dependency in `ambers-py`
+- Enables predicate pushdown and lazy column projection
 
 ### Future: Additional Format Support
 - ambers is designed to grow beyond SPSS — the name and architecture support adding readers/writers for other statistical formats (Stata .dta, SAS .sas7bdat, etc.)
 
 ### Future Improvements
 - Arrow temporal types for DATE, TIME, DATETIME formats (currently Float64)
-- Streaming reader with `read_batch(batch_size)` for large files
+- `columns` / `row_limit` params on Python `read_sav()`
 - Real `.zsav` file testing
-- Integration test fixtures generated via pyreadstat with JSON expected values
+- PyPI publishing workflow (GitHub Actions with maturin)

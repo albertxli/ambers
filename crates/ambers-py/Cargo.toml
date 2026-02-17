@@ -1,0 +1,15 @@
+[package]
+name = "ambers-py"
+description = "Python bindings for the ambers SPSS reader"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "_ambers"
+crate-type = ["cdylib"]
+
+[dependencies]
+ambers = { path = "../ambers" }
+pyo3 = { version = "0.26", features = ["extension-module"] }
+arrow = { version = "57", default-features = false, features = ["pyarrow"] }

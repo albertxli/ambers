@@ -1,9 +1,20 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
 [project]
 name = "ambers"
 version = "0.1.0"
-description = "Add your description here"
-requires-python = ">=3.13"
+description = "Pure Rust SPSS .sav/.zsav reader with Polars DataFrame output"
+license = { text = "MIT" }
+requires-python = ">=3.12"
 dependencies = [
-    "polars>=1.35.1",
-    "pyreadstat>=1.3.2",
+    "polars>=1.0",
+    "pyarrow>=14.0",
 ]
+
+[tool.maturin]
+manifest-path = "crates/ambers-py/Cargo.toml"
+module-name = "ambers._ambers"
+python-source = "python"
+features = ["pyo3/extension-module"]
