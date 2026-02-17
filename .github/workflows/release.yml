@@ -68,6 +68,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Publish to crates.io (must run before PyPI which dirties the working dir)
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish to crates.io
+        run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
       # Download all wheels
       - uses: actions/download-artifact@v4
         with:
@@ -83,14 +91,6 @@ jobs:
 
       # Publish to PyPI (trusted publisher — no API token needed)
       - uses: pypa/gh-action-pypi-publish@release/v1
-
-      # Publish to crates.io
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Publish to crates.io
-        run: cargo publish
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       # Create GitHub Release
       - uses: softprops/action-gh-release@v2
