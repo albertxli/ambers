@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 use crate::constants::{Alignment, Compression, Measure};
 use crate::variable::MissingValues;
@@ -153,26 +153,26 @@ pub struct SpssMetadata {
     pub variable_names: Vec<String>,
 
     // Variable labels: {name -> label}
-    pub variable_labels: HashMap<String, String>,
+    pub variable_labels: IndexMap<String, String>,
 
     // Type info
-    pub spss_variable_types: HashMap<String, String>,
-    pub rust_variable_types: HashMap<String, String>,
+    pub spss_variable_types: IndexMap<String, String>,
+    pub rust_variable_types: IndexMap<String, String>,
 
     // Value labels: {var_name -> {value -> label}}
-    pub variable_value_labels: HashMap<String, HashMap<Value, String>>,
+    pub variable_value_labels: IndexMap<String, IndexMap<Value, String>>,
 
     // Display properties
-    pub variable_alignment: HashMap<String, Alignment>,
-    pub variable_storage_width: HashMap<String, usize>,
-    pub variable_display_width: HashMap<String, u32>,
-    pub variable_measure: HashMap<String, Measure>,
+    pub variable_alignment: IndexMap<String, Alignment>,
+    pub variable_storage_width: IndexMap<String, usize>,
+    pub variable_display_width: IndexMap<String, u32>,
+    pub variable_measure: IndexMap<String, Measure>,
 
     // Missing values
-    pub variable_missing: HashMap<String, Vec<MissingSpec>>,
+    pub variable_missing: IndexMap<String, Vec<MissingSpec>>,
 
     // SPSS-specific
-    pub mr_sets: HashMap<String, MrSet>,
+    pub mr_sets: IndexMap<String, MrSet>,
     pub weight_variable: Option<String>,
 }
 
@@ -183,7 +183,7 @@ impl SpssMetadata {
     }
 
     /// Get value labels for a variable.
-    pub fn value_labels(&self, name: &str) -> Option<&HashMap<Value, String>> {
+    pub fn value_labels(&self, name: &str) -> Option<&IndexMap<Value, String>> {
         self.variable_value_labels.get(name)
     }
 
@@ -243,16 +243,16 @@ impl Default for SpssMetadata {
             number_columns: 0,
             file_format: "sav".to_string(),
             variable_names: Vec::new(),
-            variable_labels: HashMap::new(),
-            spss_variable_types: HashMap::new(),
-            rust_variable_types: HashMap::new(),
-            variable_value_labels: HashMap::new(),
-            variable_alignment: HashMap::new(),
-            variable_storage_width: HashMap::new(),
-            variable_display_width: HashMap::new(),
-            variable_measure: HashMap::new(),
-            variable_missing: HashMap::new(),
-            mr_sets: HashMap::new(),
+            variable_labels: IndexMap::new(),
+            spss_variable_types: IndexMap::new(),
+            rust_variable_types: IndexMap::new(),
+            variable_value_labels: IndexMap::new(),
+            variable_alignment: IndexMap::new(),
+            variable_storage_width: IndexMap::new(),
+            variable_display_width: IndexMap::new(),
+            variable_measure: IndexMap::new(),
+            variable_missing: IndexMap::new(),
+            mr_sets: IndexMap::new(),
             weight_variable: None,
         }
     }

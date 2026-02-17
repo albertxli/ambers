@@ -11,5 +11,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 ambers = { path = "../ambers" }
-pyo3 = { version = "0.26", features = ["extension-module"] }
+pyo3 = { version = "0.26", features = ["extension-module", "indexmap"] }
+indexmap = "2"
 arrow = { version = "57", default-features = false, features = ["pyarrow"] }

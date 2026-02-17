@@ -1,41 +1,28 @@
-"""Benchmark: ambers (Rust) vs pyreadstat (Python/C) on the same .sav file."""
+"""Benchmark: ambers (Python/Rust) vs pyreadstat (Python/C) on the same .sav file."""
 
-import subprocess
 import time
 import statistics
 import sys
 
+import ambers
 import pyreadstat
 
 FILE = r"C:\Users\lipov\SynologyDrive\_PMI\Multi-Wave\RPM\2025\Data\251001.sav"
-RUNS = 3
-AMBERS_CMD = ["cargo", "run", "--release", "--", FILE]
+RUNS = 5
 
 
 def bench_ambers():
-    """Time ambers via cargo run --release (includes process startup)."""
+    """Time ambers.read_sav (Rust via PyO3 -> Polars DataFrame)."""
     times = []
     rows = cols = None
     for i in range(RUNS):
         t0 = time.perf_counter()
-        result = subprocess.run(
-            AMBERS_CMD,
-            capture_output=True,
-            text=True,
-            cwd=r"C:\Users\lipov\SynologyDrive\sandbox\rust-learning\ambers",
-        )
+        df, meta = ambers.read_sav(FILE)
         elapsed = time.perf_counter() - t0
-        if result.returncode != 0:
-            print(f"ambers run {i+1} FAILED:\n{result.stderr}", file=sys.stderr)
-            sys.exit(1)
         times.append(elapsed)
-        # Parse rows/cols from output
-        for line in result.stdout.splitlines():
-            if "Rows:" in line and "number_rows" not in line:
-                rows = int(line.split("Rows:")[1].strip())
-            if "Columns:" in line and "number_columns" not in line:
-                cols = int(line.split("Columns:")[1].strip())
-        print(f"  ambers  run {i+1}: {elapsed:.3f}s")
+        rows = df.height
+        cols = df.width
+        print(f"  ambers     run {i+1}: {elapsed:.3f}s")
     return times, rows, cols
 
 
@@ -58,7 +45,7 @@ def main():
     print(f"Benchmarking: {FILE}")
     print(f"Runs per tool: {RUNS}\n")
 
-    print("--- ambers (Rust, release) ---")
+    print("--- ambers (Python/Rust via PyO3) ---")
     a_times, a_rows, a_cols = bench_ambers()
 
     print("\n--- pyreadstat (Python/C) ---")

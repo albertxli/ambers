@@ -20,7 +20,7 @@ scan_sav_from_reader(reader, batch_size) -> Result<SavScanner<R>>
 ```
 
 - **Data output:** Arrow `RecordBatch` — zero-copy to Polars, DataFusion, DuckDB
-- **Metadata output:** `SpssMetadata` — HashMap-based, all fields use `variable_` prefix
+- **Metadata output:** `SpssMetadata` — IndexMap-based (insertion-ordered), all fields use `variable_` prefix
 - **Compression:** Uncompressed, bytecode (.sav), zlib (.zsav)
 - **Tests:** 37 unit tests + 2 doc-tests, verified against 7 real-world files (3–22,070 rows, 75–677 columns)
 
@@ -38,16 +38,16 @@ scan_sav_from_reader(reader, batch_size) -> Result<SavScanner<R>>
 | `number_columns` | `usize` | Visible variable count |
 | `file_format` | `String` | "sav" or "zsav" |
 | `variable_names` | `Vec<String>` | Ordered column names (defines Arrow schema order) |
-| `variable_labels` | `HashMap<String, String>` | Variable name -> label |
-| `spss_variable_types` | `HashMap<String, String>` | SPSS format strings: "F8.2", "A50" |
-| `rust_variable_types` | `HashMap<String, String>` | Rust types: "f64", "String" |
-| `variable_value_labels` | `HashMap<String, HashMap<Value, String>>` | Per-variable value->label maps |
-| `variable_measure` | `HashMap<String, Measure>` | Nominal / Ordinal / Scale (from file) |
-| `variable_alignment` | `HashMap<String, Alignment>` | Left / Right / Center |
-| `variable_display_width` | `HashMap<String, u32>` | Display width |
-| `variable_storage_width` | `HashMap<String, usize>` | Storage width in bytes |
-| `variable_missing` | `HashMap<String, Vec<MissingSpec>>` | Missing value specs |
-| `mr_sets` | `HashMap<String, MrSet>` | Multiple response sets |
+| `variable_labels` | `IndexMap<String, String>` | Variable name -> label |
+| `spss_variable_types` | `IndexMap<String, String>` | SPSS format strings: "F8.2", "A50" |
+| `rust_variable_types` | `IndexMap<String, String>` | Rust types: "f64", "String" |
+| `variable_value_labels` | `IndexMap<String, IndexMap<Value, String>>` | Per-variable value->label maps |
+| `variable_measure` | `IndexMap<String, Measure>` | Nominal / Ordinal / Scale (from file) |
+| `variable_alignment` | `IndexMap<String, Alignment>` | Left / Right / Center |
+| `variable_display_width` | `IndexMap<String, u32>` | Display width |
+| `variable_storage_width` | `IndexMap<String, usize>` | Storage width in bytes |
+| `variable_missing` | `IndexMap<String, Vec<MissingSpec>>` | Missing value specs |
+| `mr_sets` | `IndexMap<String, MrSet>` | Multiple response sets |
 | `weight_variable` | `Option<String>` | Weight variable name |
 
 Convenience methods: `label()`, `value_labels()`, `format()`, `measure()`
@@ -187,7 +187,7 @@ After type 999, data is stored as rows of 8-byte slots:
 | **Missing values** | SYSMIS -> Arrow null. User-defined missing ranges in metadata only (not nullified), matching pyreadstat behavior. |
 | **Endianness** | Detected from header `layout_code`. `SavReader` handles byte-swapping transparently. |
 | **No packed structs** | Fields read individually via `io_utils` helpers — safe, handles endian swapping. |
-| **Naming** | All metadata fields use `variable_` prefix. HashMap for O(1) lookup. Vec for ordering. |
+| **Naming** | All metadata fields use `variable_` prefix. IndexMap for O(1) lookup with insertion-order preservation. |
 | **Value sorting** | `Value` implements `Ord` — numeric values sort by actual number, not string representation. |
 
 ---
@@ -233,6 +233,7 @@ cargo run -p ambers -- file.sav  # CLI test with any .sav file
 | `encoding_rs` | 0.8 | Character encoding conversion |
 | `thiserror` | 2 | Error type derivation |
 | `rayon` | 1 | Parallel row/column processing |
+| `indexmap` | 2 | Insertion-ordered maps for metadata |
 
 ### Python bindings (`crates/ambers-py`)
 

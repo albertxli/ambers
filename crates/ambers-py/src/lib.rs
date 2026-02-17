@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 use pyo3::exceptions::PyIOError;
 use pyo3::prelude::*;
@@ -131,17 +131,24 @@ impl PySpssMetadata {
     }
 
     #[getter]
-    fn variable_labels(&self) -> HashMap<String, String> {
-        self.inner.variable_labels.clone()
+    fn variable_labels<'py>(&self, py: Python<'py>) -> PyResult<Py<PyAny>> {
+        let dict = PyDict::new(py);
+        for name in &self.inner.variable_names {
+            match self.inner.variable_labels.get(name) {
+                Some(label) => dict.set_item(name, label)?,
+                None => dict.set_item(name, py.None())?,
+            }
+        }
+        Ok(dict.unbind().into_any())
     }
 
     #[getter]
-    fn spss_variable_types(&self) -> HashMap<String, String> {
+    fn spss_variable_types(&self) -> IndexMap<String, String> {
         self.inner.spss_variable_types.clone()
     }
 
     #[getter]
-    fn rust_variable_types(&self) -> HashMap<String, String> {
+    fn rust_variable_types(&self) -> IndexMap<String, String> {
         self.inner.rust_variable_types.clone()
     }
 
@@ -159,7 +166,7 @@ impl PySpssMetadata {
     }
 
     #[getter]
-    fn variable_alignment(&self) -> HashMap<String, String> {
+    fn variable_alignment(&self) -> IndexMap<String, String> {
         self.inner
             .variable_alignment
             .iter()
@@ -168,17 +175,17 @@ impl PySpssMetadata {
     }
 
     #[getter]
-    fn variable_storage_width(&self) -> HashMap<String, usize> {
+    fn variable_storage_width(&self) -> IndexMap<String, usize> {
         self.inner.variable_storage_width.clone()
     }
 
     #[getter]
-    fn variable_display_width(&self) -> HashMap<String, u32> {
+    fn variable_display_width(&self) -> IndexMap<String, u32> {
         self.inner.variable_display_width.clone()
     }
 
     #[getter]
-    fn variable_measure(&self) -> HashMap<String, String> {
+    fn variable_measure(&self) -> IndexMap<String, String> {
         self.inner
             .variable_measure
             .iter()

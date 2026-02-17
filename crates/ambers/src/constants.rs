@@ -97,6 +97,7 @@ impl Measure {
 /// Variable alignment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Alignment {
+    Unknown,
     Left,
     Right,
     Center,
@@ -108,12 +109,13 @@ impl Alignment {
             0 => Alignment::Left,
             1 => Alignment::Right,
             2 => Alignment::Center,
-            _ => Alignment::Left,
+            _ => Alignment::Unknown,
         }
     }
 
     pub fn as_str(&self) -> &'static str {
         match self {
+            Alignment::Unknown => "unknown",
             Alignment::Left => "left",
             Alignment::Right => "right",
             Alignment::Center => "center",
@@ -261,6 +263,28 @@ impl FormatType {
     pub fn is_string(&self) -> bool {
         matches!(self, FormatType::A | FormatType::Ahex)
     }
+
+    /// Whether this format type is a date/time type (no decimals in display).
+    pub fn is_date_time(&self) -> bool {
+        matches!(
+            self,
+            FormatType::Date
+                | FormatType::Time
+                | FormatType::DateTime
+                | FormatType::ADate
+                | FormatType::JDate
+                | FormatType::DTime
+                | FormatType::Wkday
+                | FormatType::Month
+                | FormatType::Moyr
+                | FormatType::Qyr
+                | FormatType::Wkyr
+                | FormatType::EDate
+                | FormatType::SDate
+                | FormatType::MTime
+                | FormatType::YmDhms
+        )
+    }
 }
 
 /// Decoded SPSS print/write format.
@@ -289,17 +313,16 @@ impl SpssFormat {
 
     /// Render as a human-readable SPSS format string like "F8.2" or "A50".
     pub fn to_spss_string(&self) -> String {
-        if self.format_type.is_string() {
+        if self.format_type.is_string() || self.format_type.is_date_time() {
+            // String and date/time formats: no decimal suffix
             format!("{}{}", self.format_type.prefix(), self.width)
-        } else if self.decimals > 0 {
+        } else {
             format!(
                 "{}{}.{}",
                 self.format_type.prefix(),
                 self.width,
                 self.decimals
             )
-        } else {
-            format!("{}{}", self.format_type.prefix(), self.width)
         }
     }
 }

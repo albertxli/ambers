@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::io::Read;
 
+use indexmap::IndexMap;
+
 use encoding_rs::Encoding;
 
 use crate::constants::*;
@@ -256,7 +258,9 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
 
         // Variable label
         if let Some(ref label_bytes) = var.label {
-            let label = encoding::decode_str_lossy(label_bytes, file_encoding);
+            let label = encoding::decode_str_lossy(label_bytes, file_encoding)
+                .trim_end_matches(|c: char| c == ' ' || c == '\u{FFFD}')
+                .to_string();
             if !label.is_empty() {
                 meta.variable_labels.insert(name.clone(), label);
             }
@@ -293,10 +297,12 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
             .insert(name.clone(), display_width);
         meta.variable_alignment.insert(name.clone(), var.alignment);
 
-        // Storage width
+        // Storage width: normal strings round to 8-byte slot boundary,
+        // VLS strings (>255) use their declared width as-is (matching pyreadstat)
         let storage_width = match &var.var_type {
             VarType::Numeric => 8,
-            VarType::String(w) => *w,
+            VarType::String(w) if *w > 255 => *w,
+            VarType::String(w) => crate::io_utils::round_up(*w, 8),
         };
         meta.variable_storage_width
             .insert(name.clone(), storage_width);
@@ -337,7 +343,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
             .and_then(|&idx| slot_to_type.get(&idx))
             .is_some_and(|t| matches!(t, VarType::String(_)));
 
-        let resolved_labels: HashMap<Value, String> = label_set
+        let resolved_labels: IndexMap<Value, String> = label_set
             .labels
             .iter()
             .map(|(raw_val, label_bytes)| {
@@ -364,7 +370,9 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
                         RawValue::String(_) => Value::Numeric(0.0),
                     }
                 };
-                let label = encoding::decode_str_lossy(label_bytes, file_encoding);
+                let label = encoding::decode_str_lossy(label_bytes, file_encoding)
+                    .trim_end_matches(|c: char| c == ' ' || c == '\u{FFFD}')
+                    .to_string();
                 (value, label)
             })
             .collect();
@@ -380,7 +388,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
     // 7. Resolve long string value labels (subtype 21)
     for ls_set in &raw.long_string_labels {
         let var_name = &ls_set.var_name;
-        let labels: HashMap<Value, String> = ls_set
+        let labels: IndexMap<Value, String> = ls_set
             .labels
             .iter()
             .map(|(value_bytes, label_bytes)| {
@@ -388,7 +396,9 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
                     crate::io_utils::trim_trailing_padding(value_bytes),
                     file_encoding,
                 ));
-                let label = encoding::decode_str_lossy(label_bytes, file_encoding);
+                let label = encoding::decode_str_lossy(label_bytes, file_encoding)
+                    .trim_end_matches(|c: char| c == ' ' || c == '\u{FFFD}')
+                    .to_string();
                 (value, label)
             })
             .collect();
@@ -419,6 +429,18 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
                 .insert(ls_missing.var_name.clone(), specs);
         }
     }
+
+    // Reorder variable_value_labels to match variable_names order
+    let ordered_vvl: IndexMap<String, IndexMap<Value, String>> = meta
+        .variable_names
+        .iter()
+        .filter_map(|name| {
+            meta.variable_value_labels
+                .swap_remove(name)
+                .map(|v| (name.clone(), v))
+        })
+        .collect();
+    meta.variable_value_labels = ordered_vvl;
 
     // 9. Resolve multiple response sets (subtype 7)
     // MR set variable names are SHORT names — convert to long names

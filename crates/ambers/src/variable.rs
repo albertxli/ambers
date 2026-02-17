@@ -109,7 +109,7 @@ impl VariableRecord {
             is_ghost,
             measure: Measure::Unknown,
             display_width,
-            alignment: Alignment::Left,
+            alignment: Alignment::Unknown,
             n_segments: 1,
         })
     }
