@@ -1,3 +1,9 @@
+# Git Commit Rules
+
+- **No Co-Authored-By lines.** All commits are authored solely by the repository owner. Never add `Co-Authored-By` trailers.
+
+---
+
 # ambers — Pure Rust Statistical File Reader
 
 Like amber preserving ancient life, ambers safely captures and preserves data from statistical file formats. Native Rust, no C FFI bindings. Framework-agnostic Arrow output.
