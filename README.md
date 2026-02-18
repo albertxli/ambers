@@ -92,8 +92,8 @@ while let Some(batch) = scanner.next_batch()? {
 
 | File | Size | Rows | Cols | ambers | pyreadstat | Speedup |
 |------|------|-----:|-----:|-------:|-----------:|--------:|
-| 251001.sav | 147 MB | 22,070 | 677 | 1.27s | 3.07s | **2.4x** |
-| rpm_2025_tracking | 1.1 GB | 79,066 | 915 | 2.42s | 6.40s | **2.6x** |
+| survey_medium.sav | 147 MB | ~22,000 | ~700 | 1.27s | 3.07s | **2.4x** |
+| survey_large.sav | 1.1 GB | ~80,000 | ~900 | 2.42s | 6.40s | **2.6x** |
 
 ## License
 
