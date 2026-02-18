@@ -9,4 +9,5 @@ dist/
 docs/
 architecture.md
 test_data/
+tests/test_paths.py
 CLAUDE.md

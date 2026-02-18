@@ -2,12 +2,7 @@
 
 import pytest
 
-
-# Default test files — override with --sav-file on the command line
-DEFAULT_FILES = [
-    r"C:\Users\lipov\SynologyDrive\_PMI\Multi-Wave\RPM\2025\Data\rpm_2025_data_tracking_partial_uam_2026_02_16.sav",
-    r"C:\Users\lipov\SynologyDrive\_PMI\Multi-Wave\RPM\2025\Data\251001.sav",
-]
+from test_paths import DEFAULT_FILES
 
 
 def pytest_addoption(parser):

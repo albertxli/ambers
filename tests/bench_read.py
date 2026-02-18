@@ -11,7 +11,7 @@ import sys
 import ambers
 import pyreadstat
 
-DEFAULT_FILE = r"C:\Users\lipov\SynologyDrive\_PMI\Multi-Wave\RPM\2025\Data\251001.sav"
+from test_paths import BENCH_READ_FILE as DEFAULT_FILE
 DEFAULT_RUNS = 5
 
 
