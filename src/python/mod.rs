@@ -1220,9 +1220,23 @@ impl PySavBatchReader {
 
 /// Read an SPSS .sav/.zsav file. Returns (_ArrowData, SpssMetadata).
 #[pyfunction]
-fn _read_sav(path: &str) -> PyResult<(PyArrowData, PySpssMetadata)> {
-    let (batch, meta) = crate::read_sav(path).map_err(spss_err)?;
-    Ok((PyArrowData { batch }, PySpssMetadata { inner: meta }))
+#[pyo3(signature = (path, columns=None, n_rows=None))]
+fn _read_sav(
+    path: &str,
+    columns: Option<Vec<String>>,
+    n_rows: Option<usize>,
+) -> PyResult<(PyArrowData, PySpssMetadata)> {
+    let mut scanner = crate::scan_sav(path).map_err(spss_err)?;
+    let metadata = scanner.metadata().clone();
+    if let Some(ref cols) = columns {
+        let col_refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();
+        scanner.select(&col_refs).map_err(spss_err)?;
+    }
+    if let Some(n) = n_rows {
+        scanner.limit(n);
+    }
+    let batch = scanner.collect_single().map_err(spss_err)?;
+    Ok((PyArrowData { batch }, PySpssMetadata { inner: metadata }))
 }
 
 /// Read only metadata from an SPSS file (no data).
