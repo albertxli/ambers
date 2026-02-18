@@ -9,6 +9,7 @@ use arrow::array::{ArrayRef, Float64Builder, StringViewBuilder};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use encoding_rs::Encoding;
+use rayon::prelude::*;
 
 use crate::compression::bytecode::SlotValue;
 use crate::constants::{is_sysmis, VarType};
@@ -108,9 +109,16 @@ impl ColumnarBatchBuilder {
                     fields.push(Field::new(&var.long_name, DataType::Float64, true));
                 }
                 VarType::String(_) => {
-                    // StringViewBuilder with deduplication for categorical SPSS data
-                    let sb = StringViewBuilder::new()
-                        .with_deduplicate_strings();
+                    // Only enable dedup for categorical columns (those with value labels).
+                    // High-cardinality columns (IDs, free-text) pay hash overhead with no benefit.
+                    let has_value_labels = dict.metadata
+                        .variable_value_labels
+                        .contains_key(&var.long_name);
+                    let sb = if has_value_labels {
+                        StringViewBuilder::new().with_deduplicate_strings()
+                    } else {
+                        StringViewBuilder::new()
+                    };
                     builders.push(ColBuilder::Str(sb));
                     fields.push(Field::new(&var.long_name, DataType::Utf8View, true));
                 }
@@ -160,37 +168,120 @@ impl ColumnarBatchBuilder {
         self.rows_appended += 1;
     }
 
-    /// Push one row of raw 8-byte slots directly into the column builders.
-    /// This is the hot-path method for uncompressed data.
-    pub fn push_raw_row(&mut self, raw_slots: &[[u8; 8]]) {
-        for (i, mapping) in self.mappings.iter().enumerate() {
-            match &mapping.var_type {
-                VarType::Numeric => {
-                    let builder = match &mut self.builders[i] {
-                        ColBuilder::Float64(b) => b,
+    /// Push a chunk of raw bytes column-at-a-time for better cache locality.
+    /// `chunk` is a contiguous buffer of `num_rows * slots_per_row * 8` bytes.
+    /// Each row occupies `slots_per_row * 8` bytes.
+    ///
+    /// For large chunks (>= 10,000 rows), columns are processed in parallel
+    /// using rayon. Each thread fills its own builder independently.
+    pub fn push_raw_chunk(&mut self, chunk: &[u8], num_rows: usize, slots_per_row: usize) {
+        let row_bytes = slots_per_row * 8;
+
+        // Borrow fields separately to allow parallel access:
+        // mappings (read-only) + builders (each thread gets exclusive &mut to one)
+        let mappings = &self.mappings;
+        let file_encoding = self.file_encoding;
+
+        if num_rows >= 10_000 {
+            // Parallel: each column processed by a separate rayon thread
+            self.builders
+                .par_iter_mut()
+                .enumerate()
+                .for_each(|(i, builder)| {
+                    let mapping = &mappings[i];
+                    match (&mapping.var_type, builder) {
+                        (VarType::Numeric, ColBuilder::Float64(b)) => {
+                            let slot_offset = mapping.slot_index * 8;
+                            for row in 0..num_rows {
+                                let offset = row * row_bytes + slot_offset;
+                                let val = f64::from_le_bytes(
+                                    chunk[offset..offset + 8].try_into().unwrap(),
+                                );
+                                if is_sysmis(val) {
+                                    b.append_null();
+                                } else {
+                                    b.append_value(val);
+                                }
+                            }
+                        }
+                        (VarType::String(width), ColBuilder::Str(b)) => {
+                            // Each thread gets its own string buffer
+                            let mut local_string_buf = Vec::with_capacity(1024);
+                            for row in 0..num_rows {
+                                let row_start = row * row_bytes;
+                                let raw_slots: &[[u8; 8]] = unsafe {
+                                    std::slice::from_raw_parts(
+                                        chunk[row_start..].as_ptr() as *const [u8; 8],
+                                        slots_per_row,
+                                    )
+                                };
+                                push_string_from_raw_slots(
+                                    b,
+                                    &mut local_string_buf,
+                                    raw_slots,
+                                    mapping.slot_index,
+                                    *width,
+                                    mapping.n_segments,
+                                    &mapping.vls_layout,
+                                    file_encoding,
+                                );
+                            }
+                        }
                         _ => unreachable!(),
-                    };
-                    push_numeric_from_raw(builder, raw_slots, mapping.slot_index);
-                }
-                VarType::String(width) => {
-                    let builder = match &mut self.builders[i] {
-                        ColBuilder::Str(b) => b,
-                        _ => unreachable!(),
-                    };
-                    push_string_from_raw_slots(
-                        builder,
-                        &mut self.string_buf,
-                        raw_slots,
-                        mapping.slot_index,
-                        *width,
-                        mapping.n_segments,
-                        &mapping.vls_layout,
-                        self.file_encoding,
-                    );
+                    }
+                });
+        } else {
+            // Sequential: small chunks (lazy head, small files)
+            for (i, mapping) in mappings.iter().enumerate() {
+                match &mapping.var_type {
+                    VarType::Numeric => {
+                        let builder = match &mut self.builders[i] {
+                            ColBuilder::Float64(b) => b,
+                            _ => unreachable!(),
+                        };
+                        let slot_offset = mapping.slot_index * 8;
+                        for row in 0..num_rows {
+                            let offset = row * row_bytes + slot_offset;
+                            let val = f64::from_le_bytes(
+                                chunk[offset..offset + 8].try_into().unwrap(),
+                            );
+                            if is_sysmis(val) {
+                                builder.append_null();
+                            } else {
+                                builder.append_value(val);
+                            }
+                        }
+                    }
+                    VarType::String(width) => {
+                        let builder = match &mut self.builders[i] {
+                            ColBuilder::Str(b) => b,
+                            _ => unreachable!(),
+                        };
+                        for row in 0..num_rows {
+                            let row_start = row * row_bytes;
+                            let raw_slots: &[[u8; 8]] = unsafe {
+                                std::slice::from_raw_parts(
+                                    chunk[row_start..].as_ptr() as *const [u8; 8],
+                                    slots_per_row,
+                                )
+                            };
+                            push_string_from_raw_slots(
+                                builder,
+                                &mut self.string_buf,
+                                raw_slots,
+                                mapping.slot_index,
+                                *width,
+                                mapping.n_segments,
+                                &mapping.vls_layout,
+                                self.file_encoding,
+                            );
+                        }
+                    }
                 }
             }
         }
-        self.rows_appended += 1;
+
+        self.rows_appended += num_rows;
     }
 
     /// Finish building and return the RecordBatch.
@@ -246,21 +337,6 @@ fn push_numeric_from_slot(builder: &mut Float64Builder, slots: &[SlotValue], slo
                 builder.append_value(val);
             }
         }
-    }
-}
-
-/// Push a numeric value from raw 8-byte slots directly into a Float64Builder.
-#[inline]
-fn push_numeric_from_raw(builder: &mut Float64Builder, raw_slots: &[[u8; 8]], slot_idx: usize) {
-    if slot_idx >= raw_slots.len() {
-        builder.append_null();
-        return;
-    }
-    let val = f64::from_le_bytes(raw_slots[slot_idx]);
-    if is_sysmis(val) {
-        builder.append_null();
-    } else {
-        builder.append_value(val);
     }
 }
 

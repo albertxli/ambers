@@ -74,7 +74,7 @@ pub fn read_sav_from_reader<R: Read + Seek>(reader: R) -> Result<(RecordBatch, S
 /// variable information, labels, or other metadata.
 pub fn read_sav_metadata(path: impl AsRef<Path>) -> Result<SpssMetadata> {
     let file = File::open(path)?;
-    let buf_reader = BufReader::with_capacity(256 * 1024, file);
+    let buf_reader = BufReader::with_capacity(4 * 1024 * 1024, file);
     let scanner = SavScanner::open(buf_reader, 0)?;
     Ok(scanner.metadata().clone())
 }
@@ -98,7 +98,7 @@ pub fn read_sav_metadata(path: impl AsRef<Path>) -> Result<SpssMetadata> {
 /// ```
 pub fn scan_sav(path: impl AsRef<Path>) -> Result<SavScanner<BufReader<File>>> {
     let file = File::open(path)?;
-    let buf_reader = BufReader::with_capacity(256 * 1024, file);
+    let buf_reader = BufReader::with_capacity(4 * 1024 * 1024, file);
     SavScanner::open(buf_reader, 100_000)
 }
 

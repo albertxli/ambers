@@ -256,25 +256,28 @@ impl<R: Read + Seek> SavScanner<R> {
             ScanState::Uncompressed => {
                 let slots_per_row = self.dict.header.nominal_case_size as usize;
                 let row_bytes = slots_per_row * 8;
-                let mut row_buf = vec![0u8; row_bytes]; // allocate once, reuse
-                for _ in 0..n {
-                    match self.sav_reader.inner_mut().read_exact(&mut row_buf) {
-                        Ok(()) => {
-                            // Safe: [u8; 8] has alignment 1, buffer is exactly slots_per_row * 8
-                            let raw_slots: &[[u8; 8]] = unsafe {
-                                std::slice::from_raw_parts(
-                                    row_buf.as_ptr() as *const [u8; 8],
-                                    slots_per_row,
-                                )
-                            };
-                            builder.push_raw_row(raw_slots);
-                        }
-                        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                            break;
-                        }
-                        Err(e) => {
-                            return Err(e.into());
-                        }
+                // Adaptive chunk size: use capacity_hint for large reads (enables
+                // rayon parallelism), small chunks for lazy head(N) reads.
+                let chunk_rows = self.capacity_hint(n);
+                let chunk_bytes = chunk_rows * row_bytes;
+                let mut chunk_buf = vec![0u8; chunk_bytes];
+
+                let mut rows_remaining = n;
+                while rows_remaining > 0 {
+                    let to_read = chunk_rows.min(rows_remaining);
+                    let read_bytes = to_read * row_bytes;
+                    let actual = read_full(&mut self.sav_reader, &mut chunk_buf[..read_bytes])?;
+                    let actual_rows = actual / row_bytes;
+                    if actual_rows == 0 {
+                        break;
+                    }
+
+                    // Process chunk column-at-a-time for better cache locality
+                    let chunk_data = &chunk_buf[..actual_rows * row_bytes];
+                    builder.push_raw_chunk(chunk_data, actual_rows, slots_per_row);
+                    rows_remaining -= actual_rows;
+                    if actual_rows < to_read {
+                        break; // EOF
                     }
                 }
             }
@@ -299,4 +302,19 @@ impl<R: Read + Seek> SavScanner<R> {
             Ok(None)
         }
     }
+}
+
+/// Read as many bytes as possible into `buf`, handling partial reads.
+/// Returns the total number of bytes read (may be less than buf.len() at EOF).
+fn read_full<R: Read + Seek>(reader: &mut SavReader<R>, buf: &mut [u8]) -> Result<usize> {
+    let mut pos = 0;
+    while pos < buf.len() {
+        match reader.inner_mut().read(&mut buf[pos..]) {
+            Ok(0) => break, // EOF
+            Ok(n) => pos += n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Ok(pos)
 }
