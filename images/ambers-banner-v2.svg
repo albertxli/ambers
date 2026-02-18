@@ -1,0 +1,192 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="220" viewBox="0 0 900 220">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#020510"/>
+      <stop offset="50%" style="stop-color:#04080f"/>
+      <stop offset="100%" style="stop-color:#010308"/>
+    </linearGradient>
+
+    <!-- Cyan-amber dual tone for futuristic feel -->
+    <linearGradient id="titleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#00d4ff"/>
+      <stop offset="35%" style="stop-color:#f5b94e"/>
+      <stop offset="65%" style="stop-color:#fcd97a"/>
+      <stop offset="100%" style="stop-color:#00d4ff"/>
+    </linearGradient>
+
+    <linearGradient id="scanline" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#00d4ff;stop-opacity:0"/>
+      <stop offset="50%" style="stop-color:#00d4ff;stop-opacity:0.15"/>
+      <stop offset="100%" style="stop-color:#00d4ff;stop-opacity:0"/>
+    </linearGradient>
+
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#00d4ff;stop-opacity:0"/>
+      <stop offset="20%" style="stop-color:#00d4ff"/>
+      <stop offset="50%" style="stop-color:#f5b94e"/>
+      <stop offset="80%" style="stop-color:#00d4ff"/>
+      <stop offset="100%" style="stop-color:#00d4ff;stop-opacity:0"/>
+    </linearGradient>
+
+    <linearGradient id="leftFade" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#020510"/>
+      <stop offset="100%" style="stop-color:#020510;stop-opacity:0"/>
+    </linearGradient>
+    <linearGradient id="rightFade" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#020510;stop-opacity:0"/>
+      <stop offset="100%" style="stop-color:#020510"/>
+    </linearGradient>
+
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3.5" result="coloredBlur"/>
+      <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="cyanglow">
+      <feGaussianBlur stdDeviation="5" result="coloredBlur"/>
+      <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="strongglow">
+      <feGaussianBlur stdDeviation="10" result="coloredBlur"/>
+      <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <clipPath id="clip">
+      <rect width="900" height="220" rx="4" ry="4"/>
+    </clipPath>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="220" rx="4" fill="url(#bg)"/>
+
+  <!-- Perspective grid floor -->
+  <g clip-path="url(#clip)" opacity="0.18">
+    <!-- Horizontal perspective lines converging at center bottom -->
+    <line x1="450" y1="220" x2="0" y2="80" stroke="#00d4ff" stroke-width="0.6"/>
+    <line x1="450" y1="220" x2="90" y2="80" stroke="#00d4ff" stroke-width="0.6"/>
+    <line x1="450" y1="220" x2="180" y2="80" stroke="#00d4ff" stroke-width="0.6"/>
+    <line x1="450" y1="220" x2="270" y2="80" stroke="#00d4ff" stroke-width="0.6"/>
+    <line x1="450" y1="220" x2="360" y2="80" stroke="#00d4ff" stroke-width="0.6"/>
+    <line x1="450" y1="220" x2="450" y2="80" stroke="#00d4ff" stroke-width="0.6"/>
+    <line x1="450" y1="220" x2="540" y2="80" stroke="#00d4ff" stroke-width="0.6"/>
+    <line x1="450" y1="220" x2="630" y2="80" stroke="#00d4ff" stroke-width="0.6"/>
+    <line x1="450" y1="220" x2="720" y2="80" stroke="#00d4ff" stroke-width="0.6"/>
+    <line x1="450" y1="220" x2="810" y2="80" stroke="#00d4ff" stroke-width="0.6"/>
+    <line x1="450" y1="220" x2="900" y2="80" stroke="#00d4ff" stroke-width="0.6"/>
+    <!-- Horizontal cross lines -->
+    <line x1="0" y1="220" x2="900" y2="220" stroke="#00d4ff" stroke-width="0.8"/>
+    <line x1="0" y1="180" x2="900" y2="180" stroke="#00d4ff" stroke-width="0.5"/>
+    <line x1="0" y1="148" x2="900" y2="148" stroke="#00d4ff" stroke-width="0.4"/>
+    <line x1="0" y1="122" x2="900" y2="122" stroke="#00d4ff" stroke-width="0.3"/>
+    <line x1="0" y1="102" x2="900" y2="102" stroke="#00d4ff" stroke-width="0.3"/>
+    <line x1="0" y1="88" x2="900" y2="88" stroke="#00d4ff" stroke-width="0.2"/>
+  </g>
+
+  <!-- Left fade over grid -->
+  <rect width="200" height="220" fill="url(#leftFade)" clip-path="url(#clip)"/>
+  <!-- Right fade over grid -->
+  <rect x="700" width="200" height="220" fill="url(#rightFade)" clip-path="url(#clip)"/>
+
+  <!-- Scanline sweep highlight -->
+  <rect width="900" height="220" fill="url(#scanline)" clip-path="url(#clip)"/>
+
+  <!-- Left HUD element: circuit/bracket -->
+  <g transform="translate(55, 110)" filter="url(#cyanglow)" opacity="0.85">
+    <!-- Corner bracket L shape top-left -->
+    <polyline points="-30,-50 -30,-30 -10,-30" fill="none" stroke="#00d4ff" stroke-width="1.5"/>
+    <!-- Corner bracket bottom-right -->
+    <polyline points="30,50 30,30 10,30" fill="none" stroke="#00d4ff" stroke-width="1.5"/>
+    <!-- Inner tick marks -->
+    <line x1="-30" y1="-10" x2="-22" y2="-10" stroke="#00d4ff" stroke-width="1"/>
+    <line x1="-30" y1="0" x2="-18" y2="0" stroke="#f5b94e" stroke-width="1.2"/>
+    <line x1="-30" y1="10" x2="-22" y2="10" stroke="#00d4ff" stroke-width="1"/>
+    <!-- Vertical bar -->
+    <line x1="-30" y1="-50" x2="-30" y2="50" stroke="#00d4ff" stroke-width="0.5" opacity="0.4"/>
+    <!-- Diamond center -->
+    <polygon points="0,-12 10,0 0,12 -10,0" fill="none" stroke="#f5b94e" stroke-width="1.2"/>
+    <circle r="2.5" fill="#fcd97a"/>
+    <!-- Horizontal data lines -->
+    <line x1="-8" y1="-22" x2="20" y2="-22" stroke="#00d4ff" stroke-width="0.8" opacity="0.6"/>
+    <line x1="-8" y1="22" x2="20" y2="22" stroke="#00d4ff" stroke-width="0.8" opacity="0.6"/>
+  </g>
+
+  <!-- Right HUD element: waveform/data -->
+  <g transform="translate(845, 110)" filter="url(#cyanglow)" opacity="0.85">
+    <!-- Corner bracket top-right -->
+    <polyline points="30,-50 30,-30 10,-30" fill="none" stroke="#00d4ff" stroke-width="1.5"/>
+    <!-- Corner bracket bottom-left -->
+    <polyline points="-30,50 -30,30 -10,30" fill="none" stroke="#00d4ff" stroke-width="1.5"/>
+    <!-- Waveform bars -->
+    <rect x="2" y="-18" width="5" height="36" rx="1" fill="#00d4ff" opacity="0.5"/>
+    <rect x="10" y="-28" width="5" height="56" rx="1" fill="#f5b94e" opacity="0.7"/>
+    <rect x="18" y="-12" width="5" height="24" rx="1" fill="#00d4ff" opacity="0.5"/>
+    <rect x="-6" y="-22" width="5" height="44" rx="1" fill="#00d4ff" opacity="0.4"/>
+    <rect x="-14" y="-10" width="5" height="20" rx="1" fill="#fcd97a" opacity="0.6"/>
+    <!-- Horizontal data lines -->
+    <line x1="-20" y1="-22" x2="8" y2="-22" stroke="#00d4ff" stroke-width="0.8" opacity="0.6"/>
+    <line x1="-20" y1="22" x2="8" y2="22" stroke="#00d4ff" stroke-width="0.8" opacity="0.6"/>
+  </g>
+
+  <!-- Top border line with glow -->
+  <rect x="0" y="0" width="900" height="1.5" fill="url(#borderGrad)" clip-path="url(#clip)"/>
+  <!-- Bottom border line -->
+  <rect x="0" y="218.5" width="900" height="1.5" fill="url(#borderGrad)" clip-path="url(#clip)" opacity="0.6"/>
+
+  <!-- Corner accents top-left -->
+  <g filter="url(#cyanglow)" opacity="0.9">
+    <polyline points="0,20 0,0 20,0" fill="none" stroke="#00d4ff" stroke-width="2" clip-path="url(#clip)"/>
+    <!-- top-right -->
+    <polyline points="880,0 900,0 900,20" fill="none" stroke="#00d4ff" stroke-width="2" clip-path="url(#clip)"/>
+    <!-- bottom-left -->
+    <polyline points="0,200 0,220 20,220" fill="none" stroke="#00d4ff" stroke-width="2" clip-path="url(#clip)"/>
+    <!-- bottom-right -->
+    <polyline points="880,220 900,220 900,200" fill="none" stroke="#00d4ff" stroke-width="2" clip-path="url(#clip)"/>
+  </g>
+
+  <!-- Glowing amber center orb behind title -->
+  <ellipse cx="450" cy="95" rx="180" ry="45" fill="#f5b94e" opacity="0.04" filter="url(#strongglow)"/>
+
+  <!-- Main title -->
+  <text x="450" y="108"
+        font-family="'Courier New', 'Consolas', monospace"
+        font-size="72"
+        font-weight="bold"
+        fill="url(#titleGrad)"
+        text-anchor="middle"
+        filter="url(#glow)"
+        letter-spacing="14">ambers</text>
+
+  <!-- Subtitle with monospace HUD style -->
+  <text x="450" y="146"
+        font-family="'Courier New', 'Consolas', monospace"
+        font-size="12"
+        fill="#00d4ff"
+        text-anchor="middle"
+        letter-spacing="4"
+        opacity="0.75">Rust  ·  Python  ·  SPSS .sav/.zsav</text>
+
+  <!-- Bottom badges -->
+  <g transform="translate(450, 186)">
+    <!-- Rust badge -->
+    <g transform="translate(-90, 0)" filter="url(#cyanglow)">
+      <rect x="-33" y="-11" width="66" height="22" rx="2" fill="none" stroke="#00d4ff" stroke-width="1"/>
+      <!-- corner ticks -->
+      <line x1="-33" y1="-5" x2="-28" y2="-5" stroke="#00d4ff" stroke-width="1"/>
+      <line x1="33" y1="5" x2="28" y2="5" stroke="#00d4ff" stroke-width="1"/>
+      <text font-family="'Courier New', monospace" font-size="11" fill="#f5b94e" text-anchor="middle" dy="4" letter-spacing="1">🦀 rust</text>
+    </g>
+    <!-- Python badge -->
+    <g transform="translate(0, 0)" filter="url(#cyanglow)">
+      <rect x="-37" y="-11" width="74" height="22" rx="2" fill="none" stroke="#00d4ff" stroke-width="1"/>
+      <line x1="-37" y1="-5" x2="-32" y2="-5" stroke="#00d4ff" stroke-width="1"/>
+      <line x1="37" y1="5" x2="32" y2="5" stroke="#00d4ff" stroke-width="1"/>
+      <text font-family="'Courier New', monospace" font-size="11" fill="#f5b94e" text-anchor="middle" dy="4" letter-spacing="1">🐍 python</text>
+    </g>
+    <!-- Speed badge -->
+    <g transform="translate(90, 0)" filter="url(#cyanglow)">
+      <rect x="-37" y="-11" width="74" height="22" rx="2" fill="none" stroke="#00d4ff" stroke-width="1"/>
+      <line x1="-37" y1="-5" x2="-32" y2="-5" stroke="#00d4ff" stroke-width="1"/>
+      <line x1="37" y1="5" x2="32" y2="5" stroke="#00d4ff" stroke-width="1"/>
+      <text font-family="'Courier New', monospace" font-size="11" fill="#f5b94e" text-anchor="middle" dy="4" letter-spacing="1">⚡ 2-3x</text>
+    </g>
+  </g>
+</svg>

@@ -1,5 +1,9 @@
 # ambers
 
+<p align="center">
+  <img src="images/ambers-banner-v2.svg" alt="ambers banner" width="900">
+</p>
+
 [![Crates.io](https://img.shields.io/crates/v/ambers)](https://crates.io/crates/ambers)
 [![PyPI](https://img.shields.io/pypi/v/ambers?color=blue)](https://pypi.org/project/ambers/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-grey.svg)](LICENSE)
