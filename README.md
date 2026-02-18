@@ -100,22 +100,35 @@ while let Some(batch) = scanner.next_batch()? {
 
 ## Performance
 
-Benchmarked on 5 real-world SPSS files (average of 5 runs, Windows, Python 3.13, 24-core machine):
+### Eager Read
 
-| File | Size | Rows | Cols | ambers read_sav | ambers scan_sav | polars_readstat | pyreadstat | pyreadstat mp (4w) | ambers vs polars_readstat | ambers vs pyreadstat |
-|------|------|-----:|-----:|----------------:|----------------:|----------------:|-----------:|-------------------:|--------------------------:|---------------------:|
-| test_1 (bytecode) | 0.2 MB | 1,500 | 75 | **0.002s** | 0.002s | 0.011s | 0.010s | 0.386s | **5.9x faster** | **5.7x faster** |
-| test_2 (bytecode) | 147 MB | 22,070 | 677 | **0.934s** | 1.070s | 1.087s | 4.424s | 1.799s | **1.2x faster** | **4.7x faster** |
-| test_3 (uncompressed) | 1.1 GB | 79,066 | 915 | 1.747s | 1.844s | **1.592s** | 6.607s | 2.835s | ~tied | **3.8x faster** |
-| test_4 (uncompressed) | 0.6 MB | 201 | 158 | **0.017s** | 0.017s | 0.024s | 0.027s | 0.450s | **1.4x faster** | **1.5x faster** |
-| test_5 (uncompressed) | 0.6 MB | 203 | 136 | **0.003s** | 0.005s | 0.012s | 0.015s | 0.414s | **4.7x faster** | **5.8x faster** |
+All results return a Polars DataFrame. Average of 5 runs on Windows 11, Python 3.13, 24-core machine.
+
+| File | Size | Rows | Cols | ambers | polars_readstat | pyreadstat | pyreadstat mp (4w) | ambers vs polars_readstat | ambers vs pyreadstat |
+|------|------|-----:|-----:|-------:|----------------:|-----------:|-------------------:|--------------------------:|---------------------:|
+| test_1 (bytecode) | 0.2 MB | 1,500 | 75 | **0.002s** | 0.012s | 0.010s | 0.409s | **6.4x faster** | **5.5x faster** |
+| test_2 (bytecode) | 147 MB | 22,070 | 677 | **1.119s** | 1.091s | 4.351s | 1.773s | ~tied | **3.9x faster** |
+| test_3 (uncompressed) | 1.1 GB | 79,066 | 915 | 1.713s | **1.532s** | 6.390s | 2.635s | ~tied | **3.7x faster** |
+| test_4 (uncompressed) | 0.6 MB | 201 | 158 | **0.015s** | 0.023s | 0.020s | 0.424s | **1.6x faster** | **1.3x faster** |
+| test_5 (uncompressed) | 0.6 MB | 203 | 136 | **0.003s** | 0.013s | 0.014s | 0.417s | **4.3x faster** | **4.8x faster** |
 
 - **vs pyreadstat**: 4–6x faster across all file sizes
-- **vs pyreadstat multiprocess**: ambers single-threaded beats pyreadstat with 4 workers
+- **vs pyreadstat multiprocess (4 workers)**: ambers single-threaded still faster on every file
 - **vs polars_readstat**: tied on large files, 2–6x faster on small/medium files (lower startup overhead)
-- No PyArrow dependency required (uses Arrow PyCapsule Interface)
+- No PyArrow dependency — uses Arrow PyCapsule Interface for zero-copy transfer
 
-*pyreadstat multiprocess returns pandas DataFrame; timing includes `pl.from_pandas()` conversion.*
+*pyreadstat multiprocess returns pandas; timing includes `pl.from_pandas()` conversion.*
+
+### Lazy Read with Pushdown
+
+`scan_sav()` returns a Polars LazyFrame. Unlike eager reads, it only reads the data you ask for:
+
+| File (size) | Full collect | Select 5 cols | Head 1000 rows | Select 5 + head 1000 |
+|-------------|------------:|-------------:|--------------:|--------------------:|
+| test_2 (147 MB, 22K × 677) | 1.282s | 0.478s (2.7x) | 0.205s (6.3x) | **0.160s (8.0x)** |
+| test_3 (1.1 GB, 79K × 915) | 1.668s | 0.822s (2.0x) | 0.031s (53.5x) | **0.022s (75.8x)** |
+
+On the 1.1 GB file, selecting 5 columns and 1000 rows completes in **22ms** — 76x faster than reading the full dataset.
 
 ## License
 
