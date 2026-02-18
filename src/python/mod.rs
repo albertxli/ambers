@@ -1188,6 +1188,9 @@ impl PySavBatchReader {
                     arrow::datatypes::DataType::Float64 => "Float64",
                     arrow::datatypes::DataType::Utf8
                     | arrow::datatypes::DataType::Utf8View => "String",
+                    arrow::datatypes::DataType::Date32 => "Date",
+                    arrow::datatypes::DataType::Timestamp(_, _) => "Datetime",
+                    arrow::datatypes::DataType::Duration(_) => "Duration",
                     _ => "Unknown",
                 };
                 (f.name().clone(), dtype.to_string())

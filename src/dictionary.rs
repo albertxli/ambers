@@ -280,7 +280,18 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
 
         // Rust type
         let rust_type = match &var.var_type {
-            VarType::Numeric => "f64".to_string(),
+            VarType::Numeric => {
+                match var
+                    .print_format
+                    .as_ref()
+                    .and_then(|f| f.format_type.temporal_kind())
+                {
+                    Some(TemporalKind::Date) => "Date32".to_string(),
+                    Some(TemporalKind::Timestamp) => "Timestamp[us]".to_string(),
+                    Some(TemporalKind::Duration) => "Duration[us]".to_string(),
+                    None => "f64".to_string(),
+                }
+            }
             VarType::String(_) => "String".to_string(),
         };
         meta.rust_variable_types.insert(name.clone(), rust_type);

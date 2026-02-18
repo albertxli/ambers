@@ -75,6 +75,9 @@ def scan_sav(path: str) -> tuple:
     dtype_map = {
         "Float64": pl.Float64,
         "String": pl.String,
+        "Date": pl.Date,
+        "Datetime": pl.Datetime("us"),
+        "Duration": pl.Duration("us"),
     }
     schema = pl.Schema(
         {

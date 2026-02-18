@@ -130,6 +130,32 @@ pub enum VarType {
     String(usize), // width in bytes
 }
 
+// -- Temporal conversion constants --
+
+/// Days from SPSS epoch (1582-10-14) to Unix epoch (1970-01-01).
+/// 12,219,379,200 seconds / 86,400 seconds-per-day = 141,428 days.
+pub const SPSS_EPOCH_OFFSET_DAYS: i64 = 141_428;
+
+/// Seconds from SPSS epoch (1582-10-14) to Unix epoch (1970-01-01).
+pub const SPSS_EPOCH_OFFSET_SECONDS: f64 = 12_219_379_200.0;
+
+/// Microseconds per second.
+pub const MICROS_PER_SECOND: f64 = 1_000_000.0;
+
+/// Seconds per day.
+pub const SECONDS_PER_DAY: f64 = 86_400.0;
+
+/// The Arrow temporal type category for an SPSS date/time format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TemporalKind {
+    /// Date-only → Arrow Date32 (days since Unix epoch).
+    Date,
+    /// Date+time → Arrow Timestamp(Microsecond, None).
+    Timestamp,
+    /// Elapsed time → Arrow Duration(Microsecond).
+    Duration,
+}
+
 /// SPSS print/write format type codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -264,6 +290,29 @@ impl FormatType {
         matches!(self, FormatType::A | FormatType::Ahex)
     }
 
+    /// Returns the temporal kind if this format should produce an Arrow temporal type.
+    /// Returns None for non-temporal formats and for Wkday/Month (integer codes).
+    pub fn temporal_kind(&self) -> Option<TemporalKind> {
+        match self {
+            FormatType::Date
+            | FormatType::ADate
+            | FormatType::JDate
+            | FormatType::EDate
+            | FormatType::SDate
+            | FormatType::Moyr
+            | FormatType::Qyr
+            | FormatType::Wkyr => Some(TemporalKind::Date),
+
+            FormatType::DateTime | FormatType::YmDhms => Some(TemporalKind::Timestamp),
+
+            FormatType::Time | FormatType::DTime | FormatType::MTime => {
+                Some(TemporalKind::Duration)
+            }
+
+            _ => None,
+        }
+    }
+
     /// Whether this format type is a date/time type (no decimals in display).
     pub fn is_date_time(&self) -> bool {
         matches!(
@@ -385,6 +434,76 @@ mod tests {
         assert_eq!(Compression::from_i32(1), Some(Compression::Bytecode));
         assert_eq!(Compression::from_i32(2), Some(Compression::Zlib));
         assert_eq!(Compression::from_i32(99), None);
+    }
+
+    #[test]
+    fn test_temporal_kind() {
+        // Date-only formats
+        assert_eq!(FormatType::Date.temporal_kind(), Some(TemporalKind::Date));
+        assert_eq!(FormatType::ADate.temporal_kind(), Some(TemporalKind::Date));
+        assert_eq!(FormatType::JDate.temporal_kind(), Some(TemporalKind::Date));
+        assert_eq!(FormatType::EDate.temporal_kind(), Some(TemporalKind::Date));
+        assert_eq!(FormatType::SDate.temporal_kind(), Some(TemporalKind::Date));
+        assert_eq!(FormatType::Moyr.temporal_kind(), Some(TemporalKind::Date));
+        assert_eq!(FormatType::Qyr.temporal_kind(), Some(TemporalKind::Date));
+        assert_eq!(FormatType::Wkyr.temporal_kind(), Some(TemporalKind::Date));
+
+        // Timestamp formats
+        assert_eq!(
+            FormatType::DateTime.temporal_kind(),
+            Some(TemporalKind::Timestamp)
+        );
+        assert_eq!(
+            FormatType::YmDhms.temporal_kind(),
+            Some(TemporalKind::Timestamp)
+        );
+
+        // Duration formats
+        assert_eq!(
+            FormatType::Time.temporal_kind(),
+            Some(TemporalKind::Duration)
+        );
+        assert_eq!(
+            FormatType::DTime.temporal_kind(),
+            Some(TemporalKind::Duration)
+        );
+        assert_eq!(
+            FormatType::MTime.temporal_kind(),
+            Some(TemporalKind::Duration)
+        );
+
+        // Non-temporal: Wkday, Month, plain numeric
+        assert_eq!(FormatType::Wkday.temporal_kind(), None);
+        assert_eq!(FormatType::Month.temporal_kind(), None);
+        assert_eq!(FormatType::F.temporal_kind(), None);
+        assert_eq!(FormatType::A.temporal_kind(), None);
+        assert_eq!(FormatType::Comma.temporal_kind(), None);
+    }
+
+    #[test]
+    fn test_temporal_conversions() {
+        // 1970-01-01 00:00:00 in SPSS seconds = 12,219,379,200
+        let spss_unix_epoch = SPSS_EPOCH_OFFSET_SECONDS;
+
+        // Date32: days since unix epoch → should be 0
+        let days = (spss_unix_epoch / SECONDS_PER_DAY - SPSS_EPOCH_OFFSET_DAYS as f64) as i32;
+        assert_eq!(days, 0);
+
+        // Timestamp: microseconds since unix epoch → should be 0
+        let micros =
+            ((spss_unix_epoch - SPSS_EPOCH_OFFSET_SECONDS) * MICROS_PER_SECOND) as i64;
+        assert_eq!(micros, 0);
+
+        // Duration: 3600 SPSS seconds = 1 hour = 3,600,000,000 microseconds
+        let dur_micros = (3600.0 * MICROS_PER_SECOND) as i64;
+        assert_eq!(dur_micros, 3_600_000_000);
+
+        // 2024-01-01: 19723 days after Unix epoch
+        // In SPSS: (141428 + 19723) days * 86400 = SPSS seconds
+        let days_2024 = SPSS_EPOCH_OFFSET_DAYS + 19723;
+        let spss_2024 = days_2024 as f64 * SECONDS_PER_DAY;
+        let date32_2024 = (spss_2024 / SECONDS_PER_DAY - SPSS_EPOCH_OFFSET_DAYS as f64) as i32;
+        assert_eq!(date32_2024, 19723); // 19723 days from 1970-01-01 to 2024-01-01
     }
 
     #[test]

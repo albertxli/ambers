@@ -1,6 +1,6 @@
 use std::io::{Read, Seek};
 
-use arrow::datatypes::{DataType, Field, Schema};
+use arrow::datatypes::{Field, Schema};
 use arrow::record_batch::RecordBatch;
 
 use crate::arrow_convert;
@@ -107,11 +107,7 @@ impl<R: Read + Seek> SavScanner<R> {
                 .iter()
                 .map(|&idx| {
                     let var = &self.dict.variables[idx];
-                    let data_type = match &var.var_type {
-                        crate::constants::VarType::Numeric => DataType::Float64,
-                        crate::constants::VarType::String(_) => DataType::Utf8View,
-                    };
-                    Field::new(&var.long_name, data_type, true)
+                    Field::new(&var.long_name, arrow_convert::var_to_arrow_type(var), true)
                 })
                 .collect();
             Schema::new(fields)
@@ -199,11 +195,11 @@ impl<R: Read + Seek> SavScanner<R> {
                         .iter()
                         .map(|&idx| {
                             let var = &self.dict.variables[idx];
-                            let data_type = match &var.var_type {
-                                crate::constants::VarType::Numeric => DataType::Float64,
-                                crate::constants::VarType::String(_) => DataType::Utf8View,
-                            };
-                            Field::new(&var.long_name, data_type, true)
+                            Field::new(
+                                &var.long_name,
+                                arrow_convert::var_to_arrow_type(var),
+                                true,
+                            )
                         })
                         .collect();
                     Schema::new(fields)

@@ -28,7 +28,8 @@ scan_sav_from_reader(reader, batch_size) -> Result<SavScanner<R>>
 - **Data output:** Arrow `RecordBatch` — zero-copy to Polars, DataFusion, DuckDB
 - **Metadata output:** `SpssMetadata` — IndexMap-based (insertion-ordered), all fields use `variable_` prefix
 - **Compression:** Uncompressed, bytecode (.sav), zlib (.zsav)
-- **Tests:** 37 unit tests + 2 doc-tests, verified against 7 real-world files (3–22,070 rows, 75–677 columns)
+- **Temporal types:** DATE→Date32, DATETIME→Timestamp(us), TIME→Duration(us). Wkday/Month stay Float64.
+- **Tests:** 39 unit tests + 1 integration test + 2 doc-tests, verified against 8 real-world files (3–22,070 rows, 75–677 columns)
 
 ### SpssMetadata fields
 
@@ -46,7 +47,7 @@ scan_sav_from_reader(reader, batch_size) -> Result<SavScanner<R>>
 | `variable_names` | `Vec<String>` | Ordered column names (defines Arrow schema order) |
 | `variable_labels` | `IndexMap<String, String>` | Variable name -> label |
 | `spss_variable_types` | `IndexMap<String, String>` | SPSS format strings: "F8.2", "A50" |
-| `rust_variable_types` | `IndexMap<String, String>` | Rust types: "f64", "String" |
+| `rust_variable_types` | `IndexMap<String, String>` | Rust types: "f64", "String", "Date32", "Timestamp[us]", "Duration[us]" |
 | `variable_value_labels` | `IndexMap<String, IndexMap<Value, String>>` | Per-variable value->label maps |
 | `variable_measure` | `IndexMap<String, Measure>` | Nominal / Ordinal / Scale (from file) |
 | `variable_alignment` | `IndexMap<String, Alignment>` | Left / Right / Center |
@@ -148,10 +149,10 @@ ambers/                             Repo root (single crate)
     lib.rs                          Public API + re-exports
     main.rs                         CLI binary for testing
     scanner.rs                      SavScanner: streaming batch reader (bulk I/O for uncompressed)
-    columnar.rs                     ColumnarBatchBuilder: StringViewBuilder + dedup, VLS pre-compute
-    arrow_convert.rs                Arrow Schema builder (Utf8View for strings)
+    columnar.rs                     ColumnarBatchBuilder: StringViewBuilder + dedup, VLS pre-compute, temporal builders + conversion
+    arrow_convert.rs                Arrow Schema builder (Utf8View for strings, temporal types for dates)
     error.rs                        SpssError enum (thiserror)
-    constants.rs                    SYSMIS, enums (Compression, Measure, Alignment, VarType)
+    constants.rs                    SYSMIS, enums (Compression, Measure, Alignment, VarType, TemporalKind), epoch constants
     io_utils.rs                     SavReader<R> with endian-aware reads
     header.rs                       176-byte file header parsing
     encoding.rs                     Code page -> encoding_rs mapping, decode_str_lossy returns Cow<str>
@@ -206,7 +207,7 @@ After type 999, data is stored as rows of 8-byte slots:
 | **Encoding priority** | Subtype 20 name > subtype 3 code page > default windows-1252 |
 | **Bytecode decompressor** | Stateful across rows — control blocks do NOT align to row boundaries |
 | **Very long strings** | Subtype 14 declares true width. `n_segments = ceil(width/252)`. Subsequent named segment variables marked as ghosts. |
-| **Arrow types** | Numeric -> Float64 (nullable), String -> Utf8View (StringViewArray with dedup). Date/time stay as Float64 with format in metadata. |
+| **Arrow types** | Numeric -> Float64 (nullable), String -> Utf8View (StringViewArray with dedup). Date formats -> Date32, DateTime/YmDhms -> Timestamp(Microsecond, None), Time/DTime/MTime -> Duration(Microsecond). Wkday/Month stay Float64. Non-finite values fall back to null. |
 | **Missing values** | SYSMIS -> Arrow null. User-defined missing ranges in metadata only (not nullified), matching pyreadstat behavior. |
 | **Endianness** | Detected from header `layout_code`. `SavReader` handles byte-swapping transparently. |
 | **No packed structs** | Fields read individually via `io_utils` helpers — safe, handles endian swapping. |
@@ -324,7 +325,6 @@ cargo run -- file.sav     # CLI test with any .sav file
 - ambers is designed to grow beyond SPSS — the name and architecture support adding readers/writers for other statistical formats (Stata .dta, SAS .sas7bdat, etc.)
 
 ### Future Improvements
-- Arrow temporal types for DATE, TIME, DATETIME formats (currently Float64)
 - `columns` / `row_limit` params on Python `read_sav()`
 - Real `.zsav` file testing
 
