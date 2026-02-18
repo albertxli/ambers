@@ -100,19 +100,22 @@ while let Some(batch) = scanner.next_batch()? {
 
 ## Performance
 
-Benchmarked on 5 real-world SPSS files (average of 5 runs, Windows, Python 3.13):
+Benchmarked on 5 real-world SPSS files (average of 5 runs, Windows, Python 3.13, 24-core machine):
 
-| File | Size | Rows | Cols | ambers read_sav | ambers scan_sav | polars_readstat | pyreadstat | ambers vs polars_readstat | ambers vs pyreadstat |
-|------|------|-----:|-----:|----------------:|----------------:|----------------:|-----------:|--------------------------:|---------------------:|
-| test_1 (bytecode) | 0.2 MB | 1,500 | 75 | **0.002s** | 0.003s | 0.011s | 0.010s | **5.3x faster** | **4.9x faster** |
-| test_2 (bytecode) | 147 MB | 22,070 | 677 | **1.154s** | 1.295s | 1.146s | 4.357s | ~tied | **3.8x faster** |
-| test_3 (uncompressed) | 1.1 GB | 79,066 | 915 | 1.853s | 1.898s | **1.735s** | 6.892s | ~tied | **3.7x faster** |
-| test_4 (uncompressed) | 0.6 MB | 201 | 158 | **0.020s** | 0.013s | 0.022s | 0.033s | **1.1x faster** | **1.7x faster** |
-| test_5 (uncompressed) | 0.6 MB | 203 | 136 | **0.002s** | 0.004s | 0.011s | 0.019s | **4.7x faster** | **7.8x faster** |
+| File | Size | Rows | Cols | ambers read_sav | ambers scan_sav | polars_readstat | pyreadstat | pyreadstat mp (4w) | ambers vs polars_readstat | ambers vs pyreadstat |
+|------|------|-----:|-----:|----------------:|----------------:|----------------:|-----------:|-------------------:|--------------------------:|---------------------:|
+| test_1 (bytecode) | 0.2 MB | 1,500 | 75 | **0.002s** | 0.002s | 0.011s | 0.010s | 0.386s | **5.9x faster** | **5.7x faster** |
+| test_2 (bytecode) | 147 MB | 22,070 | 677 | **0.934s** | 1.070s | 1.087s | 4.424s | 1.799s | **1.2x faster** | **4.7x faster** |
+| test_3 (uncompressed) | 1.1 GB | 79,066 | 915 | 1.747s | 1.844s | **1.592s** | 6.607s | 2.835s | ~tied | **3.8x faster** |
+| test_4 (uncompressed) | 0.6 MB | 201 | 158 | **0.017s** | 0.017s | 0.024s | 0.027s | 0.450s | **1.4x faster** | **1.5x faster** |
+| test_5 (uncompressed) | 0.6 MB | 203 | 136 | **0.003s** | 0.005s | 0.012s | 0.015s | 0.414s | **4.7x faster** | **5.8x faster** |
 
-- **vs pyreadstat**: 4–8x faster across all file sizes
-- **vs polars_readstat**: tied on large files, 5x faster on small/medium files (lower startup overhead)
+- **vs pyreadstat**: 4–6x faster across all file sizes
+- **vs pyreadstat multiprocess**: ambers single-threaded beats pyreadstat with 4 workers
+- **vs polars_readstat**: tied on large files, 2–6x faster on small/medium files (lower startup overhead)
 - No PyArrow dependency required (uses Arrow PyCapsule Interface)
+
+*pyreadstat multiprocess returns pandas DataFrame; timing includes `pl.from_pandas()` conversion.*
 
 ## License
 
