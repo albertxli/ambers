@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use encoding_rs::Encoding;
 
 use crate::error::{Result, SpssError};
@@ -83,16 +85,17 @@ pub fn decode_str(bytes: &[u8], encoding: &'static Encoding) -> Result<String> {
 }
 
 /// Decode a byte slice using the given encoding, never failing (lossy).
-pub fn decode_str_lossy(bytes: &[u8], encoding: &'static Encoding) -> String {
+/// Returns `Cow::Borrowed` for valid UTF-8, avoiding heap allocation.
+pub fn decode_str_lossy<'a>(bytes: &'a [u8], encoding: &'static Encoding) -> Cow<'a, str> {
     if encoding == encoding_rs::UTF_8 {
-        // Fast path: just validate UTF-8, no conversion needed
+        // Fast path: just validate UTF-8, zero-copy borrow
         match std::str::from_utf8(bytes) {
-            Ok(s) => return s.to_string(),
+            Ok(s) => return Cow::Borrowed(s),
             Err(_) => {} // fall through to encoding_rs for lossy decode
         }
     }
     let (decoded, _, _) = encoding.decode(bytes);
-    decoded.into_owned()
+    decoded
 }
 
 #[cfg(test)]

@@ -109,7 +109,7 @@ impl<R: Read + Seek> SavScanner<R> {
                     let var = &self.dict.variables[idx];
                     let data_type = match &var.var_type {
                         crate::constants::VarType::Numeric => DataType::Float64,
-                        crate::constants::VarType::String(_) => DataType::Utf8,
+                        crate::constants::VarType::String(_) => DataType::Utf8View,
                     };
                     Field::new(&var.long_name, data_type, true)
                 })
@@ -201,7 +201,7 @@ impl<R: Read + Seek> SavScanner<R> {
                             let var = &self.dict.variables[idx];
                             let data_type = match &var.var_type {
                                 crate::constants::VarType::Numeric => DataType::Float64,
-                                crate::constants::VarType::String(_) => DataType::Utf8,
+                                crate::constants::VarType::String(_) => DataType::Utf8View,
                             };
                             Field::new(&var.long_name, data_type, true)
                         })
@@ -255,29 +255,27 @@ impl<R: Read + Seek> SavScanner<R> {
         match &mut self.state {
             ScanState::Uncompressed => {
                 let slots_per_row = self.dict.header.nominal_case_size as usize;
+                let row_bytes = slots_per_row * 8;
+                let mut row_buf = vec![0u8; row_bytes]; // allocate once, reuse
                 for _ in 0..n {
-                    let mut raw_slots = Vec::with_capacity(slots_per_row);
-                    for _ in 0..slots_per_row {
-                        match self.sav_reader.read_8_bytes() {
-                            Ok(bytes) => raw_slots.push(bytes),
-                            Err(_) => {
-                                if raw_slots.is_empty() {
-                                    // Clean EOF
-                                    return if builder.len() > 0 {
-                                        Ok(Some(builder.finish()?))
-                                    } else {
-                                        Ok(None)
-                                    };
-                                } else {
-                                    return Err(SpssError::TruncatedFile {
-                                        expected: slots_per_row * 8,
-                                        actual: raw_slots.len() * 8,
-                                    });
-                                }
-                            }
+                    match self.sav_reader.inner_mut().read_exact(&mut row_buf) {
+                        Ok(()) => {
+                            // Safe: [u8; 8] has alignment 1, buffer is exactly slots_per_row * 8
+                            let raw_slots: &[[u8; 8]] = unsafe {
+                                std::slice::from_raw_parts(
+                                    row_buf.as_ptr() as *const [u8; 8],
+                                    slots_per_row,
+                                )
+                            };
+                            builder.push_raw_row(raw_slots);
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                            break;
+                        }
+                        Err(e) => {
+                            return Err(e.into());
                         }
                     }
-                    builder.push_raw_row(&raw_slots);
                 }
             }
             ScanState::Bytecode { data, decompressor }

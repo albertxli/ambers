@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, Float64Builder, StringBuilder};
+use arrow::array::{ArrayRef, Float64Builder, StringViewBuilder};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use encoding_rs::Encoding;
@@ -18,6 +18,11 @@ use crate::error::Result;
 use crate::io_utils;
 use crate::variable::VariableRecord;
 
+/// Pre-computed info for one VLS segment (how many 8-byte slots to read).
+struct VlsSegmentInfo {
+    useful_slots: usize,
+}
+
 /// Pre-computed mapping from a visible variable to its slot position and type.
 struct ColumnMapping {
     /// Starting slot index in the raw slot array.
@@ -26,12 +31,14 @@ struct ColumnMapping {
     var_type: VarType,
     /// Number of segments for very long strings (1 for normal vars).
     n_segments: usize,
+    /// Pre-computed VLS segment layout (empty for n_segments <= 1).
+    vls_layout: Vec<VlsSegmentInfo>,
 }
 
 /// Arrow column builder (typed).
 enum ColBuilder {
     Float64(Float64Builder),
-    Str(StringBuilder),
+    Str(StringViewBuilder),
 }
 
 /// Builds an Arrow RecordBatch by pushing values directly from decompressed
@@ -66,10 +73,33 @@ impl ColumnarBatchBuilder {
         let mut fields = Vec::with_capacity(vars.len());
 
         for var in &vars {
+            // Pre-compute VLS segment layout
+            let vls_layout = if var.n_segments > 1 {
+                let width = match &var.var_type {
+                    VarType::String(w) => *w,
+                    _ => 0,
+                };
+                (0..var.n_segments)
+                    .map(|seg| {
+                        let seg_useful = if seg < var.n_segments - 1 {
+                            252
+                        } else {
+                            width - (var.n_segments - 1) * 252
+                        };
+                        VlsSegmentInfo {
+                            useful_slots: (seg_useful + 7) / 8,
+                        }
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
             mappings.push(ColumnMapping {
                 slot_index: var.slot_index,
                 var_type: var.var_type.clone(),
                 n_segments: var.n_segments,
+                vls_layout,
             });
 
             match &var.var_type {
@@ -78,11 +108,11 @@ impl ColumnarBatchBuilder {
                     fields.push(Field::new(&var.long_name, DataType::Float64, true));
                 }
                 VarType::String(_) => {
-                    builders.push(ColBuilder::Str(StringBuilder::with_capacity(
-                        capacity,
-                        capacity * 32,
-                    )));
-                    fields.push(Field::new(&var.long_name, DataType::Utf8, true));
+                    // StringViewBuilder with deduplication for categorical SPSS data
+                    let sb = StringViewBuilder::new()
+                        .with_deduplicate_strings();
+                    builders.push(ColBuilder::Str(sb));
+                    fields.push(Field::new(&var.long_name, DataType::Utf8View, true));
                 }
             }
         }
@@ -121,6 +151,7 @@ impl ColumnarBatchBuilder {
                         mapping.slot_index,
                         *width,
                         mapping.n_segments,
+                        &mapping.vls_layout,
                         self.file_encoding,
                     );
                 }
@@ -153,6 +184,7 @@ impl ColumnarBatchBuilder {
                         mapping.slot_index,
                         *width,
                         mapping.n_segments,
+                        &mapping.vls_layout,
                         self.file_encoding,
                     );
                 }
@@ -236,16 +268,17 @@ fn push_numeric_from_raw(builder: &mut Float64Builder, raw_slots: &[[u8; 8]], sl
 // String push helpers
 // ---------------------------------------------------------------------------
 
-/// Assemble a string from SlotValues and push directly into a StringBuilder.
+/// Assemble a string from SlotValues and push directly into a StringViewBuilder.
 /// Uses `string_buf` as a reusable byte buffer to avoid per-string allocation.
 #[inline]
 fn push_string_from_slot_values(
-    builder: &mut StringBuilder,
+    builder: &mut StringViewBuilder,
     string_buf: &mut Vec<u8>,
     slots: &[SlotValue],
     start_slot: usize,
     width: usize,
     n_segments: usize,
+    vls_layout: &[VlsSegmentInfo],
     file_encoding: &'static Encoding,
 ) {
     string_buf.clear();
@@ -260,41 +293,34 @@ fn push_string_from_slot_values(
             }
         }
     } else {
-        // Very long string: read across segments
+        // Very long string: use pre-computed segment layout
         let mut slot = start_slot;
-        for seg in 0..n_segments {
-            let seg_useful = if seg < n_segments - 1 {
-                252
-            } else {
-                width - (n_segments - 1) * 252
-            };
-            let seg_slots = 32; // ceil(255/8)
-            let useful_slots = (seg_useful + 7) / 8;
-
-            for i in 0..useful_slots {
+        for seg_info in vls_layout {
+            for i in 0..seg_info.useful_slots {
                 if slot + i < slots.len() {
                     push_slot_bytes(string_buf, &slots[slot + i]);
                 }
             }
-            slot += seg_slots;
+            slot += 32; // seg_slots is always 32 (ceil(255/8))
         }
     }
 
     string_buf.truncate(width);
     let trimmed = io_utils::trim_trailing_padding(string_buf);
     let decoded = encoding::decode_str_lossy(trimmed, file_encoding);
-    builder.append_value(&decoded);
+    builder.append_value(&*decoded);
 }
 
-/// Assemble a string from raw 8-byte slots and push directly into a StringBuilder.
+/// Assemble a string from raw 8-byte slots and push directly into a StringViewBuilder.
 #[inline]
 fn push_string_from_raw_slots(
-    builder: &mut StringBuilder,
+    builder: &mut StringViewBuilder,
     string_buf: &mut Vec<u8>,
     raw_slots: &[[u8; 8]],
     start_slot: usize,
     width: usize,
     n_segments: usize,
+    vls_layout: &[VlsSegmentInfo],
     file_encoding: &'static Encoding,
 ) {
     string_buf.clear();
@@ -308,29 +334,22 @@ fn push_string_from_raw_slots(
             }
         }
     } else {
+        // Very long string: use pre-computed segment layout
         let mut slot = start_slot;
-        for seg in 0..n_segments {
-            let seg_useful = if seg < n_segments - 1 {
-                252
-            } else {
-                width - (n_segments - 1) * 252
-            };
-            let seg_slots = 32;
-            let useful_slots = (seg_useful + 7) / 8;
-
-            for i in 0..useful_slots {
+        for seg_info in vls_layout {
+            for i in 0..seg_info.useful_slots {
                 if slot + i < raw_slots.len() {
                     string_buf.extend_from_slice(&raw_slots[slot + i]);
                 }
             }
-            slot += seg_slots;
+            slot += 32;
         }
     }
 
     string_buf.truncate(width);
     let trimmed = io_utils::trim_trailing_padding(string_buf);
     let decoded = encoding::decode_str_lossy(trimmed, file_encoding);
-    builder.append_value(&decoded);
+    builder.append_value(&*decoded);
 }
 
 /// Extract 8 bytes from a SlotValue into a byte buffer.

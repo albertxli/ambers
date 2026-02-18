@@ -11,7 +11,7 @@ pub fn build_schema(dict: &ResolvedDictionary) -> Schema {
         .map(|var| {
             let data_type = match &var.var_type {
                 VarType::Numeric => DataType::Float64,
-                VarType::String(_) => DataType::Utf8,
+                VarType::String(_) => DataType::Utf8View,
             };
             Field::new(&var.long_name, data_type, true) // all nullable
         })

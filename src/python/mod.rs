@@ -1186,7 +1186,8 @@ impl PySavBatchReader {
             .map(|f| {
                 let dtype = match f.data_type() {
                     arrow::datatypes::DataType::Float64 => "Float64",
-                    arrow::datatypes::DataType::Utf8 => "String",
+                    arrow::datatypes::DataType::Utf8
+                    | arrow::datatypes::DataType::Utf8View => "String",
                     _ => "Unknown",
                 };
                 (f.name().clone(), dtype.to_string())

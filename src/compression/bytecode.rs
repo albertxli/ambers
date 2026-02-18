@@ -77,13 +77,14 @@ impl BytecodeDecompressor {
             self.control_idx += 1;
 
             match code {
+                // Hot path first: codes 1..=251 are small numeric values
+                1..=251 => {
+                    let value = (code as f64) - self.bias;
+                    slots.push(SlotValue::Numeric(value));
+                }
                 COMPRESS_SKIP => {
                     // Padding byte at end of data -- skip, don't produce a slot
                     continue;
-                }
-                COMPRESS_END_OF_FILE => {
-                    self.eof = true;
-                    return Ok(slots);
                 }
                 COMPRESS_RAW_FOLLOWS => {
                     // Next 8 bytes are uncompressed data
@@ -104,10 +105,9 @@ impl BytecodeDecompressor {
                 COMPRESS_SYSMIS => {
                     slots.push(SlotValue::Sysmis);
                 }
-                _ => {
-                    // Codes 1..=251: numeric value = (code - bias)
-                    let value = (code as f64) - self.bias;
-                    slots.push(SlotValue::Numeric(value));
+                COMPRESS_END_OF_FILE => {
+                    self.eof = true;
+                    return Ok(slots);
                 }
             }
         }

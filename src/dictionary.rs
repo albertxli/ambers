@@ -244,7 +244,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
     meta.notes = raw
         .document_lines
         .iter()
-        .map(|line| encoding::decode_str_lossy(line, file_encoding))
+        .map(|line| encoding::decode_str_lossy(line, file_encoding).into_owned())
         .collect();
 
     // Build per-variable metadata
@@ -354,13 +354,13 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
                                 crate::io_utils::trim_trailing_padding(&bytes),
                                 file_encoding,
                             );
-                            Value::String(s)
+                            Value::String(s.into_owned())
                         }
                         RawValue::String(bytes) => {
                             Value::String(encoding::decode_str_lossy(
                                 crate::io_utils::trim_trailing_padding(bytes),
                                 file_encoding,
-                            ))
+                            ).into_owned())
                         }
                     }
                 } else {
@@ -394,7 +394,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
                 let value = Value::String(encoding::decode_str_lossy(
                     crate::io_utils::trim_trailing_padding(value_bytes),
                     file_encoding,
-                ));
+                ).into_owned());
                 let label = encoding::decode_str_lossy(label_bytes, file_encoding)
                     .trim_end_matches(|c: char| c == ' ' || c == '\u{FFFD}')
                     .to_string();
@@ -418,7 +418,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
                     encoding::decode_str_lossy(
                         crate::io_utils::trim_trailing_padding(v),
                         file_encoding,
-                    ),
+                    ).into_owned(),
                 )
             })
             .collect();
