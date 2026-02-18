@@ -2,12 +2,17 @@
 //!
 //! Eliminates the `Vec<Vec<CellValue>>` intermediate by pushing decoded values
 //! directly from decompressed slots into pre-allocated Arrow column builders.
+//!
+//! **Performance rule:** The hot paths (`push_slot_row`, `push_raw_chunk`) must
+//! stay minimal — only Float64 + String. Temporal conversion happens in `finish()`
+//! as a post-processing step. Never add new ColBuilder variants or match arms to
+//! the hot loops; it causes icache pressure that slows ALL columns.
 
 use std::sync::Arc;
 
 use arrow::array::{
-    ArrayRef, Date32Builder, DurationMicrosecondBuilder, Float64Builder, StringViewBuilder,
-    TimestampMicrosecondBuilder,
+    Array, ArrayRef, Date32Array, DurationMicrosecondArray, Float64Array, Float64Builder,
+    StringViewBuilder, TimestampMicrosecondArray,
 };
 use arrow::datatypes::{Field, Schema};
 use arrow::record_batch::RecordBatch;
@@ -41,29 +46,31 @@ struct ColumnMapping {
     n_segments: usize,
     /// Pre-computed VLS segment layout (empty for n_segments <= 1).
     vls_layout: Vec<VlsSegmentInfo>,
-    /// Temporal kind for numeric columns (None = plain Float64).
-    temporal_kind: Option<TemporalKind>,
 }
 
-/// Arrow column builder (typed).
+/// Arrow column builder (typed). Only two variants — keeps hot path icache small.
 enum ColBuilder {
     Float64(Float64Builder),
     Str(StringViewBuilder),
-    Date32(Date32Builder),
-    TimestampMicro(TimestampMicrosecondBuilder),
-    DurationMicro(DurationMicrosecondBuilder),
 }
 
 /// Builds an Arrow RecordBatch by pushing values directly from decompressed
 /// slots into columnar builders, skipping the `CellValue` intermediate.
+///
+/// Temporal columns (DATE, DATETIME, TIME) are read as Float64 in the hot path,
+/// then converted to proper Arrow temporal types in `finish()`.
 pub struct ColumnarBatchBuilder {
     mappings: Vec<ColumnMapping>,
     builders: Vec<ColBuilder>,
     file_encoding: &'static Encoding,
+    /// The output schema (with temporal types for date/time columns).
     schema: Arc<Schema>,
     rows_appended: usize,
     /// Reusable byte buffer for string assembly (avoids per-string allocation).
     string_buf: Vec<u8>,
+    /// Column indices that need temporal conversion in finish().
+    /// Empty for files with no date/time columns — zero overhead.
+    temporal_columns: Vec<(usize, TemporalKind)>,
 }
 
 impl ColumnarBatchBuilder {
@@ -84,8 +91,9 @@ impl ColumnarBatchBuilder {
         let mut mappings = Vec::with_capacity(vars.len());
         let mut builders = Vec::with_capacity(vars.len());
         let mut fields = Vec::with_capacity(vars.len());
+        let mut temporal_columns = Vec::new();
 
-        for var in &vars {
+        for (col_idx, var) in vars.iter().enumerate() {
             // Pre-compute VLS segment layout
             let vls_layout = if var.n_segments > 1 {
                 let width = match &var.var_type {
@@ -108,49 +116,29 @@ impl ColumnarBatchBuilder {
                 Vec::new()
             };
 
-            let temporal_kind = match &var.var_type {
-                VarType::Numeric => var
-                    .print_format
-                    .as_ref()
-                    .and_then(|f| f.format_type.temporal_kind()),
-                VarType::String(_) => None,
-            };
-
             mappings.push(ColumnMapping {
                 slot_index: var.slot_index,
                 var_type: var.var_type.clone(),
                 n_segments: var.n_segments,
                 vls_layout,
-                temporal_kind,
             });
 
-            let data_type = arrow_convert::var_to_arrow_type(var);
+            // Output schema uses temporal types; builders always use Float64.
+            let output_type = arrow_convert::var_to_arrow_type(var);
+            fields.push(Field::new(&var.long_name, output_type, true));
 
             match &var.var_type {
                 VarType::Numeric => {
-                    match temporal_kind {
-                        None => {
-                            builders.push(ColBuilder::Float64(
-                                Float64Builder::with_capacity(capacity),
-                            ));
-                        }
-                        Some(TemporalKind::Date) => {
-                            builders.push(ColBuilder::Date32(
-                                Date32Builder::with_capacity(capacity),
-                            ));
-                        }
-                        Some(TemporalKind::Timestamp) => {
-                            builders.push(ColBuilder::TimestampMicro(
-                                TimestampMicrosecondBuilder::with_capacity(capacity),
-                            ));
-                        }
-                        Some(TemporalKind::Duration) => {
-                            builders.push(ColBuilder::DurationMicro(
-                                DurationMicrosecondBuilder::with_capacity(capacity),
-                            ));
-                        }
+                    // Record temporal columns for post-processing in finish()
+                    if let Some(kind) = var
+                        .print_format
+                        .as_ref()
+                        .and_then(|f| f.format_type.temporal_kind())
+                    {
+                        temporal_columns.push((col_idx, kind));
                     }
-                    fields.push(Field::new(&var.long_name, data_type, true));
+                    // ALL numerics use Float64Builder — keeps hot path minimal
+                    builders.push(ColBuilder::Float64(Float64Builder::with_capacity(capacity)));
                 }
                 VarType::String(_) => {
                     // Only enable dedup for categorical columns (those with value labels).
@@ -165,7 +153,6 @@ impl ColumnarBatchBuilder {
                         StringViewBuilder::new()
                     };
                     builders.push(ColBuilder::Str(sb));
-                    fields.push(Field::new(&var.long_name, data_type, true));
                 }
             }
         }
@@ -177,6 +164,7 @@ impl ColumnarBatchBuilder {
             schema: Arc::new(Schema::new(fields)),
             rows_appended: 0,
             string_buf: Vec::with_capacity(1024),
+            temporal_columns,
         }
     }
 
@@ -185,36 +173,13 @@ impl ColumnarBatchBuilder {
     pub fn push_slot_row(&mut self, slots: &[SlotValue]) {
         for (i, mapping) in self.mappings.iter().enumerate() {
             match &mapping.var_type {
-                VarType::Numeric => match mapping.temporal_kind {
-                    None => {
-                        let b = match &mut self.builders[i] {
-                            ColBuilder::Float64(b) => b,
-                            _ => unreachable!(),
-                        };
-                        push_numeric_from_slot(b, slots, mapping.slot_index);
-                    }
-                    Some(TemporalKind::Date) => {
-                        let b = match &mut self.builders[i] {
-                            ColBuilder::Date32(b) => b,
-                            _ => unreachable!(),
-                        };
-                        push_date32_from_slot(b, slots, mapping.slot_index);
-                    }
-                    Some(TemporalKind::Timestamp) => {
-                        let b = match &mut self.builders[i] {
-                            ColBuilder::TimestampMicro(b) => b,
-                            _ => unreachable!(),
-                        };
-                        push_timestamp_from_slot(b, slots, mapping.slot_index);
-                    }
-                    Some(TemporalKind::Duration) => {
-                        let b = match &mut self.builders[i] {
-                            ColBuilder::DurationMicro(b) => b,
-                            _ => unreachable!(),
-                        };
-                        push_duration_from_slot(b, slots, mapping.slot_index);
-                    }
-                },
+                VarType::Numeric => {
+                    let builder = match &mut self.builders[i] {
+                        ColBuilder::Float64(b) => b,
+                        _ => unreachable!(),
+                    };
+                    push_numeric_from_slot(builder, slots, mapping.slot_index);
+                }
                 VarType::String(width) => {
                     let builder = match &mut self.builders[i] {
                         ColBuilder::Str(b) => b,
@@ -257,8 +222,8 @@ impl ColumnarBatchBuilder {
                 .enumerate()
                 .for_each(|(i, builder)| {
                     let mapping = &mappings[i];
-                    match (&mapping.var_type, &mapping.temporal_kind, builder) {
-                        (VarType::Numeric, None, ColBuilder::Float64(b)) => {
+                    match (&mapping.var_type, builder) {
+                        (VarType::Numeric, ColBuilder::Float64(b)) => {
                             let slot_offset = mapping.slot_index * 8;
                             for row in 0..num_rows {
                                 let offset = row * row_bytes + slot_offset;
@@ -272,66 +237,7 @@ impl ColumnarBatchBuilder {
                                 }
                             }
                         }
-                        (VarType::Numeric, Some(TemporalKind::Date), ColBuilder::Date32(b)) => {
-                            let slot_offset = mapping.slot_index * 8;
-                            for row in 0..num_rows {
-                                let offset = row * row_bytes + slot_offset;
-                                let val = f64::from_le_bytes(
-                                    chunk[offset..offset + 8].try_into().unwrap(),
-                                );
-                                if is_sysmis(val) {
-                                    b.append_null();
-                                } else {
-                                    match spss_to_date32(val) {
-                                        Some(d) => b.append_value(d),
-                                        None => b.append_null(),
-                                    }
-                                }
-                            }
-                        }
-                        (
-                            VarType::Numeric,
-                            Some(TemporalKind::Timestamp),
-                            ColBuilder::TimestampMicro(b),
-                        ) => {
-                            let slot_offset = mapping.slot_index * 8;
-                            for row in 0..num_rows {
-                                let offset = row * row_bytes + slot_offset;
-                                let val = f64::from_le_bytes(
-                                    chunk[offset..offset + 8].try_into().unwrap(),
-                                );
-                                if is_sysmis(val) {
-                                    b.append_null();
-                                } else {
-                                    match spss_to_timestamp_micros(val) {
-                                        Some(ts) => b.append_value(ts),
-                                        None => b.append_null(),
-                                    }
-                                }
-                            }
-                        }
-                        (
-                            VarType::Numeric,
-                            Some(TemporalKind::Duration),
-                            ColBuilder::DurationMicro(b),
-                        ) => {
-                            let slot_offset = mapping.slot_index * 8;
-                            for row in 0..num_rows {
-                                let offset = row * row_bytes + slot_offset;
-                                let val = f64::from_le_bytes(
-                                    chunk[offset..offset + 8].try_into().unwrap(),
-                                );
-                                if is_sysmis(val) {
-                                    b.append_null();
-                                } else {
-                                    match spss_to_duration_micros(val) {
-                                        Some(d) => b.append_value(d),
-                                        None => b.append_null(),
-                                    }
-                                }
-                            }
-                        }
-                        (VarType::String(width), _, ColBuilder::Str(b)) => {
+                        (VarType::String(width), ColBuilder::Str(b)) => {
                             // Each thread gets its own string buffer
                             let mut local_string_buf = Vec::with_capacity(1024);
                             for row in 0..num_rows {
@@ -360,8 +266,8 @@ impl ColumnarBatchBuilder {
         } else {
             // Sequential: small chunks (lazy head, small files)
             for (i, mapping) in mappings.iter().enumerate() {
-                match (&mapping.var_type, &mapping.temporal_kind) {
-                    (VarType::Numeric, None) => {
+                match &mapping.var_type {
+                    VarType::Numeric => {
                         let builder = match &mut self.builders[i] {
                             ColBuilder::Float64(b) => b,
                             _ => unreachable!(),
@@ -379,70 +285,7 @@ impl ColumnarBatchBuilder {
                             }
                         }
                     }
-                    (VarType::Numeric, Some(TemporalKind::Date)) => {
-                        let builder = match &mut self.builders[i] {
-                            ColBuilder::Date32(b) => b,
-                            _ => unreachable!(),
-                        };
-                        let slot_offset = mapping.slot_index * 8;
-                        for row in 0..num_rows {
-                            let offset = row * row_bytes + slot_offset;
-                            let val = f64::from_le_bytes(
-                                chunk[offset..offset + 8].try_into().unwrap(),
-                            );
-                            if is_sysmis(val) {
-                                builder.append_null();
-                            } else {
-                                match spss_to_date32(val) {
-                                    Some(d) => builder.append_value(d),
-                                    None => builder.append_null(),
-                                }
-                            }
-                        }
-                    }
-                    (VarType::Numeric, Some(TemporalKind::Timestamp)) => {
-                        let builder = match &mut self.builders[i] {
-                            ColBuilder::TimestampMicro(b) => b,
-                            _ => unreachable!(),
-                        };
-                        let slot_offset = mapping.slot_index * 8;
-                        for row in 0..num_rows {
-                            let offset = row * row_bytes + slot_offset;
-                            let val = f64::from_le_bytes(
-                                chunk[offset..offset + 8].try_into().unwrap(),
-                            );
-                            if is_sysmis(val) {
-                                builder.append_null();
-                            } else {
-                                match spss_to_timestamp_micros(val) {
-                                    Some(ts) => builder.append_value(ts),
-                                    None => builder.append_null(),
-                                }
-                            }
-                        }
-                    }
-                    (VarType::Numeric, Some(TemporalKind::Duration)) => {
-                        let builder = match &mut self.builders[i] {
-                            ColBuilder::DurationMicro(b) => b,
-                            _ => unreachable!(),
-                        };
-                        let slot_offset = mapping.slot_index * 8;
-                        for row in 0..num_rows {
-                            let offset = row * row_bytes + slot_offset;
-                            let val = f64::from_le_bytes(
-                                chunk[offset..offset + 8].try_into().unwrap(),
-                            );
-                            if is_sysmis(val) {
-                                builder.append_null();
-                            } else {
-                                match spss_to_duration_micros(val) {
-                                    Some(d) => builder.append_value(d),
-                                    None => builder.append_null(),
-                                }
-                            }
-                        }
-                    }
-                    (VarType::String(width), _) => {
+                    VarType::String(width) => {
                         let builder = match &mut self.builders[i] {
                             ColBuilder::Str(b) => b,
                             _ => unreachable!(),
@@ -475,20 +318,30 @@ impl ColumnarBatchBuilder {
     }
 
     /// Finish building and return the RecordBatch.
+    ///
+    /// Temporal columns are converted from Float64 to their proper Arrow types
+    /// here, outside the hot path. This keeps the read loops fast for all columns.
     pub fn finish(self) -> Result<RecordBatch> {
-        let columns: Vec<ArrayRef> = self
+        let mut columns: Vec<ArrayRef> = self
             .builders
             .into_iter()
             .map(|b| -> ArrayRef {
                 match b {
                     ColBuilder::Float64(mut b) => Arc::new(b.finish()),
                     ColBuilder::Str(mut b) => Arc::new(b.finish()),
-                    ColBuilder::Date32(mut b) => Arc::new(b.finish()),
-                    ColBuilder::TimestampMicro(mut b) => Arc::new(b.finish()),
-                    ColBuilder::DurationMicro(mut b) => Arc::new(b.finish()),
                 }
             })
             .collect();
+
+        // Post-process: convert temporal Float64 columns to proper Arrow types.
+        // This is O(n) per temporal column, typically 0-5 columns out of hundreds.
+        for &(col_idx, kind) in &self.temporal_columns {
+            let float_arr = columns[col_idx]
+                .as_any()
+                .downcast_ref::<Float64Array>()
+                .expect("temporal column should be Float64Array");
+            columns[col_idx] = convert_float64_to_temporal(float_arr, kind);
+        }
 
         let batch = RecordBatch::try_new(self.schema, columns)?;
         Ok(batch)
@@ -501,39 +354,43 @@ impl ColumnarBatchBuilder {
 }
 
 // ---------------------------------------------------------------------------
-// Temporal conversion helpers
+// Temporal post-processing (runs in finish(), NOT in hot path)
 // ---------------------------------------------------------------------------
 
-/// Convert SPSS seconds-since-1582 to Date32 (days since Unix epoch).
-/// Returns None on non-finite values (fallback to null).
-#[inline]
-fn spss_to_date32(spss_seconds: f64) -> Option<i32> {
-    if !spss_seconds.is_finite() {
-        return None;
-    }
-    let days = spss_seconds / SECONDS_PER_DAY - SPSS_EPOCH_OFFSET_DAYS as f64;
-    Some(days as i32)
-}
+/// Convert a Float64Array of SPSS numeric values to the appropriate Arrow
+/// temporal type. Reuses the null bitmap from the source array directly.
+#[inline(never)]
+fn convert_float64_to_temporal(arr: &Float64Array, kind: TemporalKind) -> ArrayRef {
+    let nulls = arr.nulls().cloned();
+    let values = arr.values();
 
-/// Convert SPSS seconds-since-1582 to Timestamp microseconds since Unix epoch.
-/// Returns None on non-finite values (fallback to null).
-#[inline]
-fn spss_to_timestamp_micros(spss_seconds: f64) -> Option<i64> {
-    if !spss_seconds.is_finite() {
-        return None;
+    match kind {
+        TemporalKind::Date => {
+            let converted: Vec<i32> = values
+                .iter()
+                .map(|&v| {
+                    (v / SECONDS_PER_DAY - SPSS_EPOCH_OFFSET_DAYS as f64) as i32
+                })
+                .collect();
+            Arc::new(Date32Array::new(converted.into(), nulls))
+        }
+        TemporalKind::Timestamp => {
+            let converted: Vec<i64> = values
+                .iter()
+                .map(|&v| {
+                    ((v - SPSS_EPOCH_OFFSET_SECONDS) * MICROS_PER_SECOND) as i64
+                })
+                .collect();
+            Arc::new(TimestampMicrosecondArray::new(converted.into(), nulls))
+        }
+        TemporalKind::Duration => {
+            let converted: Vec<i64> = values
+                .iter()
+                .map(|&v| (v * MICROS_PER_SECOND) as i64)
+                .collect();
+            Arc::new(DurationMicrosecondArray::new(converted.into(), nulls))
+        }
     }
-    let unix_seconds = spss_seconds - SPSS_EPOCH_OFFSET_SECONDS;
-    Some((unix_seconds * MICROS_PER_SECOND) as i64)
-}
-
-/// Convert SPSS elapsed seconds to Duration microseconds.
-/// Returns None on non-finite values (fallback to null).
-#[inline]
-fn spss_to_duration_micros(spss_seconds: f64) -> Option<i64> {
-    if !spss_seconds.is_finite() {
-        return None;
-    }
-    Some((spss_seconds * MICROS_PER_SECOND) as i64)
 }
 
 // ---------------------------------------------------------------------------
@@ -566,68 +423,6 @@ fn push_numeric_from_slot(builder: &mut Float64Builder, slots: &[SlotValue], slo
                 builder.append_value(val);
             }
         }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Temporal push helpers (compressed path)
-// ---------------------------------------------------------------------------
-
-/// Extract an f64 from a slot, returning None for SYSMIS/EOF/Spaces.
-#[inline]
-fn extract_f64_from_slot(slots: &[SlotValue], slot_idx: usize) -> Option<f64> {
-    if slot_idx >= slots.len() {
-        return None;
-    }
-    match &slots[slot_idx] {
-        SlotValue::Numeric(v) => {
-            if is_sysmis(*v) {
-                None
-            } else {
-                Some(*v)
-            }
-        }
-        SlotValue::Sysmis | SlotValue::EndOfFile | SlotValue::Spaces => None,
-        SlotValue::Raw(bytes) => {
-            let val = f64::from_le_bytes(*bytes);
-            if is_sysmis(val) {
-                None
-            } else {
-                Some(val)
-            }
-        }
-    }
-}
-
-#[inline]
-fn push_date32_from_slot(builder: &mut Date32Builder, slots: &[SlotValue], slot_idx: usize) {
-    match extract_f64_from_slot(slots, slot_idx).and_then(spss_to_date32) {
-        Some(d) => builder.append_value(d),
-        None => builder.append_null(),
-    }
-}
-
-#[inline]
-fn push_timestamp_from_slot(
-    builder: &mut TimestampMicrosecondBuilder,
-    slots: &[SlotValue],
-    slot_idx: usize,
-) {
-    match extract_f64_from_slot(slots, slot_idx).and_then(spss_to_timestamp_micros) {
-        Some(ts) => builder.append_value(ts),
-        None => builder.append_null(),
-    }
-}
-
-#[inline]
-fn push_duration_from_slot(
-    builder: &mut DurationMicrosecondBuilder,
-    slots: &[SlotValue],
-    slot_idx: usize,
-) {
-    match extract_f64_from_slot(slots, slot_idx).and_then(spss_to_duration_micros) {
-        Some(d) => builder.append_value(d),
-        None => builder.append_null(),
     }
 }
 

@@ -4,6 +4,17 @@
 
 ---
 
+# Performance Rules (CRITICAL)
+
+Speed is the #1 priority. ambers must be faster than polars_readstat on all files.
+
+- **NEVER add new `ColBuilder` enum variants or match arms to the hot loops** (`push_slot_row`, `push_raw_chunk` in `columnar.rs`). These are the most performance-critical code in the entire crate. Adding variants causes instruction cache pressure that slows ALL columns, not just the new ones.
+- **Post-process, don't inline.** New data type conversions (temporal, currency, etc.) should read as Float64 in the hot path, then convert in `finish()`. This keeps the hot path byte-identical to the fastest baseline.
+- **Lesson learned (v0.2.0):** Adding 3 temporal ColBuilder variants + match arms made ambers slower than polars_readstat. Moving temporal conversion to `finish()` as a post-processing step restored full speed with zero overhead on non-temporal columns.
+- **Before any optimization:** Benchmark against polars_readstat on test files. If a change makes any file slower, revert it.
+
+---
+
 # ambers — Pure Rust Statistical File Reader
 
 Like amber preserving ancient life, ambers safely captures and preserves data from statistical file formats. Native Rust, no C FFI bindings. Framework-agnostic Arrow output.
@@ -207,7 +218,7 @@ After type 999, data is stored as rows of 8-byte slots:
 | **Encoding priority** | Subtype 20 name > subtype 3 code page > default windows-1252 |
 | **Bytecode decompressor** | Stateful across rows — control blocks do NOT align to row boundaries |
 | **Very long strings** | Subtype 14 declares true width. `n_segments = ceil(width/252)`. Subsequent named segment variables marked as ghosts. |
-| **Arrow types** | Numeric -> Float64 (nullable), String -> Utf8View (StringViewArray with dedup). Date formats -> Date32, DateTime/YmDhms -> Timestamp(Microsecond, None), Time/DTime/MTime -> Duration(Microsecond). Wkday/Month stay Float64. Non-finite values fall back to null. |
+| **Arrow types** | Numeric -> Float64 (nullable), String -> Utf8View (StringViewArray with dedup). Date formats -> Date32, DateTime/YmDhms -> Timestamp(Microsecond, None), Time/DTime/MTime -> Duration(Microsecond). Wkday/Month stay Float64. Temporal conversion happens in `finish()` as post-processing, NOT in the hot path. |
 | **Missing values** | SYSMIS -> Arrow null. User-defined missing ranges in metadata only (not nullified), matching pyreadstat behavior. |
 | **Endianness** | Detected from header `layout_code`. `SavReader` handles byte-swapping transparently. |
 | **No packed structs** | Fields read individually via `io_utils` helpers — safe, handles endian swapping. |
