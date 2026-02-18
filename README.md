@@ -1,7 +1,7 @@
 # ambers
 
 <p align="center">
-  <img src="images/ambers-banner-v2.svg" alt="ambers banner" width="900">
+  <img src="https://raw.githubusercontent.com/albertxli/ambers/main/images/ambers-banner-v2.svg" alt="ambers banner" width="900">
 </p>
 
 [![Crates.io](https://img.shields.io/crates/v/ambers)](https://crates.io/crates/ambers)
