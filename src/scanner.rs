@@ -2,13 +2,12 @@ use std::io::{Read, Seek};
 
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
-use rayon::prelude::*;
 
 use crate::arrow_convert;
+use crate::columnar::ColumnarBatchBuilder;
 use crate::compression::bytecode::BytecodeDecompressor;
 use crate::compression::zlib;
 use crate::constants::Compression;
-use crate::data::{self, CellValue};
 use crate::dictionary::{self, ResolvedDictionary};
 use crate::error::{Result, SpssError};
 use crate::header;
@@ -160,20 +159,23 @@ impl<R: Read + Seek> SavScanner<R> {
         };
         let n_rows = remaining.min(self.batch_size);
 
-        let rows = self.read_n_rows(n_rows)?;
-        if rows.is_empty() {
-            self.eof = true;
-            return Ok(None);
+        let batch = self.read_batch_columnar(n_rows)?;
+        match batch {
+            Some(ref b) => {
+                let num_rows = b.num_rows();
+                if num_rows == 0 {
+                    self.eof = true;
+                    return Ok(None);
+                }
+                self.rows_read += num_rows;
+            }
+            None => {
+                self.eof = true;
+                return Ok(None);
+            }
         }
-        self.rows_read += rows.len();
 
-        let batch = if let Some(ref proj) = self.projection {
-            arrow_convert::rows_to_record_batch_projected(&rows, &self.dict, proj)?
-        } else {
-            arrow_convert::rows_to_record_batch(&rows, &self.dict)?
-        };
-
-        Ok(Some(batch))
+        Ok(batch)
     }
 
     /// Read all remaining data as a single RecordBatch.
@@ -184,14 +186,32 @@ impl<R: Read + Seek> SavScanner<R> {
             None => usize::MAX,
         };
 
-        let rows = self.read_n_rows(remaining)?;
-        self.rows_read += rows.len();
-        self.eof = true;
-
-        if let Some(ref proj) = self.projection {
-            arrow_convert::rows_to_record_batch_projected(&rows, &self.dict, proj)
-        } else {
-            arrow_convert::rows_to_record_batch(&rows, &self.dict)
+        match self.read_batch_columnar(remaining)? {
+            Some(batch) => {
+                self.rows_read += batch.num_rows();
+                self.eof = true;
+                Ok(batch)
+            }
+            None => {
+                self.eof = true;
+                let schema = if let Some(ref proj) = self.projection {
+                    let fields: Vec<Field> = proj
+                        .iter()
+                        .map(|&idx| {
+                            let var = &self.dict.variables[idx];
+                            let data_type = match &var.var_type {
+                                crate::constants::VarType::Numeric => DataType::Float64,
+                                crate::constants::VarType::String(_) => DataType::Utf8,
+                            };
+                            Field::new(&var.long_name, data_type, true)
+                        })
+                        .collect();
+                    Schema::new(fields)
+                } else {
+                    arrow_convert::build_schema(&self.dict)
+                };
+                Ok(RecordBatch::new_empty(std::sync::Arc::new(schema)))
+            }
         }
     }
 
@@ -209,20 +229,6 @@ impl<R: Read + Seek> SavScanner<R> {
         self.rows_read
     }
 
-    /// Read up to `n` rows from the data section, applying projection.
-    fn read_n_rows(&mut self, n: usize) -> Result<Vec<Vec<CellValue>>> {
-        if n == 0 {
-            return Ok(Vec::new());
-        }
-
-        match &mut self.state {
-            ScanState::Uncompressed => self.read_uncompressed_rows(n),
-            ScanState::Bytecode { .. } | ScanState::Zlib { .. } => {
-                self.read_compressed_rows(n)
-            }
-        }
-    }
-
     /// Reasonable capacity hint, avoiding usize::MAX overflow.
     fn capacity_hint(&self, n: usize) -> usize {
         let ncases = if self.dict.header.ncases >= 0 {
@@ -233,106 +239,66 @@ impl<R: Read + Seek> SavScanner<R> {
         n.min(ncases).min(1_000_000)
     }
 
-    /// Read rows from an uncompressed SAV file.
-    fn read_uncompressed_rows(&mut self, n: usize) -> Result<Vec<Vec<CellValue>>> {
-        let slots_per_row = self.dict.header.nominal_case_size as usize;
-        let mut all_rows = Vec::with_capacity(self.capacity_hint(n));
+    /// Read up to `n` rows directly into a columnar Arrow RecordBatch.
+    fn read_batch_columnar(&mut self, n: usize) -> Result<Option<RecordBatch>> {
+        if n == 0 {
+            return Ok(None);
+        }
 
-        for _ in 0..n {
-            let mut raw_slots = Vec::with_capacity(slots_per_row);
-            for _ in 0..slots_per_row {
-                match self.sav_reader.read_8_bytes() {
-                    Ok(bytes) => raw_slots.push(bytes),
-                    Err(_) => {
-                        if raw_slots.is_empty() {
-                            return Ok(all_rows);
-                        } else {
-                            return Err(SpssError::TruncatedFile {
-                                expected: slots_per_row * 8,
-                                actual: raw_slots.len() * 8,
-                            });
+        let cap = self.capacity_hint(n);
+        let mut builder = ColumnarBatchBuilder::new(
+            &self.dict,
+            self.projection.as_deref(),
+            cap,
+        );
+
+        match &mut self.state {
+            ScanState::Uncompressed => {
+                let slots_per_row = self.dict.header.nominal_case_size as usize;
+                for _ in 0..n {
+                    let mut raw_slots = Vec::with_capacity(slots_per_row);
+                    for _ in 0..slots_per_row {
+                        match self.sav_reader.read_8_bytes() {
+                            Ok(bytes) => raw_slots.push(bytes),
+                            Err(_) => {
+                                if raw_slots.is_empty() {
+                                    // Clean EOF
+                                    return if builder.len() > 0 {
+                                        Ok(Some(builder.finish()?))
+                                    } else {
+                                        Ok(None)
+                                    };
+                                } else {
+                                    return Err(SpssError::TruncatedFile {
+                                        expected: slots_per_row * 8,
+                                        actual: raw_slots.len() * 8,
+                                    });
+                                }
+                            }
                         }
                     }
+                    builder.push_raw_row(&raw_slots);
                 }
             }
+            ScanState::Bytecode { data, decompressor }
+            | ScanState::Zlib { data, decompressor } => {
+                let slots_per_row = self.dict.header.nominal_case_size as usize;
+                let data_ref = data as &[u8];
 
-            let row = if let Some(ref proj) = self.projection {
-                data::slots_to_row_projected(
-                    &raw_slots,
-                    &self.dict.all_slots,
-                    &self.dict.variables,
-                    proj,
-                    self.dict.file_encoding,
-                )?
-            } else {
-                data::slots_to_row(
-                    &raw_slots,
-                    &self.dict.all_slots,
-                    &self.dict.variables,
-                    self.dict.file_encoding,
-                )?
-            };
-            all_rows.push(row);
-        }
-
-        Ok(all_rows)
-    }
-
-    /// Read rows from bytecode/zlib compressed data.
-    fn read_compressed_rows(&mut self, n: usize) -> Result<Vec<Vec<CellValue>>> {
-        let slots_per_row = self.dict.header.nominal_case_size as usize;
-        let cap = self.capacity_hint(n);
-
-        // Phase 1: Sequential bytecode decompression (stateful)
-        let (data_ref, decompressor) = match &mut self.state {
-            ScanState::Bytecode { data, decompressor } => {
-                (data as &[u8], decompressor)
-            }
-            ScanState::Zlib { data, decompressor } => {
-                (data as &[u8], decompressor)
-            }
-            _ => unreachable!(),
-        };
-
-        let mut slot_rows = Vec::with_capacity(cap);
-        for _ in 0..n {
-            let slots = decompressor.decompress_row(data_ref, slots_per_row)?;
-            if slots.is_empty() || slots.len() < slots_per_row {
-                break;
-            }
-            slot_rows.push(slots);
-        }
-
-        if slot_rows.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        // Phase 2: Parallel SlotValue -> CellValue conversion (with optional projection)
-        let dict = &self.dict;
-        let projection = &self.projection;
-
-        let all_rows: Vec<Vec<CellValue>> = slot_rows
-            .par_iter()
-            .map(|slots| {
-                if let Some(proj) = projection {
-                    data::slot_values_to_row_projected(
-                        slots,
-                        &dict.all_slots,
-                        &dict.variables,
-                        proj,
-                        dict.file_encoding,
-                    )
-                } else {
-                    data::slot_values_to_row(
-                        slots,
-                        &dict.all_slots,
-                        &dict.variables,
-                        dict.file_encoding,
-                    )
+                for _ in 0..n {
+                    let slots = decompressor.decompress_row(data_ref, slots_per_row)?;
+                    if slots.is_empty() || slots.len() < slots_per_row {
+                        break;
+                    }
+                    builder.push_slot_row(&slots);
                 }
-            })
-            .collect::<Result<Vec<_>>>()?;
+            }
+        }
 
-        Ok(all_rows)
+        if builder.len() > 0 {
+            Ok(Some(builder.finish()?))
+        } else {
+            Ok(None)
+        }
     }
 }

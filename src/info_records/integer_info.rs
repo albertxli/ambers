@@ -5,6 +5,7 @@ use crate::io_utils::SavReader;
 
 /// Subtype 3: Machine integer information.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct IntegerInfo {
     pub version_major: i32,
     pub version_minor: i32,

@@ -3,6 +3,7 @@ use crate::error::{Result, SpssError};
 
 /// The result of decompressing one 8-byte slot from bytecode.
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub enum SlotValue {
     /// A numeric value (bytecodes 1..=251: value = code - bias).
     Numeric(f64),
@@ -113,35 +114,6 @@ impl BytecodeDecompressor {
 
         Ok(slots)
     }
-}
-
-/// Decompress all rows from a bytecode-compressed buffer.
-///
-/// Returns a vector of rows, each row being a vector of SlotValues.
-pub fn decompress_all_rows(
-    input: &[u8],
-    bias: f64,
-    slots_per_row: usize,
-) -> Result<Vec<Vec<SlotValue>>> {
-    let mut decompressor = BytecodeDecompressor::new(bias);
-    let mut rows = Vec::new();
-
-    loop {
-        let slots = decompressor.decompress_row(input, slots_per_row)?;
-
-        if slots.is_empty() {
-            break;
-        }
-
-        if slots.len() < slots_per_row {
-            // Partial row at end -- discard
-            break;
-        }
-
-        rows.push(slots);
-    }
-
-    Ok(rows)
 }
 
 #[cfg(test)]

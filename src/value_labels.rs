@@ -5,6 +5,7 @@ use crate::io_utils::{self, SavReader};
 
 /// A raw value from a value label record (always 8 bytes).
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum RawValue {
     Numeric(f64),
     String(Vec<u8>),

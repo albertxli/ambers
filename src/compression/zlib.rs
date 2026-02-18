@@ -8,6 +8,7 @@ use crate::io_utils::SavReader;
 
 /// ZSAV zlib header: offsets to the trailer.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ZHeader {
     pub zheader_offset: i64,
     pub ztrailer_offset: i64,
@@ -16,6 +17,7 @@ pub struct ZHeader {
 
 /// ZSAV trailer: compression parameters.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ZTrailer {
     pub bias: i64,
     pub zero: i64,
@@ -26,6 +28,7 @@ pub struct ZTrailer {
 
 /// A single block entry in the ZSAV trailer.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ZTrailerEntry {
     pub uncompressed_offset: i64,
     pub compressed_offset: i64,

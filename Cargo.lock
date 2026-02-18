@@ -33,7 +33,7 @@ dependencies = [
 
 [[package]]
 name = "ambers"
-version = "0.1.0"
+version = "0.1.5"
 dependencies = [
  "arrow",
  "encoding_rs",
@@ -72,7 +72,6 @@ dependencies = [
  "arrow-cast",
  "arrow-data",
  "arrow-ord",
- "arrow-pyarrow",
  "arrow-row",
  "arrow-schema",
  "arrow-select",
@@ -168,18 +167,6 @@ dependencies = [
  "arrow-data",
  "arrow-schema",
  "arrow-select",
-]
-
-[[package]]
-name = "arrow-pyarrow"
-version = "57.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d18c442b4c266aaf3d7f7dd40fd7ae058cef7f113b00ff0cd8256e1e218ec544"
-dependencies = [
- "arrow-array",
- "arrow-data",
- "arrow-schema",
- "pyo3",
 ]
 
 [[package]]

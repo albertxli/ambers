@@ -15,7 +15,6 @@ crate-type = ["rlib"]
 default = []
 python = [
     "dep:pyo3",
-    "arrow/pyarrow",
 ]
 
 [dependencies]

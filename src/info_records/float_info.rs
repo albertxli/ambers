@@ -5,6 +5,7 @@ use crate::io_utils::SavReader;
 
 /// Subtype 4: Machine floating point information.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct FloatInfo {
     /// System-missing value (as raw bit pattern).
     pub sysmis: f64,

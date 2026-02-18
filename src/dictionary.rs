@@ -17,6 +17,7 @@ use crate::variable::VariableRecord;
 use crate::{document, value_labels as vl};
 
 /// All parsed dictionary data before resolution.
+#[allow(dead_code)]
 pub struct RawDictionary {
     pub header: FileHeader,
     pub variables: Vec<VariableRecord>,
@@ -38,8 +39,6 @@ pub struct ResolvedDictionary {
     pub header: FileHeader,
     /// Only non-ghost variables, in order.
     pub variables: Vec<VariableRecord>,
-    /// All variable records (including ghosts) for slot-level data reading.
-    pub all_slots: Vec<VariableRecord>,
     /// The file's character encoding.
     pub file_encoding: &'static Encoding,
     /// Assembled metadata.
@@ -472,9 +471,6 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
         }
     }
 
-    // Keep all slots for data reading
-    let all_slots = variables.clone();
-
     // Filter to visible (non-ghost) variables
     let visible_variables: Vec<VariableRecord> =
         variables.into_iter().filter(|v| !v.is_ghost).collect();
@@ -482,7 +478,6 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
     Ok(ResolvedDictionary {
         header: raw.header,
         variables: visible_variables,
-        all_slots,
         file_encoding,
         metadata: meta,
     })

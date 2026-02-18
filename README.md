@@ -15,7 +15,9 @@ Pure Rust SPSS `.sav`/`.zsav` reader — Arrow-native, zero C dependencies.
 - Read `.sav` (bytecode) and `.zsav` (zlib) files
 - Arrow `RecordBatch` output — zero-copy to Polars, DataFusion, DuckDB
 - Rich metadata: variable labels, value labels, missing values, MR sets, measure levels
-- 2–3x faster than pyreadstat
+- Lazy reader via `scan_sav()` — returns Polars LazyFrame with projection and row limit pushdown
+- No PyArrow dependency — uses Arrow PyCapsule Interface for zero-copy transfer
+- 4–8x faster than pyreadstat, on par with polars_readstat
 - Python + Rust dual API from a single crate
 
 ## Installation
@@ -39,8 +41,12 @@ cargo add ambers
 ```python
 import ambers as am
 
-# Read data + metadata
+# Eager read — data + metadata
 df, meta = am.read_sav("survey.sav")
+
+# Lazy read — returns Polars LazyFrame
+lf, meta = am.scan_sav("survey.sav")
+df = lf.select(["Q1", "Q2", "age"]).head(1000).collect()
 
 # Explore metadata
 meta.summary()
@@ -94,10 +100,19 @@ while let Some(batch) = scanner.next_batch()? {
 
 ## Performance
 
-| File | Size | Rows | Cols | ambers | pyreadstat | Speedup |
-|------|------|-----:|-----:|-------:|-----------:|--------:|
-| survey_medium.sav | 147 MB | ~22,000 | ~700 | 1.27s | 3.07s | **2.4x** |
-| survey_large.sav | 1.1 GB | ~80,000 | ~900 | 2.42s | 6.40s | **2.6x** |
+Benchmarked on 5 real-world SPSS files (average of 5 runs, Windows, Python 3.13):
+
+| File | Size | Rows | Cols | ambers read_sav | ambers scan_sav | polars_readstat | pyreadstat | ambers vs polars_readstat | ambers vs pyreadstat |
+|------|------|-----:|-----:|----------------:|----------------:|----------------:|-----------:|--------------------------:|---------------------:|
+| test_1 (bytecode) | 0.2 MB | 1,500 | 75 | **0.002s** | 0.003s | 0.011s | 0.010s | **5.3x faster** | **4.9x faster** |
+| test_2 (bytecode) | 147 MB | 22,070 | 677 | **1.154s** | 1.295s | 1.146s | 4.357s | ~tied | **3.8x faster** |
+| test_3 (uncompressed) | 1.1 GB | 79,066 | 915 | 1.853s | 1.898s | **1.735s** | 6.892s | ~tied | **3.7x faster** |
+| test_4 (uncompressed) | 0.6 MB | 201 | 158 | **0.020s** | 0.013s | 0.022s | 0.033s | **1.1x faster** | **1.7x faster** |
+| test_5 (uncompressed) | 0.6 MB | 203 | 136 | **0.002s** | 0.004s | 0.011s | 0.019s | **4.7x faster** | **7.8x faster** |
+
+- **vs pyreadstat**: 4–8x faster across all file sizes
+- **vs polars_readstat**: tied on large files, 5x faster on small/medium files (lower startup overhead)
+- No PyArrow dependency required (uses Arrow PyCapsule Interface)
 
 ## License
 

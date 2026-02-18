@@ -2,6 +2,7 @@ use crate::error::{Result, SpssError};
 
 /// Missing value specification for a long string variable.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct LongStringMissingEntry {
     /// Variable name.
     pub var_name: String,

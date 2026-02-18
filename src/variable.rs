@@ -24,6 +24,7 @@ pub enum MissingValues {
 
 /// Internal representation of a parsed variable record.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct VariableRecord {
     /// Position in the case (0-based slot index).
     pub slot_index: usize,
@@ -115,6 +116,7 @@ impl VariableRecord {
     }
 
     /// Get the number of 8-byte slots this variable occupies.
+    #[allow(dead_code)]
     pub fn n_slots(&self) -> usize {
         match &self.var_type {
             VarType::Numeric => 1,

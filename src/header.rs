@@ -6,6 +6,7 @@ use crate::io_utils::{self, SavReader};
 
 /// Parsed SAV file header.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct FileHeader {
     /// Magic string: "$FL2" (standard) or "$FL3".
     pub magic: [u8; 4],

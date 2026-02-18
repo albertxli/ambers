@@ -8,3 +8,4 @@ dist/
 .pytest_cache/
 docs/
 architecture.md
+test_data/

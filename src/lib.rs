@@ -16,9 +16,9 @@
 //! ```
 
 pub(crate) mod arrow_convert;
+pub(crate) mod columnar;
 pub(crate) mod compression;
 pub mod constants;
-pub(crate) mod data;
 pub(crate) mod dictionary;
 pub(crate) mod document;
 pub(crate) mod encoding;

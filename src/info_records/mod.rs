@@ -43,6 +43,7 @@ impl InfoRecordHeader {
 
 /// Parsed info record data.
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum InfoRecord {
     IntegerInfo(integer_info::IntegerInfo),
     FloatInfo(float_info::FloatInfo),

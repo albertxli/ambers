@@ -53,6 +53,7 @@ pub fn encoding_from_name(name: &str) -> &'static Encoding {
 }
 
 /// Decode a byte slice using the given encoding, returning a UTF-8 String.
+#[allow(dead_code)]
 pub fn decode_str(bytes: &[u8], encoding: &'static Encoding) -> Result<String> {
     if encoding == encoding_rs::UTF_8 {
         // Fast path: check if it's valid UTF-8

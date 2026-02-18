@@ -25,6 +25,7 @@ impl<R: Read> SavReader<R> {
         self.bswap = bswap;
     }
 
+    #[allow(dead_code)]
     pub fn bswap(&self) -> bool {
         self.bswap
     }
@@ -60,6 +61,7 @@ impl<R: Read> SavReader<R> {
     }
 
     /// Read a 4-byte unsigned integer with endian handling.
+    #[allow(dead_code)]
     pub fn read_u32(&mut self) -> Result<u32> {
         let mut buf = [0u8; 4];
         self.inner.read_exact(&mut buf)?;
@@ -103,6 +105,7 @@ impl<R: Read> SavReader<R> {
     }
 
     /// Read a fixed-length byte string, trimming trailing spaces and NULs.
+    #[allow(dead_code)]
     pub fn read_fixed_string(&mut self, len: usize) -> Result<Vec<u8>> {
         let buf = self.read_bytes(len)?;
         Ok(trim_trailing_padding(&buf).to_vec())
@@ -150,6 +153,7 @@ pub fn bytes_to_string_lossy(bytes: &[u8]) -> String {
 }
 
 /// Read a pascal-style string: 4-byte length prefix, then that many bytes.
+#[allow(dead_code)]
 pub fn read_pascal_string<R: Read>(reader: &mut SavReader<R>) -> Result<Vec<u8>> {
     let len = reader.read_i32()? as usize;
     if len == 0 {
@@ -159,6 +163,7 @@ pub fn read_pascal_string<R: Read>(reader: &mut SavReader<R>) -> Result<Vec<u8>>
 }
 
 /// Read a pascal-style string and skip padding to align to 4 bytes.
+#[allow(dead_code)]
 pub fn read_pascal_string_aligned<R: Read>(reader: &mut SavReader<R>) -> Result<Vec<u8>> {
     let len = reader.read_i32()? as usize;
     if len == 0 {
