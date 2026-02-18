@@ -1,7 +1,7 @@
 # ambers
 
 [![Crates.io](https://img.shields.io/crates/v/ambers)](https://crates.io/crates/ambers)
-[![PyPI](https://img.shields.io/pypi/v/ambers)](https://pypi.org/project/ambers/)
+[![PyPI](https://img.shields.io/pypi/v/ambers?color=blue)](https://pypi.org/project/ambers/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Pure Rust SPSS `.sav`/`.zsav` reader — Arrow-native, zero C dependencies.
