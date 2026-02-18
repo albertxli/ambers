@@ -67,8 +67,13 @@ Convenience methods: `label()`, `value_labels()`, `format()`, `measure()`
 ```python
 import ambers
 
+# Eager read
 df, meta = ambers.read_sav("file.sav")            # Polars DataFrame + SpssMetadata
 meta = ambers.read_sav_metadata("file.sav")        # metadata only (fast)
+
+# Lazy read (returns Polars LazyFrame)
+lf, meta = ambers.scan_sav("file.sav")
+df = lf.select(["Q1", "Q2"]).head(1000).collect()  # projection + row limit pushdown
 
 # SpssMetadata properties (same fields as Rust)
 meta.variable_names       # list[str]
@@ -85,17 +90,33 @@ meta.measure("age")       # str | None
 
 ### Architecture
 
+Single crate with optional `python` feature for PyO3 bindings:
+
 ```
-Cargo workspace
-├── crates/ambers/          Pure Rust library (crates.io)
-├── crates/ambers-py/       PyO3 bindings (cdylib "_ambers")
+ambers/
+├── src/                    Pure Rust library (crates.io)
+│   ├── python/mod.rs       PyO3 bindings (feature-gated)
 ├── python/ambers/          Python package (PyPI: "ambers")
-│   ├── __init__.py         Wraps native module, PyArrow → Polars
+│   ├── __init__.py         Wraps native module, PyCapsule → Polars
 │   └── __init__.pyi        Type stubs
 └── pyproject.toml          maturin build config
 ```
 
-**Data flow:** Rust RecordBatch → `to_pyarrow(py)` (zero-copy Arrow FFI) → `pl.from_arrow()` → Polars DataFrame
+**Data flow (PyCapsule — no PyArrow dependency):**
+```
+Rust RecordBatch → PyArrowData.__arrow_c_stream__() → PyCapsule(FFI_ArrowArrayStream) → pl.from_arrow() → Polars DataFrame
+```
+
+Uses the Arrow PyCapsule Interface (see references below) for zero-copy transfer.
+`pyarrow` is NOT a runtime dependency. Polars >= 1.3 consumes PyCapsules natively.
+
+**Lazy data flow (scan_sav):**
+```
+Python scan_sav() → register_io_source(schema, _source) → LazyFrame
+  └─ _source() calls _SavBatchReader.next_batch() → PyArrowData (PyCapsule) → pl.from_arrow() → yield DataFrame
+```
+
+Supports column projection pushdown, row limit pushdown, and per-batch predicate filtering.
 
 ### Build & Install
 
@@ -103,7 +124,7 @@ Cargo workspace
 # Development build
 uv venv --python 3.13 .venv
 source .venv/Scripts/activate  # or .venv/bin/activate on Linux/Mac
-uv pip install maturin polars pyarrow
+uv pip install maturin polars
 maturin develop --release
 
 # Verify
@@ -115,41 +136,37 @@ python -c "import ambers; df, meta = ambers.read_sav('file.sav'); print(df.shape
 ## Project Structure
 
 ```
-ambers/                             Repo root (Cargo workspace)
-  Cargo.toml                        Workspace definition
+ambers/                             Repo root (single crate)
+  Cargo.toml                        Crate config (python feature = optional PyO3)
   pyproject.toml                    maturin build config
   CLAUDE.md                         This file
   python/
     ambers/
-      __init__.py                   Python API wrapper
+      __init__.py                   Python API wrapper (read_sav, scan_sav, read_sav_metadata)
       __init__.pyi                  Type stubs
-  crates/
-    ambers/                         Pure Rust SPSS reader library
-      Cargo.toml
-      src/
-        lib.rs                      Public API + re-exports
-        main.rs                     CLI binary for testing
-        scanner.rs                  SavScanner: streaming batch reader
-        error.rs                    SpssError enum (thiserror)
-        constants.rs                SYSMIS, enums (Compression, Measure, Alignment, VarType)
-        io_utils.rs                 SavReader<R> with endian-aware reads
-        header.rs                   176-byte file header parsing
-        encoding.rs                 Code page -> encoding_rs mapping
-        variable.rs                 Type 2 variable records, MissingValues enum
-        value_labels.rs             Type 3+4 value label records
-        document.rs                 Type 6 document records
-        metadata.rs                 SpssMetadata struct, Value enum, MissingSpec, MrSet
-        dictionary.rs               Record dispatch + post-dictionary resolution
-        data.rs                     Row reading + string reassembly
-        arrow_convert.rs            Arrow Schema + RecordBatch builders
-        info_records/               Subtype dispatch (3,4,11,13,14,20,21,22)
-        compression/
-          bytecode.rs               Stateful bytecode decompressor
-          zlib.rs                   ZSAV zheader/ztrailer + flate2
-    ambers-py/                      PyO3 binding crate
-      Cargo.toml
-      src/
-        lib.rs                      #[pymodule], #[pyclass] SpssMetadata, type conversions
+  src/
+    lib.rs                          Public API + re-exports
+    main.rs                         CLI binary for testing
+    scanner.rs                      SavScanner: streaming batch reader
+    columnar.rs                     ColumnarBatchBuilder: direct-to-Arrow column construction
+    arrow_convert.rs                Arrow Schema builder
+    error.rs                        SpssError enum (thiserror)
+    constants.rs                    SYSMIS, enums (Compression, Measure, Alignment, VarType)
+    io_utils.rs                     SavReader<R> with endian-aware reads
+    header.rs                       176-byte file header parsing
+    encoding.rs                     Code page -> encoding_rs mapping
+    variable.rs                     Type 2 variable records, MissingValues enum
+    value_labels.rs                 Type 3+4 value label records
+    document.rs                     Type 6 document records
+    metadata.rs                     SpssMetadata struct, Value enum, MissingSpec, MrSet
+    dictionary.rs                   Record dispatch + post-dictionary resolution
+    info_records/                   Subtype dispatch (3,4,11,13,14,20,21,22)
+    compression/
+      bytecode.rs                   Stateful bytecode decompressor
+      zlib.rs                       ZSAV zheader/ztrailer + flate2
+    python/
+      mod.rs                        PyO3 bindings: PyArrowData (PyCapsule), PySavBatchReader, PySpssMetadata
+  test_data/                        Real-world .sav files for benchmarking (gitignored)
 ```
 
 ---
@@ -195,6 +212,9 @@ After type 999, data is stored as rows of 8-byte slots:
 | **No packed structs** | Fields read individually via `io_utils` helpers — safe, handles endian swapping. |
 | **Naming** | All metadata fields use `variable_` prefix. IndexMap for O(1) lookup with insertion-order preservation. |
 | **Value sorting** | `Value` implements `Ord` — numeric values sort by actual number, not string representation. |
+| **Columnar builders** | `ColumnarBatchBuilder` pushes decoded values directly into Arrow `Float64Builder`/`StringBuilder`, skipping the old `Vec<Vec<CellValue>>` intermediate. Reuses a `string_buf: Vec<u8>` across rows. |
+| **PyCapsule (no PyArrow)** | `PyArrowData.__arrow_c_stream__()` exports `FFI_ArrowArrayStream` via `PyCapsule`. Polars `pl.from_arrow()` consumes it natively. `pyarrow` is not a dependency. |
+| **Lazy IO** | `scan_sav()` uses Polars `register_io_source` with `_SavBatchReader` (wraps `SavScanner`). Supports column projection, row limit, and predicate pushdown. |
 
 ---
 
@@ -211,8 +231,8 @@ After type 999, data is stored as rows of 8-byte slots:
 ## Testing
 
 ```bash
-cargo test -p ambers      # 37 unit tests + 2 doc-tests
-cargo run -p ambers -- file.sav  # CLI test with any .sav file
+cargo test                # 37 unit tests + 2 doc-tests
+cargo run -- file.sav     # CLI test with any .sav file
 ```
 
 ### Verified test files
@@ -241,19 +261,18 @@ cargo run -p ambers -- file.sav  # CLI test with any .sav file
 | `rayon` | 1 | Parallel row/column processing |
 | `indexmap` | 2 | Insertion-ordered maps for metadata |
 
-### Python bindings (`crates/ambers-py`)
+### Python bindings (feature-gated in same crate)
 
 | Crate | Version | Purpose |
 |-------|---------|---------|
 | `pyo3` | 0.26 | Python extension module |
-| `arrow` | 57 (pyarrow feature) | Arrow ↔ PyArrow FFI conversion |
+| `arrow` | 57 (ffi feature) | Arrow PyCapsule / FFI_ArrowArrayStream export |
 
 ### Python dependencies
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| `polars` | >=1.0 | DataFrame output |
-| `pyarrow` | >=14.0 | Arrow FFI bridge |
+| `polars` | >=1.3 | DataFrame output (consumes PyCapsules natively) |
 
 ---
 
@@ -264,11 +283,6 @@ cargo run -p ambers -- file.sav  # CLI test with any .sav file
 - Reverse the data flow: Arrow -> rows -> bytecode/zlib compression -> binary
 - Update Python bindings with `write_sav()` function
 
-### Future: scan_sav → Polars LazyFrame
-- Implement `AnonymousScan` trait for Polars lazy evaluation
-- Requires adding `polars` as Rust dependency in `ambers-py`
-- Enables predicate pushdown and lazy column projection
-
 ### Future: Additional Format Support
 - ambers is designed to grow beyond SPSS — the name and architecture support adding readers/writers for other statistical formats (Stata .dta, SAS .sas7bdat, etc.)
 
@@ -276,7 +290,6 @@ cargo run -p ambers -- file.sav  # CLI test with any .sav file
 - Arrow temporal types for DATE, TIME, DATETIME formats (currently Float64)
 - `columns` / `row_limit` params on Python `read_sav()`
 - Real `.zsav` file testing
-- PyPI publishing workflow (GitHub Actions with maturin)
 
 ---
 
@@ -306,3 +319,21 @@ When working on SPSS-related Rust or Python code (ambers, ultrasav, rimpy, or an
 
 - **polars** (Rust/Python) — https://github.com/pola-rs/polars
   The target DataFrame library. Goal is to support both lazy and eager reads into Polars DataFrames, and ideally have ambers' Rust core adopted by Polars for their df.read_sav function (similar to how Polars uses calamine for Excel via fastexcel).
+- **register_io_source** — https://docs.pola.rs/api/python/stable/reference/io_plugins/index.html
+  Polars plugin API for creating LazyFrames from custom IO sources. Used by `scan_sav()` to expose the Rust batch reader as a lazy source with projection/limit/predicate pushdown. Preferred over `AnonymousScan` for Python-wrapped Rust libraries.
+
+### Arrow PyCapsule Interface
+
+- **Arrow PyCapsule Interface spec** — https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html
+  The specification ambers uses to transfer Arrow data from Rust to Python without PyArrow. Key concepts:
+  - Producers export data by implementing `__arrow_c_stream__` (for record batches) or `__arrow_c_array__` (for single arrays) dunder methods
+  - These methods return a `PyCapsule` wrapping an `FFI_ArrowArrayStream` or `FFI_ArrowArray` C struct
+  - Consumers (like Polars `pl.from_arrow()`) call the dunder method and consume the capsule
+  - The capsule name MUST be `"arrow_array_stream"` (for streams) or `"arrow_array"` (for arrays)
+  - The `__arrow_c_stream__` method signature is `(self, requested_schema=None) -> PyCapsule` — the `requested_schema` parameter must have a default of `None`
+  - In Rust: `arrow::ffi_stream::FFI_ArrowArrayStream::new(reader)` creates the FFI struct from a `RecordBatchReader`, then `PyCapsule::new(py, ffi_stream, Some(CString::new("arrow_array_stream")))` wraps it
+  - This replaces the old `arrow/pyarrow` feature + `to_pyarrow(py)` path which required PyArrow as a runtime dependency
+- **Arrow C Data Interface** — https://arrow.apache.org/docs/format/CDataInterface.html
+  The underlying C ABI that PyCapsule wraps. Defines `ArrowSchema`, `ArrowArray`, and `ArrowArrayStream` structs for zero-copy cross-language data exchange.
+- **Arrow C Stream Interface** — https://arrow.apache.org/docs/format/CStreamInterface.html
+  Extension of the C Data Interface for streaming record batches. `FFI_ArrowArrayStream` implements this, providing `get_schema()`, `get_next()`, and `release()` callbacks.
