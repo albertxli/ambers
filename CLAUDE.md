@@ -277,3 +277,32 @@ cargo run -p ambers -- file.sav  # CLI test with any .sav file
 - `columns` / `row_limit` params on Python `read_sav()`
 - Real `.zsav` file testing
 - PyPI publishing workflow (GitHub Actions with maturin)
+
+---
+
+## SPSS Ecosystem References
+
+When working on SPSS-related Rust or Python code (ambers, ultrasav, rimpy, or any .sav file tooling), reference these upstream repos as needed:
+
+### Core Libraries
+
+- **readstat** (C library) — https://github.com/WizardMac/ReadStat
+  The foundational C library for reading/writing SPSS, Stata, and SAS files. Defines the canonical SPSS binary format parsing. pyreadstat wraps this via Cython.
+- **pyreadstat** (Python/Cython) — https://github.com/Roche/pyreadstat
+  Python wrapper around readstat. Our primary comparison target for metadata correctness. When debugging metadata discrepancies, check pyreadstat's Cython layer and readstat's C source.
+- **polars_readstat** (Python API) — https://github.com/jrothbaum/polars_readstat
+  Python API for reading SPSS/Stata/SAS files into Polars DataFrames. Built on the Rust core below.
+- **polars_readstat_rs** (Rust core) — https://github.com/jrothbaum/polars_readstat_rs
+  Rust-based SPSS/Stata/SAS reader. Useful reference for Rust SPSS parsing patterns and Polars integration.
+
+### Excel Ecosystem (Rust/Python pattern reference)
+
+- **fastexcel** (Python API) — https://github.com/ToucanToco/fastexcel
+  Fast Excel file reader for Python, built on calamine. Good reference for the Rust-core-with-Python-wrapper architecture pattern (similar to what ambers does for SPSS).
+- **calamine** (Rust core) — https://github.com/tafia/calamine
+  Pure Rust library for reading Excel files (xlsx, xls, ods). The engine behind fastexcel. Reference for idiomatic Rust binary file I/O patterns.
+
+### Polars
+
+- **polars** (Rust/Python) — https://github.com/pola-rs/polars
+  The target DataFrame library. Goal is to support both lazy and eager reads into Polars DataFrames, and ideally have ambers' Rust core adopted by Polars for their df.read_sav function (similar to how Polars uses calamine for Excel via fastexcel).
