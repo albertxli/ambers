@@ -282,10 +282,45 @@ impl PySpssMetadata {
         Ok(self.inner.role(name).map(|r| r.as_str().to_string()))
     }
 
-    /// Get a custom attribute's values for a variable. Returns None if not set.
-    fn attribute(&self, name: &str, attr: &str) -> PyResult<Option<Vec<String>>> {
+    /// Get custom attribute(s) for a variable.
+    /// With one arg: returns all attributes as dict, or None.
+    /// With two args: returns specific attribute values, or raises KeyError.
+    #[pyo3(signature = (name, attr=None))]
+    fn attribute<'py>(
+        &self,
+        py: Python<'py>,
+        name: &str,
+        attr: Option<&str>,
+    ) -> PyResult<Py<PyAny>> {
         self.check_var(name)?;
-        Ok(self.inner.attribute(name, attr).cloned())
+        match attr {
+            None => {
+                // Return all attributes for this variable, or None
+                match self.inner.attributes(name) {
+                    Some(attrs) => {
+                        let dict = PyDict::new(py);
+                        for (k, v) in attrs {
+                            let py_list: Vec<&str> = v.iter().map(|s| s.as_str()).collect();
+                            dict.set_item(k.as_str(), py_list)?;
+                        }
+                        Ok(dict.unbind().into_any())
+                    }
+                    None => Ok(py.None()),
+                }
+            }
+            Some(attr_name) => {
+                // Return specific attribute values, or raise KeyError
+                match self.inner.attribute(name, attr_name) {
+                    Some(values) => {
+                        let py_list: Vec<&str> = values.iter().map(|s| s.as_str()).collect();
+                        Ok(py_list.into_pyobject(py).unwrap().into_any().unbind())
+                    }
+                    None => Err(pyo3::exceptions::PyKeyError::new_err(format!(
+                        "attribute '{attr_name}' not found for variable '{name}'"
+                    ))),
+                }
+            }
+        }
     }
 
     /// Get the value labels dict for a variable. Returns None if no value labels exist.

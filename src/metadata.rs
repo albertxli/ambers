@@ -243,7 +243,12 @@ impl SpssMetadata {
         self.variable_role.get(name).copied()
     }
 
-    /// Get a custom attribute's values for a variable.
+    /// Get all custom attributes for a variable.
+    pub fn attributes(&self, var_name: &str) -> Option<&IndexMap<String, Vec<String>>> {
+        self.variable_attributes.get(var_name)
+    }
+
+    /// Get a specific custom attribute's values for a variable.
     pub fn attribute(&self, var_name: &str, attr_name: &str) -> Option<&Vec<String>> {
         self.variable_attributes.get(var_name)?.get(attr_name)
     }
