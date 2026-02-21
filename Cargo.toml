@@ -15,15 +15,17 @@ crate-type = ["rlib"]
 default = []
 python = [
     "dep:pyo3",
+    "dep:mimalloc",
 ]
 
 [dependencies]
 arrow = { version = "57", default-features = false, features = ["ffi"] }
-flate2 = "1"
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 encoding_rs = "0.8"
 thiserror = "2"
 rayon = "1"
 indexmap = "2"
+mimalloc = { version = "0.1", optional = true }
 
 # Python-only (optional)
 pyo3 = { version = "0.26", features = ["extension-module", "indexmap"], optional = true }

@@ -86,6 +86,7 @@ pub fn decode_str(bytes: &[u8], encoding: &'static Encoding) -> Result<String> {
 
 /// Decode a byte slice using the given encoding, never failing (lossy).
 /// Returns `Cow::Borrowed` for valid UTF-8, avoiding heap allocation.
+#[inline]
 pub fn decode_str_lossy<'a>(bytes: &'a [u8], encoding: &'static Encoding) -> Cow<'a, str> {
     if encoding == encoding_rs::UTF_8 {
         // Fast path: just validate UTF-8, zero-copy borrow

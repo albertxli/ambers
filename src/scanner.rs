@@ -256,7 +256,11 @@ impl<R: Read + Seek> SavScanner<R> {
                 // rayon parallelism), small chunks for lazy head(N) reads.
                 let chunk_rows = self.capacity_hint(n);
                 let chunk_bytes = chunk_rows * row_bytes;
-                let mut chunk_buf = vec![0u8; chunk_bytes];
+                // SAFETY: Buffer is immediately filled by read_full(). Uninitialized
+                // bytes never reach the builder — actual_rows check at line 275
+                // ensures we only process fully-read rows.
+                let mut chunk_buf = Vec::with_capacity(chunk_bytes);
+                unsafe { chunk_buf.set_len(chunk_bytes); }
 
                 let mut rows_remaining = n;
                 while rows_remaining > 0 {
@@ -281,9 +285,10 @@ impl<R: Read + Seek> SavScanner<R> {
             | ScanState::Zlib { data, decompressor } => {
                 let slots_per_row = self.dict.header.nominal_case_size as usize;
                 let data_ref = data as &[u8];
+                let mut slots = Vec::with_capacity(slots_per_row);
 
                 for _ in 0..n {
-                    let slots = decompressor.decompress_row(data_ref, slots_per_row)?;
+                    decompressor.decompress_row(data_ref, slots_per_row, &mut slots)?;
                     if slots.is_empty() || slots.len() < slots_per_row {
                         break;
                     }

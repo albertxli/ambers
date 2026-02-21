@@ -47,25 +47,29 @@ impl BytecodeDecompressor {
 
     /// Decompress one row of `slots_per_row` slot values from the input buffer.
     ///
+    /// Writes into the caller-provided `slots` vec (cleared first). This avoids
+    /// a heap allocation per row — the caller allocates once and reuses.
+    ///
     /// Control block state is preserved across calls, so this can be called
     /// repeatedly to decompress consecutive rows.
     pub fn decompress_row(
         &mut self,
         input: &[u8],
         slots_per_row: usize,
-    ) -> Result<Vec<SlotValue>> {
-        if self.eof {
-            return Ok(Vec::new());
-        }
+        slots: &mut Vec<SlotValue>,
+    ) -> Result<()> {
+        slots.clear();
 
-        let mut slots = Vec::with_capacity(slots_per_row);
+        if self.eof {
+            return Ok(());
+        }
 
         while slots.len() < slots_per_row {
             // Need a new control block?
             if self.control_idx >= 8 {
                 if self.pos + 8 > input.len() {
                     // Not enough data for another control block -- we're done
-                    return Ok(slots);
+                    return Ok(());
                 }
                 self.control_bytes
                     .copy_from_slice(&input[self.pos..self.pos + 8]);
@@ -89,10 +93,7 @@ impl BytecodeDecompressor {
                 COMPRESS_RAW_FOLLOWS => {
                     // Next 8 bytes are uncompressed data
                     if self.pos + 8 > input.len() {
-                        return Err(SpssError::TruncatedFile {
-                            expected: self.pos + 8,
-                            actual: input.len(),
-                        });
+                        return Err(truncated_err(self.pos + 8, input.len()));
                     }
                     let mut raw = [0u8; 8];
                     raw.copy_from_slice(&input[self.pos..self.pos + 8]);
@@ -107,13 +108,19 @@ impl BytecodeDecompressor {
                 }
                 COMPRESS_END_OF_FILE => {
                     self.eof = true;
-                    return Ok(slots);
+                    return Ok(());
                 }
             }
         }
 
-        Ok(slots)
+        Ok(())
     }
+}
+
+/// Cold error path — kept out of the hot decompression loop to reduce icache pressure.
+#[cold]
+fn truncated_err(expected: usize, actual: usize) -> SpssError {
+    SpssError::TruncatedFile { expected, actual }
 }
 
 #[cfg(test)]
@@ -123,12 +130,13 @@ mod tests {
     #[test]
     fn test_numeric_bias_codes() {
         let mut decompressor = BytecodeDecompressor::new(100.0);
+        let mut slots = Vec::with_capacity(8);
 
         // Control block: [101, 102, 0, 0, 0, 0, 0, 0]
         // code 101 = value 1.0, code 102 = value 2.0
         let input: Vec<u8> = vec![101, 102, 0, 0, 0, 0, 0, 0];
 
-        let slots = decompressor.decompress_row(&input, 2).unwrap();
+        decompressor.decompress_row(&input, 2, &mut slots).unwrap();
         assert_eq!(slots.len(), 2);
 
         match slots[0] {
@@ -144,9 +152,10 @@ mod tests {
     #[test]
     fn test_sysmis_and_spaces() {
         let mut decompressor = BytecodeDecompressor::new(100.0);
+        let mut slots = Vec::with_capacity(8);
         let input: Vec<u8> = vec![255, 254, 0, 0, 0, 0, 0, 0];
 
-        let slots = decompressor.decompress_row(&input, 2).unwrap();
+        decompressor.decompress_row(&input, 2, &mut slots).unwrap();
         assert!(matches!(slots[0], SlotValue::Sysmis));
         assert!(matches!(slots[1], SlotValue::Spaces));
     }
@@ -154,6 +163,7 @@ mod tests {
     #[test]
     fn test_raw_follows() {
         let mut decompressor = BytecodeDecompressor::new(100.0);
+        let mut slots = Vec::with_capacity(8);
 
         let mut input = Vec::new();
         // Control block: [253 (raw follows), 0, 0, 0, 0, 0, 0, 0]
@@ -161,7 +171,7 @@ mod tests {
         // Raw 8 bytes
         input.extend_from_slice(&3.14_f64.to_le_bytes());
 
-        let slots = decompressor.decompress_row(&input, 1).unwrap();
+        decompressor.decompress_row(&input, 1, &mut slots).unwrap();
         assert_eq!(slots.len(), 1);
         match slots[0] {
             SlotValue::Raw(bytes) => {
@@ -180,18 +190,19 @@ mod tests {
         // Row 1 uses codes 101, 102, 103 (slots 1-3)
         // Row 2 uses codes 104, 105, 106 (slots 4-6, from SAME control block)
         let mut decompressor = BytecodeDecompressor::new(100.0);
+        let mut slots = Vec::with_capacity(8);
         let input: Vec<u8> = vec![101, 102, 103, 104, 105, 106, 0, 0];
 
-        let row1 = decompressor.decompress_row(&input, 3).unwrap();
-        assert_eq!(row1.len(), 3);
-        match row1[0] {
+        decompressor.decompress_row(&input, 3, &mut slots).unwrap();
+        assert_eq!(slots.len(), 3);
+        match slots[0] {
             SlotValue::Numeric(v) => assert!((v - 1.0).abs() < f64::EPSILON),
             _ => panic!("expected 1.0"),
         }
 
-        let row2 = decompressor.decompress_row(&input, 3).unwrap();
-        assert_eq!(row2.len(), 3);
-        match row2[0] {
+        decompressor.decompress_row(&input, 3, &mut slots).unwrap();
+        assert_eq!(slots.len(), 3);
+        match slots[0] {
             SlotValue::Numeric(v) => assert!((v - 4.0).abs() < f64::EPSILON),
             _ => panic!("expected 4.0"),
         }
