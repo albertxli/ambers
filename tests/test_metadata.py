@@ -111,31 +111,31 @@ class TestDictFields:
         )
         assert diffs == [], f"{len(diffs)} diffs: {diffs[:5]}"
 
-    def test_variable_format(self, pyreadstat_meta, ambers_meta):
+    def test_variable_formats(self, pyreadstat_meta, ambers_meta):
         diffs = deep_diff(
             pyreadstat_meta.original_variable_types,
-            ambers_meta.variable_format,
+            ambers_meta.variable_formats,
         )
         assert diffs == [], f"{len(diffs)} diffs: {diffs[:5]}"
 
-    def test_variable_measure(self, pyreadstat_meta, ambers_meta):
+    def test_variable_measures(self, pyreadstat_meta, ambers_meta):
         diffs = deep_diff(
             pyreadstat_meta.variable_measure,
-            ambers_meta.variable_measure,
+            ambers_meta.variable_measures,
         )
         assert diffs == [], f"{len(diffs)} diffs: {diffs[:5]}"
 
-    def test_variable_storage_width(self, pyreadstat_meta, ambers_meta):
+    def test_variable_storage_widths(self, pyreadstat_meta, ambers_meta):
         diffs = deep_diff(
             pyreadstat_meta.variable_storage_width,
-            ambers_meta.variable_storage_width,
+            ambers_meta.variable_storage_widths,
         )
         assert diffs == [], f"{len(diffs)} diffs: {diffs[:5]}"
 
-    def test_variable_display_width(self, pyreadstat_meta, ambers_meta):
+    def test_variable_display_widths(self, pyreadstat_meta, ambers_meta):
         diffs = deep_diff(
             pyreadstat_meta.variable_display_width,
-            ambers_meta.variable_display_width,
+            ambers_meta.variable_display_widths,
         )
         assert diffs == [], f"{len(diffs)} diffs: {diffs[:5]}"
 
@@ -203,9 +203,9 @@ class TestSkippedFields:
         assert pyreadstat_meta.creation_time == ambers_meta.creation_time
 
     @pytest.mark.skip(reason="pyreadstat always returns 'unknown' — likely its own bug")
-    def test_variable_alignment(self, pyreadstat_meta, ambers_meta):
+    def test_variable_alignments(self, pyreadstat_meta, ambers_meta):
         diffs = deep_diff(
             pyreadstat_meta.variable_alignment,
-            ambers_meta.variable_alignment,
+            ambers_meta.variable_alignments,
         )
         assert diffs == [], f"{len(diffs)} diffs: {diffs[:5]}"

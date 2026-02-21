@@ -52,11 +52,11 @@ def prepare_pyreadstat_args(meta):
     if meta.variable_value_labels:
         kwargs["variable_value_labels"] = meta.variable_value_labels
 
-    if meta.variable_display_width:
-        kwargs["variable_display_width"] = meta.variable_display_width
+    if meta.variable_display_widths:
+        kwargs["variable_display_widths"] = meta.variable_display_widths
 
-    if meta.variable_measure:
-        kwargs["variable_measure"] = meta.variable_measure
+    if meta.variable_measures:
+        kwargs["variable_measures"] = meta.variable_measures
 
     if meta.notes:
         kwargs["note"] = meta.notes[0] if len(meta.notes) == 1 else meta.notes

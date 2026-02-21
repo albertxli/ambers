@@ -280,7 +280,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
                 }
                 _ => fmt.to_spss_string(),
             };
-            meta.variable_format
+            meta.variable_formats
                 .insert(name.clone(), format_str);
         }
 
@@ -303,15 +303,15 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
         meta.arrow_data_types.insert(name.clone(), rust_type);
 
         // Display properties
-        meta.variable_measure.insert(name.clone(), var.measure);
+        meta.variable_measures.insert(name.clone(), var.measure);
         // For VLS variables, if display_width is 0 (from u8-capped format), use true width
         let display_width = match &var.var_type {
             VarType::String(w) if *w > 255 && var.display_width == 0 => *w as u32,
             _ => var.display_width,
         };
-        meta.variable_display_width
+        meta.variable_display_widths
             .insert(name.clone(), display_width);
-        meta.variable_alignment.insert(name.clone(), var.alignment);
+        meta.variable_alignments.insert(name.clone(), var.alignment);
 
         // Storage width: normal strings round to 8-byte slot boundary,
         // VLS strings (>255) use their declared width as-is (matching pyreadstat)
@@ -320,7 +320,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
             VarType::String(w) if *w > 255 => *w,
             VarType::String(w) => crate::io_utils::round_up(*w, 8),
         };
-        meta.variable_storage_width
+        meta.variable_storage_widths
             .insert(name.clone(), storage_width);
 
         // Missing values
@@ -503,7 +503,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
         for (attr_name, values) in &var_attr_set.attributes {
             if attr_name == "$@Role" && !values.is_empty() {
                 if let Some(role) = Role::from_code(&values[0]) {
-                    meta.variable_role.insert(var_name.clone(), role);
+                    meta.variable_roles.insert(var_name.clone(), role);
                 }
             } else {
                 meta.variable_attributes

@@ -173,7 +173,7 @@ fn compute_layout(batch: &RecordBatch, meta: &SpssMetadata) -> Result<CaseLayout
 
         // Resolve format from metadata or infer from Arrow type
         let format = meta
-            .variable_format
+            .variable_formats
             .get(name.as_str())
             .and_then(|s| SpssFormat::from_string(s))
             .unwrap_or_else(|| infer_format(field.data_type()));
@@ -186,7 +186,7 @@ fn compute_layout(batch: &RecordBatch, meta: &SpssMetadata) -> Result<CaseLayout
             // Parse the original format string for the declared width (not u8-capped).
             // E.g., "A254" → 254 (non-VLS), "A2000" → 2000 (VLS).
             let declared_width = meta
-                .variable_format
+                .variable_formats
                 .get(name.as_str())
                 .and_then(|s| {
                     let rest = s.trim_start_matches(|c: char| !c.is_ascii_digit());
@@ -198,7 +198,7 @@ fn compute_layout(batch: &RecordBatch, meta: &SpssMetadata) -> Result<CaseLayout
             if declared_width > 255 {
                 // True VLS: use storage_width from metadata for the actual byte count
                 let w = meta
-                    .variable_storage_width
+                    .variable_storage_widths
                     .get(name.as_str())
                     .copied()
                     .unwrap_or(declared_width);
@@ -237,17 +237,17 @@ fn compute_layout(batch: &RecordBatch, meta: &SpssMetadata) -> Result<CaseLayout
             .map(|specs| specs_to_missing(specs))
             .unwrap_or(MissingValues::None);
         let measure = meta
-            .variable_measure
+            .variable_measures
             .get(name.as_str())
             .copied()
             .unwrap_or(Measure::Unknown);
         let alignment = meta
-            .variable_alignment
+            .variable_alignments
             .get(name.as_str())
             .copied()
             .unwrap_or(Alignment::Right);
         let display_width = meta
-            .variable_display_width
+            .variable_display_widths
             .get(name.as_str())
             .copied()
             .unwrap_or(format.width as u32);
@@ -1004,7 +1004,7 @@ fn write_info_var_attributes<W: Write>(
     meta: &SpssMetadata,
     layout: &CaseLayout,
 ) -> Result<()> {
-    if meta.variable_role.is_empty() && meta.variable_attributes.is_empty() {
+    if meta.variable_roles.is_empty() && meta.variable_attributes.is_empty() {
         return Ok(());
     }
 
@@ -1017,7 +1017,7 @@ fn write_info_var_attributes<W: Write>(
 
     // Collect all variable names that have either a role or custom attributes
     let mut all_vars: IndexMap<&str, ()> = IndexMap::new();
-    for name in meta.variable_role.keys() {
+    for name in meta.variable_roles.keys() {
         all_vars.insert(name.as_str(), ());
     }
     for name in meta.variable_attributes.keys() {
@@ -1054,7 +1054,7 @@ fn write_info_var_attributes<W: Write>(
         }
 
         // Write $@Role
-        if let Some(role) = meta.variable_role.get(*long_name) {
+        if let Some(role) = meta.variable_roles.get(*long_name) {
             payload.push_str("$@Role('");
             payload.push_str(role.to_code());
             payload.push_str("'\n)");

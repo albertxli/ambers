@@ -108,12 +108,12 @@ All fields returned by the reader. Fields marked **Write** are preserved when pa
 | `variable_names` | yes | yes | `list[str]` |
 | `variable_labels` | yes | yes | `dict[str, str]` |
 | `variable_value_labels` | yes | yes | `dict[str, dict[float\|str, str]]` |
-| `variable_format` | yes | yes | `dict[str, str]` |
-| `variable_measure` | yes | yes | `dict[str, str]` |
-| `variable_alignment` | yes | yes | `dict[str, str]` |
-| `variable_role` | yes | yes | `dict[str, str]` |
-| `variable_display_width` | yes | yes | `dict[str, int]` |
-| `variable_storage_width` | yes | yes | `dict[str, int]` |
+| `variable_formats` | yes | yes | `dict[str, str]` |
+| `variable_measures` | yes | yes | `dict[str, str]` |
+| `variable_alignments` | yes | yes | `dict[str, str]` |
+| `variable_roles` | yes | yes | `dict[str, str]` |
+| `variable_display_widths` | yes | yes | `dict[str, int]` |
+| `variable_storage_widths` | yes | yes | `dict[str, int]` |
 | `variable_missing_values` | yes | yes | `dict[str, list[dict]]` |
 | `variable_attributes` | yes | yes | `dict[str, dict[str, list[str]]]` |
 | `weight_variable` | yes | yes | `str \| None` |

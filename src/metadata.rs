@@ -195,24 +195,24 @@ pub struct SpssMetadata {
     pub variable_labels: IndexMap<String, String>,
 
     // Type info
-    pub variable_format: IndexMap<String, String>,
+    pub variable_formats: IndexMap<String, String>,
     pub arrow_data_types: IndexMap<String, String>,
 
     // Value labels: {var_name -> {value -> label}}
     pub variable_value_labels: IndexMap<String, IndexMap<Value, String>>,
 
     // Display properties
-    pub variable_alignment: IndexMap<String, Alignment>,
-    pub variable_storage_width: IndexMap<String, usize>,
-    pub variable_display_width: IndexMap<String, u32>,
-    pub variable_measure: IndexMap<String, Measure>,
+    pub variable_alignments: IndexMap<String, Alignment>,
+    pub variable_storage_widths: IndexMap<String, usize>,
+    pub variable_display_widths: IndexMap<String, u32>,
+    pub variable_measures: IndexMap<String, Measure>,
 
     // Missing values
     pub variable_missing_values: IndexMap<String, Vec<MissingSpec>>,
 
     // SPSS-specific
     pub mr_sets: IndexMap<String, MrSet>,
-    pub variable_role: IndexMap<String, Role>,
+    pub variable_roles: IndexMap<String, Role>,
     pub variable_attributes: IndexMap<String, IndexMap<String, Vec<String>>>,
     pub weight_variable: Option<String>,
 }
@@ -230,17 +230,17 @@ impl SpssMetadata {
 
     /// Get the SPSS format string for a variable (e.g., "F8.2", "A50").
     pub fn format(&self, name: &str) -> Option<&str> {
-        self.variable_format.get(name).map(|s| s.as_str())
+        self.variable_formats.get(name).map(|s| s.as_str())
     }
 
     /// Get the measurement level for a variable.
     pub fn measure(&self, name: &str) -> Option<Measure> {
-        self.variable_measure.get(name).copied()
+        self.variable_measures.get(name).copied()
     }
 
     /// Get the role for a variable.
     pub fn role(&self, name: &str) -> Option<Role> {
-        self.variable_role.get(name).copied()
+        self.variable_roles.get(name).copied()
     }
 
     /// Get all custom attributes for a variable.
@@ -290,12 +290,12 @@ impl SpssMetadata {
             } else {
                 8
             };
-            meta.variable_format.insert(name.clone(), fmt_str);
+            meta.variable_formats.insert(name.clone(), fmt_str);
             meta.arrow_data_types.insert(name.clone(), rust_type.to_string());
-            meta.variable_measure.insert(name.clone(), measure);
-            meta.variable_alignment.insert(name.clone(), alignment);
-            meta.variable_display_width.insert(name.clone(), 8);
-            meta.variable_storage_width.insert(name.clone(), sw);
+            meta.variable_measures.insert(name.clone(), measure);
+            meta.variable_alignments.insert(name.clone(), alignment);
+            meta.variable_display_widths.insert(name.clone(), 8);
+            meta.variable_storage_widths.insert(name.clone(), sw);
         }
 
         meta
@@ -315,16 +315,16 @@ impl Default for SpssMetadata {
             file_format: "sav".to_string(),
             variable_names: Vec::new(),
             variable_labels: IndexMap::new(),
-            variable_format: IndexMap::new(),
+            variable_formats: IndexMap::new(),
             arrow_data_types: IndexMap::new(),
             variable_value_labels: IndexMap::new(),
-            variable_alignment: IndexMap::new(),
-            variable_storage_width: IndexMap::new(),
-            variable_display_width: IndexMap::new(),
-            variable_measure: IndexMap::new(),
+            variable_alignments: IndexMap::new(),
+            variable_storage_widths: IndexMap::new(),
+            variable_display_widths: IndexMap::new(),
+            variable_measures: IndexMap::new(),
             variable_missing_values: IndexMap::new(),
             mr_sets: IndexMap::new(),
-            variable_role: IndexMap::new(),
+            variable_roles: IndexMap::new(),
             variable_attributes: IndexMap::new(),
             weight_variable: None,
         }

@@ -213,9 +213,9 @@ def write_sav(
     file_label: str | None = None,
     variable_labels: dict[str, str] | None = None,
     variable_value_labels: dict[str, dict] | None = None,
-    variable_measure: dict[str, str] | None = None,
-    variable_format: dict[str, str] | None = None,
-    variable_display_width: dict[str, int] | None = None,
+    variable_measures: dict[str, str] | None = None,
+    variable_formats: dict[str, str] | None = None,
+    variable_display_widths: dict[str, int] | None = None,
     missing_ranges: dict[str, list] | None = None,
     notes: str | list[str] | None = None,
     weight_variable: str | None = None,
@@ -246,9 +246,9 @@ def write_sav(
         file_label: Reserved for future use.
         variable_labels: Reserved for future use.
         variable_value_labels: Reserved for future use.
-        variable_measure: Reserved for future use.
-        variable_format: Reserved for future use.
-        variable_display_width: Reserved for future use.
+        variable_measures: Reserved for future use.
+        variable_formats: Reserved for future use.
+        variable_display_widths: Reserved for future use.
         missing_ranges: Reserved for future use.
         notes: Reserved for future use.
         weight_variable: Reserved for future use.

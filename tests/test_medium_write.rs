@@ -16,7 +16,7 @@ fn test_medium_write_only() {
     let mut total_storage = 0usize;
     let mut n_vls = 0;
     for name in &meta.variable_names {
-        if let Some(&w) = meta.variable_storage_width.get(name.as_str()) {
+        if let Some(&w) = meta.variable_storage_widths.get(name.as_str()) {
             total_storage += w;
             if w > 255 { n_vls += 1; }
         }

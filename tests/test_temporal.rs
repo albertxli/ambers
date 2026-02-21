@@ -53,7 +53,7 @@ fn test_temporal_types_real_file() {
         if let Some(rust_type) = meta.arrow_data_types.get(name.as_str()) {
             println!("  {} -> rust_type={}", name, rust_type);
         }
-        if let Some(spss_type) = meta.variable_format.get(name.as_str()) {
+        if let Some(spss_type) = meta.variable_formats.get(name.as_str()) {
             println!("  {} -> spss_type={}", name, spss_type);
         }
     }

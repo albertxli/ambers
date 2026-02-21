@@ -78,10 +78,10 @@ def assert_metadata_ambers(orig, rt, label=""):
     for field, getter in [
         ("variable_labels", lambda m: m.variable_labels),
         ("variable_value_labels", lambda m: m.variable_value_labels),
-        ("variable_format", lambda m: m.variable_format),
-        ("variable_measure", lambda m: m.variable_measure),
-        ("variable_display_width", lambda m: m.variable_display_width),
-        ("variable_storage_width", lambda m: m.variable_storage_width),
+        ("variable_formats", lambda m: m.variable_formats),
+        ("variable_measures", lambda m: m.variable_measures),
+        ("variable_display_widths", lambda m: m.variable_display_widths),
+        ("variable_storage_widths", lambda m: m.variable_storage_widths),
     ]:
         diffs = deep_diff(getter(orig), getter(rt))
         assert diffs == [], f"{pfx}{field}: {len(diffs)} diffs: {diffs[:5]}"
@@ -124,7 +124,7 @@ def assert_metadata_cross(ambers_meta, pyr_meta, label=""):
     """Compare ambers SpssMetadata against pyreadstat metadata_container.
 
     Skips: creation_time (format differs),
-           variable_alignment (pyreadstat bug), file_format (pyreadstat
+           variable_alignments (pyreadstat bug), file_format (pyreadstat
            returns 'sav/zsav'), number_rows (may differ for written files).
     """
     pfx = f"[{label}] " if label else ""
@@ -137,10 +137,10 @@ def assert_metadata_cross(ambers_meta, pyr_meta, label=""):
     field_pairs = [
         ("variable_labels", lambda: ambers_meta.variable_labels, lambda: pyr_meta.column_names_to_labels),
         ("variable_value_labels", lambda: ambers_meta.variable_value_labels, lambda: pyr_meta.variable_value_labels),
-        ("variable_format", lambda: ambers_meta.variable_format, lambda: pyr_meta.original_variable_types),
-        ("variable_measure", lambda: ambers_meta.variable_measure, lambda: pyr_meta.variable_measure),
-        ("variable_display_width", lambda: ambers_meta.variable_display_width, lambda: pyr_meta.variable_display_width),
-        ("variable_storage_width", lambda: ambers_meta.variable_storage_width, lambda: pyr_meta.variable_storage_width),
+        ("variable_formats", lambda: ambers_meta.variable_formats, lambda: pyr_meta.original_variable_types),
+        ("variable_measures", lambda: ambers_meta.variable_measures, lambda: pyr_meta.variable_measure),
+        ("variable_display_widths", lambda: ambers_meta.variable_display_widths, lambda: pyr_meta.variable_display_width),
+        ("variable_storage_widths", lambda: ambers_meta.variable_storage_widths, lambda: pyr_meta.variable_storage_width),
     ]
     for field, am_getter, pyr_getter in field_pairs:
         diffs = deep_diff(am_getter(), pyr_getter())
@@ -283,7 +283,7 @@ class TestSavRoundtripPyreadstat:
     """Write with ambers, read back with pyreadstat, compare.
 
     Cross-library tests are marked xfail(strict=False) because pyreadstat
-    has known bugs (e.g., variable_alignment always 'unknown') and may
+    has known bugs (e.g., variable_alignments always 'unknown') and may
     read certain data types differently. Failures are flagged, not fatal.
 
     Known design difference — temporal columns:
