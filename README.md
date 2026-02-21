@@ -8,24 +8,22 @@
 [![PyPI](https://img.shields.io/pypi/v/ambers?color=blue)](https://pypi.org/project/ambers/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-grey.svg)](LICENSE)
 
-Pure Rust SPSS `.sav`/`.zsav` reader — Arrow-native, zero C dependencies.
+Pure Rust SPSS `.sav`/`.zsav` reader and writer — Arrow-native, zero C dependencies.
 
 ## Features
 
-- Read and write `.sav` (bytecode) and `.zsav` (zlib) files
-- Arrow `RecordBatch` output — zero-copy to Polars, DataFusion, DuckDB
-- Rich metadata: variable labels, value labels, missing values, MR sets, measure levels
-- Lazy reader via `scan_sav()` — returns Polars LazyFrame with projection and row limit pushdown
-- No PyArrow dependency — uses Arrow PyCapsule Interface for zero-copy transfer
-- The fastest SPSS reader and writer — up to 3x faster reads, 4–20x faster writes vs pyreadstat
-- Python + Rust dual API from a single crate
+- Blazing fast read and write for SPSS `.sav` (bytecode) and `.zsav` (zlib) files
+- Rich metadata: variable labels, value labels, missing values, MR sets, measure levels, and more
+- Lazy reader via `scan_sav()` — Polars LazyFrame with projection and row limit pushdown
+- Pure Rust with a native Python API — native Arrow integration, no C dependencies
+- Benchmarked up to 3–10x faster reads and 4–20x faster writes compared to current popular SPSS I/O libraries
 
 ## Installation
 
 **Python:**
 
 ```bash
-pip install ambers
+uv add ambers
 ```
 
 **Rust:**
@@ -34,12 +32,11 @@ pip install ambers
 cargo add ambers
 ```
 
-## Quick Start
-
-### Python
+## Python
 
 ```python
 import ambers as am
+import polars as pl
 
 # Eager read — data + metadata
 df, meta = am.read_sav("survey.sav")
@@ -55,9 +52,21 @@ meta.value("Q1")
 
 # Read metadata only (fast, skips data)
 meta = am.read_sav_metadata("survey.sav")
+
+# Write back — roundtrip with full metadata
+df = df.filter(pl.col("age") > 18)
+am.write_sav(df, "filtered.sav", meta=meta)
+
+# Write as .zsav (zlib compressed)
+am.write_sav(df, "compressed.zsav", meta=meta)
+
+# From scratch — metadata is optional, inferred from DataFrame schema
+am.write_sav(df, "new.sav")
 ```
 
-### Rust
+Use `.sav` for bytecode compression (default), `.zsav` for zlib compression. Pass `meta=` to preserve all metadata from a prior `read_sav()`, or omit it to infer formats from the DataFrame. Individual writable fields (e.g., `variable_labels`, `variable_value_labels`) can also be passed directly as keyword arguments for fine-grained control.
+
+## Rust
 
 ```rust
 use ambers::{read_sav, read_sav_metadata};
@@ -85,6 +94,36 @@ println!("{}", meta.label("Q1").unwrap_or("(no label)"));
 | `meta.schema` | Full metadata as a nested Python dict |
 
 All variable-name methods raise `KeyError` for unknown variables.
+
+### Metadata Fields
+
+All fields returned by the reader. Fields marked **Write** are preserved when passed via `meta=` to `write_sav()`. Read-only fields are set automatically (encoding, timestamps, row/column counts, etc.).
+
+> **Note:** This is a first pass — field names and behavior may change without warning in future releases.
+
+| Field | Read | Write | Type |
+|-------|:----:|:-----:|------|
+| `variable_names` | yes | yes | `list[str]` |
+| `variable_labels` | yes | yes | `dict[str, str]` |
+| `variable_value_labels` | yes | yes | `dict[str, dict[float\|str, str]]` |
+| `variable_measure` | yes | yes | `dict[str, str]` |
+| `variable_alignment` | yes | yes | `dict[str, str]` |
+| `variable_display_width` | yes | yes | `dict[str, int]` |
+| `variable_storage_width` | yes | yes | `dict[str, int]` |
+| `variable_missing` | yes | yes | `dict[str, list[dict]]` |
+| `spss_variable_types` | yes | yes | `dict[str, str]` |
+| `rust_variable_types` | yes | — | `dict[str, str]` |
+| `weight_variable` | yes | yes | `str \| None` |
+| `mr_sets` | yes | yes | `dict[str, dict]` |
+| `file_label` | yes | yes | `str` |
+| `file_format` | yes | — | `str` |
+| `file_encoding` | yes | — | `str` |
+| `creation_time` | yes | — | `str` |
+| `modification_time` | yes | — | `str` |
+| `number_rows` | yes | — | `int \| None` |
+| `number_columns` | yes | — | `int` |
+| `compression` | yes | — | `str` |
+| `notes` | yes | yes | `list[str]` |
 
 ## Streaming Reader (Rust)
 
@@ -147,6 +186,14 @@ On the 5.4 GB file, selecting 5 columns and 1000 rows completes in **13ms** — 
 - **4–20x faster than pyreadstat** on writes across all files and compression modes
 - Full metadata roundtrip: variable labels, value labels, missing values, MR sets, display properties
 - Bytecode (.sav) and zlib (.zsav) compression
+
+## Roadmap
+
+- Continued I/O performance optimization
+- Expanded SPSS metadata field coverage
+- Rich metadata manipulation — add, update, merge, and remove metadata programmatically
+- Individual metadata field overrides in `write_sav()` — pass `variable_labels=`, `variable_value_labels=`, etc. alongside `meta=` to selectively override fields
+- Currently supports read and write with Polars DataFrames (eager and lazy) — extending to pandas, Narwhals, DuckDB, and others
 
 ## License
 
