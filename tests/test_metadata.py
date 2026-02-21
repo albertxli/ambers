@@ -202,10 +202,6 @@ class TestSkippedFields:
     def test_creation_time(self, pyreadstat_meta, ambers_meta):
         assert pyreadstat_meta.creation_time == ambers_meta.creation_time
 
-    @pytest.mark.skip(reason="datetime format differs between libraries")
-    def test_modification_time(self, pyreadstat_meta, ambers_meta):
-        assert pyreadstat_meta.modification_time == ambers_meta.modification_time
-
     @pytest.mark.skip(reason="pyreadstat always returns 'unknown' — likely its own bug")
     def test_variable_alignment(self, pyreadstat_meta, ambers_meta):
         diffs = deep_diff(

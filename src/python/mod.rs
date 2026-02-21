@@ -107,11 +107,6 @@ impl PySpssMetadata {
     }
 
     #[getter]
-    fn modification_time(&self) -> &str {
-        &self.inner.modification_time
-    }
-
-    #[getter]
     fn notes(&self) -> Vec<String> {
         self.inner.notes.clone()
     }
@@ -303,7 +298,6 @@ impl PySpssMetadata {
         d.set_item("file_format", &m.file_format)?;
         d.set_item("file_encoding", &m.file_encoding)?;
         d.set_item("creation_time", &m.creation_time)?;
-        d.set_item("modification_time", &m.modification_time)?;
         d.set_item("number_rows", m.number_rows)?;
         d.set_item("number_columns", m.number_columns)?;
         d.set_item("weight_variable", m.weight_variable.as_deref())?;
@@ -358,7 +352,7 @@ impl PySpssMetadata {
         );
         println!("  Format:       {}", m.file_format);
         println!("  Encoding:     {}", m.file_encoding);
-        println!("  Created:      {}", format_spss_datetime(&m.creation_time, &m.modification_time));
+        println!("  Created:      {}", m.creation_time);
         println!("  Rows:         {}", rows_str);
         println!("  Columns:      {}", format_count(ncols));
         println!(
@@ -947,36 +941,6 @@ fn list_len(py: Python<'_>, obj: &Py<PyAny>) -> usize {
         .downcast::<PyList>()
         .map(|l| l.len())
         .unwrap_or(0)
-}
-
-/// Parse SPSS header date ("16 Feb 26") + time ("10:38:17") into "2026-02-16 10:38:17".
-fn format_spss_datetime(date_str: &str, time_str: &str) -> String {
-    let parts: Vec<&str> = date_str.split_whitespace().collect();
-    if parts.len() == 3 {
-        let day: u32 = parts[0].parse().unwrap_or(0);
-        let month = match parts[1].to_lowercase().as_str() {
-            "jan" => 1,
-            "feb" => 2,
-            "mar" => 3,
-            "apr" => 4,
-            "may" => 5,
-            "jun" => 6,
-            "jul" => 7,
-            "aug" => 8,
-            "sep" => 9,
-            "oct" => 10,
-            "nov" => 11,
-            "dec" => 12,
-            _ => 0,
-        };
-        let yy: u32 = parts[2].parse().unwrap_or(0);
-        let year = 2000 + yy;
-        if day > 0 && month > 0 {
-            return format!("{year:04}-{month:02}-{day:02} {time_str}");
-        }
-    }
-    // Fallback: just concatenate
-    format!("{date_str} {time_str}")
 }
 
 fn format_count(n: usize) -> String {

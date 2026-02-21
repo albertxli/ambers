@@ -183,7 +183,6 @@ pub struct SpssMetadata {
     pub file_encoding: String,
     pub compression: Compression,
     pub creation_time: String,
-    pub modification_time: String,
     pub notes: Vec<String>,
     pub number_rows: Option<i64>,
     pub number_columns: usize,
@@ -299,7 +298,6 @@ impl Default for SpssMetadata {
             file_encoding: "UTF-8".to_string(),
             compression: Compression::None,
             creation_time: String::new(),
-            modification_time: String::new(),
             notes: Vec::new(),
             number_rows: None,
             number_columns: 0,
@@ -319,4 +317,51 @@ impl Default for SpssMetadata {
             weight_variable: None,
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Timestamp helpers
+// ---------------------------------------------------------------------------
+
+const MONTH_ABBR: [&str; 12] = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/// Parse SPSS header date ("21 Feb 26") + time ("12:38:47") into "2026-02-21 12:38:47".
+pub(crate) fn format_spss_datetime(date_str: &str, time_str: &str) -> String {
+    let parts: Vec<&str> = date_str.split_whitespace().collect();
+    if parts.len() == 3 {
+        let day: u32 = parts[0].parse().unwrap_or(0);
+        let month = MONTH_ABBR
+            .iter()
+            .position(|&m| m.eq_ignore_ascii_case(parts[1]))
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        let yy: u32 = parts[2].parse().unwrap_or(0);
+        let year = 2000 + yy;
+        if day > 0 && month > 0 {
+            return format!("{year:04}-{month:02}-{day:02} {time_str}");
+        }
+    }
+    format!("{date_str} {time_str}")
+}
+
+/// Parse "2026-02-21 12:38:47" back into SPSS parts ("21 Feb 26", "12:38:47").
+/// Returns None if the format doesn't match.
+pub(crate) fn parse_iso_to_spss_parts(datetime: &str) -> Option<(String, String)> {
+    let (date_part, time_part) = datetime.split_once(' ')?;
+    let segs: Vec<&str> = date_part.split('-').collect();
+    if segs.len() != 3 {
+        return None;
+    }
+    let year: u32 = segs[0].parse().ok()?;
+    let month: usize = segs[1].parse().ok()?;
+    let day: u32 = segs[2].parse().ok()?;
+    if month == 0 || month > 12 {
+        return None;
+    }
+    let yy = year % 100;
+    let date = format!("{:02} {} {:02}", day, MONTH_ABBR[month - 1], yy);
+    Some((date, time_part.to_string()))
 }

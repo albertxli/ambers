@@ -123,7 +123,7 @@ def assert_metadata_ambers(orig, rt, label=""):
 def assert_metadata_cross(ambers_meta, pyr_meta, label=""):
     """Compare ambers SpssMetadata against pyreadstat metadata_container.
 
-    Skips: creation_time, modification_time (format differs),
+    Skips: creation_time (format differs),
            variable_alignment (pyreadstat bug), file_format (pyreadstat
            returns 'sav/zsav'), number_rows (may differ for written files).
     """

@@ -231,8 +231,10 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
     meta.file_label = raw.header.file_label.clone();
     meta.file_encoding = file_encoding.name().to_string();
     meta.compression = raw.header.compression;
-    meta.creation_time = raw.header.creation_date.clone();
-    meta.modification_time = raw.header.creation_time.clone();
+    meta.creation_time = crate::metadata::format_spss_datetime(
+        &raw.header.creation_date,
+        &raw.header.creation_time,
+    );
     meta.number_rows = if raw.header.ncases >= 0 {
         Some(raw.header.ncases as i64)
     } else {

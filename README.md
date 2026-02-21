@@ -121,7 +121,6 @@ All fields returned by the reader. Fields marked **Write** are preserved when pa
 | `file_format` | yes | — | `str` |
 | `file_encoding` | yes | — | `str` |
 | `creation_time` | yes | — | `str` |
-| `modification_time` | yes | — | `str` |
 | `number_rows` | yes | — | `int \| None` |
 | `number_columns` | yes | — | `int` |
 | `compression` | yes | — | `str` |

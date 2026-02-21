@@ -496,14 +496,19 @@ fn write_header<W: Write>(
     // Bias
     w.write_f64_le(DEFAULT_BIAS)?;
 
-    // SPSS header has one timestamp split across two fields:
-    //   creation_time = date part "DD MMM YY" (9 bytes)
-    //   modification_time = time part "HH:MM:SS" (8 bytes)
-    // Preserve creation_time from metadata on roundtrip; always update modification_time to current UTC.
+    // SPSS header: date (9 bytes "DD MMM YY") + time (8 bytes "HH:MM:SS").
+    // meta.creation_time is now a full datetime like "2026-02-21 12:38:47".
+    // Preserve on roundtrip; use current UTC for new files.
     let (date_now, time_now) = current_date_time();
-    let creation_date = if meta.creation_time.is_empty() { &date_now } else { &meta.creation_time };
-    w.write_fixed_string(creation_date, 9)?;
-    w.write_fixed_string(&time_now, 8)?;
+    if let Some((date_part, time_part)) =
+        crate::metadata::parse_iso_to_spss_parts(&meta.creation_time)
+    {
+        w.write_fixed_string(&date_part, 9)?;
+        w.write_fixed_string(&time_part, 8)?;
+    } else {
+        w.write_fixed_string(&date_now, 9)?;
+        w.write_fixed_string(&time_now, 8)?;
+    }
 
     // File label (64 bytes, space-padded)
     w.write_fixed_string(&meta.file_label, 64)?;
