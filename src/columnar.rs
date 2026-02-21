@@ -49,11 +49,12 @@ const L3_TILE_BYTES: usize = 4 * 1024 * 1024;
 
 /// Pre-computed info for one VLS (very long string) segment.
 /// VLS variables (width > 255) are stored across multiple 32-slot segments.
-/// The primary variable (segment 0) has width 255, ghost segments have width 252.
-/// Each segment occupies 32 slots (256 bytes), but only `useful_bytes` contain data.
+/// Each segment occupies 32 slots (256 bytes), storing up to 255 bytes of data.
+/// Note: n_segments is computed with divisor 252 (matching file record layout),
+/// so trailing segments may have 0 useful bytes.
 struct VlsSegmentInfo {
-    /// Number of useful DATA bytes in this segment (255 for primary, 252 for ghost,
-    /// remainder for the last segment).
+    /// Number of useful data bytes in this segment (up to 255, 0 for trailing
+    /// empty segments).
     useful_bytes: usize,
 }
 
@@ -125,13 +126,13 @@ impl ColumnarBatchBuilder {
                 (0..var.n_segments)
                     .map(|seg| {
                         // Each segment stores up to 255 bytes of content in
-                        // the data section. The last segment stores only the
-                        // remaining bytes after all prior segments.
-                        let seg_useful = if seg < var.n_segments - 1 {
-                            255
-                        } else {
-                            width - (var.n_segments - 1) * 255
-                        };
+                        // 256 bytes (32 slots) of data space. The file may
+                        // allocate more segments than needed (n_segments uses
+                        // divisor 252 for record layout), so use saturating
+                        // subtraction to handle trailing empty segments.
+                        let bytes_before = seg * 255;
+                        let remaining = width.saturating_sub(bytes_before);
+                        let seg_useful = remaining.min(255);
                         VlsSegmentInfo {
                             useful_bytes: seg_useful,
                         }
