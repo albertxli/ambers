@@ -252,9 +252,12 @@ impl<R: Read + Seek> SavScanner<R> {
             ScanState::Uncompressed => {
                 let slots_per_row = self.dict.header.nominal_case_size as usize;
                 let row_bytes = slots_per_row * 8;
-                // Adaptive chunk size: use capacity_hint for large reads (enables
-                // rayon parallelism), small chunks for lazy head(N) reads.
-                let chunk_rows = self.capacity_hint(n);
+                // Cap chunk size to ~256 MB for better cache behavior on large files.
+                // This avoids multi-GB allocations and keeps the working set manageable
+                // for L3 cache across multiple push_raw_chunk iterations.
+                // Small files still read in one chunk via capacity_hint.
+                let max_chunk_rows = (256 * 1024 * 1024 / row_bytes).max(1024);
+                let chunk_rows = self.capacity_hint(n).min(max_chunk_rows);
                 let chunk_bytes = chunk_rows * row_bytes;
                 // SAFETY: Buffer is immediately filled by read_full(). Uninitialized
                 // bytes never reach the builder — actual_rows check at line 275
