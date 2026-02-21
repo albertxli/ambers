@@ -10,6 +10,7 @@ pub const LOWEST_BITS: u64 = 0xFFEF_FFFF_FFFF_FFFE;
 /// Default compression bias (added to bytecodes 1..=251).
 pub const DEFAULT_BIAS: f64 = 100.0;
 
+
 // -- Bytecode compression control codes --
 
 /// Padding / skip.

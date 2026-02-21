@@ -255,13 +255,13 @@ impl<R: Read + Seek> SavScanner<R> {
                 // Cap chunk size to ~256 MB for better cache behavior on large files.
                 // This avoids multi-GB allocations and keeps the working set manageable
                 // for L3 cache across multiple push_raw_chunk iterations.
-                // Small files still read in one chunk via capacity_hint.
+                // Small files still read in one chunk via cap (pre-computed capacity_hint).
                 let max_chunk_rows = (256 * 1024 * 1024 / row_bytes).max(1024);
-                let chunk_rows = self.capacity_hint(n).min(max_chunk_rows);
+                let chunk_rows = cap.min(max_chunk_rows);
                 let chunk_bytes = chunk_rows * row_bytes;
                 // SAFETY: Buffer is immediately filled by read_full(). Uninitialized
-                // bytes never reach the builder — actual_rows check at line 275
-                // ensures we only process fully-read rows.
+                // bytes never reach the builder — actual_rows check ensures we only
+                // process fully-read rows.
                 let mut chunk_buf = Vec::with_capacity(chunk_bytes);
                 unsafe { chunk_buf.set_len(chunk_bytes); }
 
@@ -287,15 +287,48 @@ impl<R: Read + Seek> SavScanner<R> {
             ScanState::Bytecode { data, decompressor }
             | ScanState::Zlib { data, decompressor } => {
                 let slots_per_row = self.dict.header.nominal_case_size as usize;
+                let row_bytes = slots_per_row * 8;
                 let data_ref = data as &[u8];
-                let mut slots = Vec::with_capacity(slots_per_row);
 
+                // Decompress directly into raw byte buffer (no SlotValue intermediates),
+                // then process column-at-a-time via push_raw_chunk with rayon parallelism.
+                let max_chunk_rows = (256 * 1024 * 1024 / row_bytes).max(1024);
+                let chunk_rows = cap.min(max_chunk_rows);
+                let chunk_bytes = chunk_rows * row_bytes;
+                let mut raw_buf = Vec::with_capacity(chunk_bytes);
+                unsafe { raw_buf.set_len(chunk_bytes); }
+
+                let mut rows_in_batch = 0;
                 for _ in 0..n {
-                    decompressor.decompress_row(data_ref, slots_per_row, &mut slots)?;
-                    if slots.is_empty() || slots.len() < slots_per_row {
+                    let out_offset = rows_in_batch * row_bytes;
+                    let ok = decompressor.decompress_row_raw(
+                        data_ref,
+                        slots_per_row,
+                        &mut raw_buf,
+                        out_offset,
+                    )?;
+                    if !ok {
                         break;
                     }
-                    builder.push_slot_row(&slots);
+                    rows_in_batch += 1;
+
+                    if rows_in_batch >= chunk_rows {
+                        builder.push_raw_chunk(
+                            &raw_buf[..rows_in_batch * row_bytes],
+                            rows_in_batch,
+                            slots_per_row,
+                        );
+                        rows_in_batch = 0;
+                    }
+                }
+
+                // Flush remaining rows
+                if rows_in_batch > 0 {
+                    builder.push_raw_chunk(
+                        &raw_buf[..rows_in_batch * row_bytes],
+                        rows_in_batch,
+                        slots_per_row,
+                    );
                 }
             }
         }

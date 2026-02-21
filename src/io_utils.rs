@@ -125,12 +125,15 @@ impl<R: Read> SavReader<R> {
 }
 
 /// Trim trailing spaces (0x20) and NUL bytes (0x00) from a byte slice.
+/// Uses reverse scan to find last non-padding byte.
 pub fn trim_trailing_padding(buf: &[u8]) -> &[u8] {
-    let end = buf
-        .iter()
-        .rposition(|&b| b != b' ' && b != 0)
-        .map(|i| i + 1)
-        .unwrap_or(0);
+    // Scan backwards for last byte that isn't space or NUL.
+    // memchr doesn't help here (only finds specific bytes, not "not in set"),
+    // so we use a simple reverse loop which LLVM auto-vectorizes.
+    let mut end = buf.len();
+    while end > 0 && (buf[end - 1] == b' ' || buf[end - 1] == 0) {
+        end -= 1;
+    }
     &buf[..end]
 }
 

@@ -1,6 +1,10 @@
 use crate::constants::*;
 use crate::error::{Result, SpssError};
 
+/// Raw byte representations for direct-to-buffer decompression.
+const SYSMIS_RAW: [u8; 8] = SYSMIS_BITS.to_le_bytes();
+const SPACES_RAW: [u8; 8] = [0x20u8; 8];
+
 /// The result of decompressing one 8-byte slot from bytecode.
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
@@ -45,13 +49,9 @@ impl BytecodeDecompressor {
         }
     }
 
-    /// Decompress one row of `slots_per_row` slot values from the input buffer.
-    ///
-    /// Writes into the caller-provided `slots` vec (cleared first). This avoids
-    /// a heap allocation per row — the caller allocates once and reuses.
-    ///
-    /// Control block state is preserved across calls, so this can be called
-    /// repeatedly to decompress consecutive rows.
+    /// Decompress one row into SlotValue enum values (used by tests).
+    /// Production code uses `decompress_row_raw` which writes directly to byte buffers.
+    #[cfg(test)]
     pub fn decompress_row(
         &mut self,
         input: &[u8],
@@ -114,6 +114,76 @@ impl BytecodeDecompressor {
         }
 
         Ok(())
+    }
+
+    /// Decompress one row directly into a raw byte buffer, skipping SlotValue intermediates.
+    ///
+    /// Writes `slots_per_row * 8` bytes into `output` starting at `out_offset`.
+    /// Returns `true` if a complete row was written, `false` if EOF or insufficient data.
+    pub fn decompress_row_raw(
+        &mut self,
+        input: &[u8],
+        slots_per_row: usize,
+        output: &mut [u8],
+        out_offset: usize,
+    ) -> Result<bool> {
+        if self.eof {
+            return Ok(false);
+        }
+
+        let mut slot = 0;
+        while slot < slots_per_row {
+            // Need a new control block?
+            if self.control_idx >= 8 {
+                if self.pos + 8 > input.len() {
+                    return Ok(false);
+                }
+                self.control_bytes
+                    .copy_from_slice(&input[self.pos..self.pos + 8]);
+                self.pos += 8;
+                self.control_idx = 0;
+            }
+
+            let code = self.control_bytes[self.control_idx];
+            self.control_idx += 1;
+
+            let dest_offset = out_offset + slot * 8;
+            match code {
+                // Hot path first: codes 1..=251 are small numeric values
+                1..=251 => {
+                    let value = (code as f64) - self.bias;
+                    output[dest_offset..dest_offset + 8]
+                        .copy_from_slice(&value.to_le_bytes());
+                    slot += 1;
+                }
+                COMPRESS_SKIP => {
+                    continue;
+                }
+                COMPRESS_RAW_FOLLOWS => {
+                    if self.pos + 8 > input.len() {
+                        return Err(truncated_err(self.pos + 8, input.len()));
+                    }
+                    output[dest_offset..dest_offset + 8]
+                        .copy_from_slice(&input[self.pos..self.pos + 8]);
+                    self.pos += 8;
+                    slot += 1;
+                }
+                COMPRESS_EIGHT_SPACES => {
+                    output[dest_offset..dest_offset + 8].copy_from_slice(&SPACES_RAW);
+                    slot += 1;
+                }
+                COMPRESS_SYSMIS => {
+                    output[dest_offset..dest_offset + 8].copy_from_slice(&SYSMIS_RAW);
+                    slot += 1;
+                }
+                COMPRESS_END_OF_FILE => {
+                    self.eof = true;
+                    return Ok(false);
+                }
+            }
+        }
+
+        Ok(true)
     }
 }
 
