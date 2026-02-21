@@ -7,6 +7,7 @@ pub mod very_long_strings;
 pub mod encoding_record;
 pub mod long_string_labels;
 pub mod long_string_missing;
+pub mod var_attributes;
 
 use std::io::Read;
 
@@ -54,6 +55,7 @@ pub enum InfoRecord {
     LongStringLabels(Vec<long_string_labels::LongStringLabelSet>),
     LongStringMissing(Vec<long_string_missing::LongStringMissingEntry>),
     MrSets(Vec<mr_sets::RawMrSet>),
+    VarAttributes(Vec<var_attributes::VarAttributeSet>),
     Unknown { subtype: i32 },
 }
 
@@ -106,6 +108,11 @@ pub fn parse_info_record<R: Read>(
             let data = reader.read_bytes(data_len)?;
             let entries = long_string_missing::parse_long_string_missing(&data)?;
             Ok(InfoRecord::LongStringMissing(entries))
+        }
+        INFO_VAR_ATTRIBUTES => {
+            let data = reader.read_bytes(data_len)?;
+            let attrs = var_attributes::parse_var_attributes(&data);
+            Ok(InfoRecord::VarAttributes(attrs))
         }
         _ => {
             // Unknown subtype -- skip the data

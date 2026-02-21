@@ -32,6 +32,7 @@ pub struct RawDictionary {
     pub long_string_labels: Vec<crate::info_records::long_string_labels::LongStringLabelSet>,
     pub long_string_missing: Vec<crate::info_records::long_string_missing::LongStringMissingEntry>,
     pub mr_sets: Vec<crate::info_records::mr_sets::RawMrSet>,
+    pub var_attributes: Vec<crate::info_records::var_attributes::VarAttributeSet>,
 }
 
 /// The resolved dictionary ready for data reading.
@@ -65,6 +66,7 @@ pub fn parse_dictionary<R: Read>(
     let mut long_string_labels = Vec::new();
     let mut long_string_missing = Vec::new();
     let mut mr_sets = Vec::new();
+    let mut var_attributes = Vec::new();
 
     let mut slot_index = 0;
 
@@ -112,6 +114,7 @@ pub fn parse_dictionary<R: Read>(
                     InfoRecord::LongStringLabels(labels) => long_string_labels = labels,
                     InfoRecord::LongStringMissing(entries) => long_string_missing = entries,
                     InfoRecord::MrSets(sets) => mr_sets = sets,
+                    InfoRecord::VarAttributes(attrs) => var_attributes = attrs,
                     InfoRecord::Unknown { .. } => {} // skip
                 }
             }
@@ -145,6 +148,7 @@ pub fn parse_dictionary<R: Read>(
         long_string_labels,
         long_string_missing,
         mr_sets,
+        var_attributes,
     })
 }
 
@@ -479,6 +483,27 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
                     variables: resolved_vars,
                 },
             );
+        }
+    }
+
+    // 10. Resolve variable attributes (subtype 18)
+    // Variable names in subtype 18 may be SHORT names — map to long names.
+    for var_attr_set in &raw.var_attributes {
+        let var_name = short_to_long
+            .get(&var_attr_set.var_name)
+            .or_else(|| {
+                // Try uppercase lookup (short names are uppercase)
+                short_to_long.get(&var_attr_set.var_name.to_uppercase())
+            })
+            .cloned()
+            .unwrap_or_else(|| var_attr_set.var_name.clone());
+
+        for (attr_name, values) in &var_attr_set.attributes {
+            if attr_name == "$@Role" && !values.is_empty() {
+                if let Some(role) = Role::from_code(&values[0]) {
+                    meta.variable_role.insert(var_name.clone(), role);
+                }
+            }
         }
     }
 

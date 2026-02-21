@@ -42,6 +42,7 @@ pub const INFO_VAR_DISPLAY: i32 = 11;
 pub const INFO_LONG_NAMES: i32 = 13;
 pub const INFO_VERY_LONG_STRINGS: i32 = 14;
 pub const INFO_ENCODING: i32 = 20;
+pub const INFO_VAR_ATTRIBUTES: i32 = 18;
 pub const INFO_LONG_STRING_LABELS: i32 = 21;
 pub const INFO_LONG_STRING_MISSING: i32 = 22;
 
@@ -145,6 +146,56 @@ impl Alignment {
             Alignment::Unknown | Alignment::Left => 0,
             Alignment::Right => 1,
             Alignment::Center => 2,
+        }
+    }
+}
+
+/// Variable role (stored as $@Role attribute in subtype 18).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    Input,
+    Target,
+    Both,
+    None,
+    Partition,
+    Split,
+}
+
+impl Role {
+    /// Parse from SPSS numeric code string ("0"=Input, "1"=Target, etc.).
+    pub fn from_code(s: &str) -> Option<Role> {
+        match s.trim() {
+            "0" => Some(Role::Input),
+            "1" => Some(Role::Target),
+            "2" => Some(Role::Both),
+            "3" => Some(Role::None),
+            "4" => Some(Role::Partition),
+            "5" => Some(Role::Split),
+            _ => Option::None,
+        }
+    }
+
+    /// Return the SPSS numeric code string.
+    pub fn to_code(&self) -> &'static str {
+        match self {
+            Role::Input => "0",
+            Role::Target => "1",
+            Role::Both => "2",
+            Role::None => "3",
+            Role::Partition => "4",
+            Role::Split => "5",
+        }
+    }
+
+    /// Return the human-readable role name.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Role::Input => "input",
+            Role::Target => "target",
+            Role::Both => "both",
+            Role::None => "none",
+            Role::Partition => "partition",
+            Role::Split => "split",
         }
     }
 }

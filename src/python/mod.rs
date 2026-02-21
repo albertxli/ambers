@@ -222,6 +222,15 @@ impl PySpssMetadata {
     }
 
     #[getter]
+    fn variable_role(&self) -> IndexMap<String, String> {
+        self.inner
+            .variable_role
+            .iter()
+            .map(|(k, v)| (k.clone(), v.as_str().to_string()))
+            .collect()
+    }
+
+    #[getter]
     fn weight_variable(&self) -> Option<String> {
         self.inner.weight_variable.clone()
     }
@@ -256,6 +265,12 @@ impl PySpssMetadata {
     fn measure(&self, name: &str) -> PyResult<Option<String>> {
         self.check_var(name)?;
         Ok(self.inner.measure(name).map(|m| m.as_str().to_string()))
+    }
+
+    /// Get the role for a variable. Returns None if no role is set.
+    fn role(&self, name: &str) -> PyResult<Option<String>> {
+        self.check_var(name)?;
+        Ok(self.inner.role(name).map(|r| r.as_str().to_string()))
     }
 
     /// Get the value labels dict for a variable. Returns None if no value labels exist.
@@ -311,6 +326,7 @@ impl PySpssMetadata {
         d.set_item("variable_storage_width", m.variable_storage_width.clone())?;
         d.set_item("variable_missing_values", self.variable_missing_values(py)?)?;
         d.set_item("mr_sets", self.mr_sets(py)?)?;
+        d.set_item("variable_role", self.variable_role())?;
 
         Ok(d.unbind().into_any())
     }
@@ -420,6 +436,35 @@ impl PySpssMetadata {
             println!("  Unknown       {:>5}", format_count(n_unknown));
         }
 
+        // Role distribution
+        if !m.variable_role.is_empty() {
+            use crate::constants::Role;
+            let mut n_input = 0usize;
+            let mut n_target = 0usize;
+            let mut n_both = 0usize;
+            let mut n_none = 0usize;
+            let mut n_partition = 0usize;
+            let mut n_split = 0usize;
+            for role in m.variable_role.values() {
+                match role {
+                    Role::Input => n_input += 1,
+                    Role::Target => n_target += 1,
+                    Role::Both => n_both += 1,
+                    Role::None => n_none += 1,
+                    Role::Partition => n_partition += 1,
+                    Role::Split => n_split += 1,
+                }
+            }
+            println!();
+            println!("Roles ({} variables)", m.variable_role.len());
+            if n_input > 0 { println!("  Input         {:>5}", format_count(n_input)); }
+            if n_target > 0 { println!("  Target        {:>5}", format_count(n_target)); }
+            if n_both > 0 { println!("  Both          {:>5}", format_count(n_both)); }
+            if n_none > 0 { println!("  None          {:>5}", format_count(n_none)); }
+            if n_partition > 0 { println!("  Partition     {:>5}", format_count(n_partition)); }
+            if n_split > 0 { println!("  Split         {:>5}", format_count(n_split)); }
+        }
+
         // Annotations section
         let n_with_labels = m.variable_labels.len();
         let n_with_values = m.variable_value_labels.len();
@@ -501,11 +546,18 @@ impl PySpssMetadata {
 
             let type_str = if fmt.starts_with('A') { "String" } else { "Numeric" };
 
+            let role_str = m
+                .variable_role
+                .get(name)
+                .map(|r| r.as_str())
+                .unwrap_or("(none)");
+
             println!("Variable: {name}");
             println!("Label:    {label}");
             println!("Format:   {fmt:<12}Measure: {measure_str}");
             println!("Type:     {type_str:<12}Align:   {align}");
             println!("Display:  {display_w:<12}Storage: {storage_w}");
+            println!("Role:     {role_str}");
 
             // Missing values
             if let Some(specs) = m.variable_missing_values.get(name) {
@@ -621,6 +673,7 @@ impl PySpssMetadata {
             &shared,
         )?;
         let mr_diffs = diff_key_sets(py, &a.mr_sets, &b.mr_sets)?;
+        let role_diffs = diff_role_maps(py, &a.variable_role, &b.variable_role, &shared)?;
 
         let is_match = file_level.is_empty()
             && only_self.is_empty()
@@ -632,7 +685,8 @@ impl PySpssMetadata {
             && list_len(py, &storage_diffs) == 0
             && list_len(py, &vvl_diffs) == 0
             && list_len(py, &missing_diffs) == 0
-            && list_len(py, &mr_diffs) == 0;
+            && list_len(py, &mr_diffs) == 0
+            && list_len(py, &role_diffs) == 0;
 
         let result = PyMetaDiff {
             is_match,
@@ -647,6 +701,7 @@ impl PySpssMetadata {
             variable_storage_width: storage_diffs.clone_ref(py),
             variable_missing_values: missing_diffs.clone_ref(py),
             mr_sets: mr_diffs.clone_ref(py),
+            variable_role: role_diffs.clone_ref(py),
         };
 
         if print_output {
@@ -696,6 +751,7 @@ pub struct PyMetaDiff {
     variable_storage_width: Py<PyAny>,
     variable_missing_values: Py<PyAny>,
     mr_sets: Py<PyAny>,
+    variable_role: Py<PyAny>,
 }
 
 #[pymethods]
@@ -760,6 +816,11 @@ impl PyMetaDiff {
         self.mr_sets.clone_ref(py)
     }
 
+    #[getter]
+    fn variable_role(&self, py: Python<'_>) -> Py<PyAny> {
+        self.variable_role.clone_ref(py)
+    }
+
     fn __repr__(&self, py: Python<'_>) -> String {
         let n_self = self.variables_only_in_self.len();
         let n_other = self.variables_only_in_other.len();
@@ -803,6 +864,7 @@ impl PyMetaDiff {
             "variable_storage_width" => Ok(self.variable_storage_width.clone_ref(py)),
             "variable_missing_values" => Ok(self.variable_missing_values.clone_ref(py)),
             "mr_sets" => Ok(self.mr_sets.clone_ref(py)),
+            "variable_role" => Ok(self.variable_role.clone_ref(py)),
             _ => Err(PyKeyError::new_err(format!("'{key}'"))),
         }
     }
@@ -857,6 +919,7 @@ impl PyMetaDiff {
             ("variable_storage_width", &self.variable_storage_width),
             ("variable_missing_values", &self.variable_missing_values),
             ("mr_sets", &self.mr_sets),
+            ("variable_role", &self.variable_role),
         ];
 
         println!();
@@ -1073,6 +1136,28 @@ fn diff_missing_maps<'py>(
             d.set_item("variable", *var)?;
             d.set_item("self_has_missing", a_has)?;
             d.set_item("other_has_missing", b_has)?;
+            list.append(d)?;
+        }
+    }
+    Ok(list.unbind().into_any())
+}
+
+/// Diff role maps.
+fn diff_role_maps<'py>(
+    py: Python<'py>,
+    a: &IndexMap<String, crate::constants::Role>,
+    b: &IndexMap<String, crate::constants::Role>,
+    shared: &HashSet<&str>,
+) -> PyResult<Py<PyAny>> {
+    let list = PyList::empty(py);
+    for var in shared {
+        let va = a.get(*var).map(|r| r.as_str()).unwrap_or("(none)");
+        let vb = b.get(*var).map(|r| r.as_str()).unwrap_or("(none)");
+        if va != vb {
+            let d = PyDict::new(py);
+            d.set_item("variable", *var)?;
+            d.set_item("self", va)?;
+            d.set_item("other", vb)?;
             list.append(d)?;
         }
     }

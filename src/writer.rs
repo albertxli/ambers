@@ -992,6 +992,44 @@ fn write_info_mr_sets<W: Write>(
     Ok(())
 }
 
+fn write_info_var_attributes<W: Write>(
+    w: &mut W,
+    meta: &SpssMetadata,
+    layout: &CaseLayout,
+) -> Result<()> {
+    if meta.variable_role.is_empty() {
+        return Ok(());
+    }
+
+    // Build long → short name map (inverted from layout.short_to_long)
+    let long_to_short: IndexMap<String, String> = layout
+        .short_to_long
+        .iter()
+        .map(|(short, long)| (long.clone(), short.clone()))
+        .collect();
+
+    // Build text payload in subtype 18 format:
+    //   VAR_SHORT:$@Role('code'\n)/VAR_SHORT2:$@Role('code'\n)
+    let mut payload = String::new();
+    for (long_name, role) in &meta.variable_role {
+        let short_name = long_to_short
+            .get(long_name)
+            .unwrap_or(long_name);
+
+        if !payload.is_empty() {
+            payload.push('/');
+        }
+        payload.push_str(short_name);
+        payload.push_str(":$@Role('");
+        payload.push_str(role.to_code());
+        payload.push_str("'\n)");
+    }
+
+    write_info_record_header(w, INFO_VAR_ATTRIBUTES, 1, payload.len() as i32)?;
+    w.write_all(payload.as_bytes())?;
+    Ok(())
+}
+
 fn write_dict_termination<W: Write>(w: &mut W) -> Result<()> {
     w.write_i32_le(RECORD_TYPE_DICT_TERMINATION)?;
     w.write_i32_le(0)?; // filler
@@ -1454,6 +1492,7 @@ pub fn write_sav_to_writer<W: Write + Seek>(
     write_info_long_string_labels(&mut writer, &layout, metadata)?;
     write_info_long_string_missing(&mut writer, &layout, metadata)?;
     write_info_mr_sets(&mut writer, metadata, &layout)?;
+    write_info_var_attributes(&mut writer, metadata, &layout)?;
     write_dict_termination(&mut writer)?;
 
     // Write data

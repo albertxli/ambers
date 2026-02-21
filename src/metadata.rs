@@ -1,7 +1,7 @@
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use indexmap::IndexMap;
 
-use crate::constants::{Alignment, Compression, Measure};
+use crate::constants::{Alignment, Compression, Measure, Role};
 use crate::variable::MissingValues;
 
 /// A value that can be used as a key in value label maps.
@@ -213,6 +213,7 @@ pub struct SpssMetadata {
 
     // SPSS-specific
     pub mr_sets: IndexMap<String, MrSet>,
+    pub variable_role: IndexMap<String, Role>,
     pub weight_variable: Option<String>,
 }
 
@@ -235,6 +236,11 @@ impl SpssMetadata {
     /// Get the measurement level for a variable.
     pub fn measure(&self, name: &str) -> Option<Measure> {
         self.variable_measure.get(name).copied()
+    }
+
+    /// Get the role for a variable.
+    pub fn role(&self, name: &str) -> Option<Role> {
+        self.variable_role.get(name).copied()
     }
 
     /// Infer metadata from an Arrow schema (for write_sav without prior read metadata).
@@ -309,6 +315,7 @@ impl Default for SpssMetadata {
             variable_measure: IndexMap::new(),
             variable_missing_values: IndexMap::new(),
             mr_sets: IndexMap::new(),
+            variable_role: IndexMap::new(),
             weight_variable: None,
         }
     }
