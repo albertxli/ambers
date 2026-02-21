@@ -173,7 +173,7 @@ fn compute_layout(batch: &RecordBatch, meta: &SpssMetadata) -> Result<CaseLayout
 
         // Resolve format from metadata or infer from Arrow type
         let format = meta
-            .spss_variable_types
+            .variable_format
             .get(name.as_str())
             .and_then(|s| SpssFormat::from_string(s))
             .unwrap_or_else(|| infer_format(field.data_type()));
@@ -186,7 +186,7 @@ fn compute_layout(batch: &RecordBatch, meta: &SpssMetadata) -> Result<CaseLayout
             // Parse the original format string for the declared width (not u8-capped).
             // E.g., "A254" → 254 (non-VLS), "A2000" → 2000 (VLS).
             let declared_width = meta
-                .spss_variable_types
+                .variable_format
                 .get(name.as_str())
                 .and_then(|s| {
                     let rest = s.trim_start_matches(|c: char| !c.is_ascii_digit());
@@ -232,7 +232,7 @@ fn compute_layout(batch: &RecordBatch, meta: &SpssMetadata) -> Result<CaseLayout
 
         let label = meta.variable_labels.get(name.as_str()).cloned();
         let missing_values = meta
-            .variable_missing
+            .variable_missing_values
             .get(name.as_str())
             .map(|specs| specs_to_missing(specs))
             .unwrap_or(MissingValues::None);
@@ -880,7 +880,7 @@ fn write_info_long_string_missing<W: Write>(
     let mut entries: Vec<(&str, &Vec<MissingSpec>)> = Vec::new();
     for var in &layout.write_vars {
         if matches!(&var.var_type, VarType::String(w) if *w > 8) {
-            if let Some(specs) = meta.variable_missing.get(&var.long_name) {
+            if let Some(specs) = meta.variable_missing_values.get(&var.long_name) {
                 if !specs.is_empty() {
                     entries.push((&var.short_name, specs));
                 }

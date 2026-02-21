@@ -78,7 +78,7 @@ def assert_metadata_ambers(orig, rt, label=""):
     for field, getter in [
         ("variable_labels", lambda m: m.variable_labels),
         ("variable_value_labels", lambda m: m.variable_value_labels),
-        ("spss_variable_types", lambda m: m.spss_variable_types),
+        ("variable_format", lambda m: m.variable_format),
         ("variable_measure", lambda m: m.variable_measure),
         ("variable_display_width", lambda m: m.variable_display_width),
         ("variable_storage_width", lambda m: m.variable_storage_width),
@@ -88,7 +88,7 @@ def assert_metadata_ambers(orig, rt, label=""):
 
     # Key-set fields (value structure may vary)
     for field, getter in [
-        ("variable_missing", lambda m: m.variable_missing),
+        ("variable_missing_values", lambda m: m.variable_missing_values),
         ("mr_sets", lambda m: m.mr_sets),
     ]:
         orig_keys = set(getter(orig).keys())
@@ -137,7 +137,7 @@ def assert_metadata_cross(ambers_meta, pyr_meta, label=""):
     field_pairs = [
         ("variable_labels", lambda: ambers_meta.variable_labels, lambda: pyr_meta.column_names_to_labels),
         ("variable_value_labels", lambda: ambers_meta.variable_value_labels, lambda: pyr_meta.variable_value_labels),
-        ("spss_variable_types", lambda: ambers_meta.spss_variable_types, lambda: pyr_meta.original_variable_types),
+        ("variable_format", lambda: ambers_meta.variable_format, lambda: pyr_meta.original_variable_types),
         ("variable_measure", lambda: ambers_meta.variable_measure, lambda: pyr_meta.variable_measure),
         ("variable_display_width", lambda: ambers_meta.variable_display_width, lambda: pyr_meta.variable_display_width),
         ("variable_storage_width", lambda: ambers_meta.variable_storage_width, lambda: pyr_meta.variable_storage_width),
@@ -147,10 +147,10 @@ def assert_metadata_cross(ambers_meta, pyr_meta, label=""):
         assert diffs == [], f"{pfx}{field}: {len(diffs)} diffs: {diffs[:5]}"
 
     # Key-set fields
-    am_missing_keys = set(ambers_meta.variable_missing.keys())
+    am_missing_keys = set(ambers_meta.variable_missing_values.keys())
     pyr_missing_keys = set(pyr_meta.missing_ranges.keys())
     assert am_missing_keys == pyr_missing_keys, (
-        f"{pfx}variable_missing keys differ: "
+        f"{pfx}variable_missing_values keys differ: "
         f"only_ambers={sorted(am_missing_keys - pyr_missing_keys)}, "
         f"only_pyr={sorted(pyr_missing_keys - am_missing_keys)}"
     )

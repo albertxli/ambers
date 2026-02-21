@@ -110,9 +110,9 @@ All fields returned by the reader. Fields marked **Write** are preserved when pa
 | `variable_alignment` | yes | yes | `dict[str, str]` |
 | `variable_display_width` | yes | yes | `dict[str, int]` |
 | `variable_storage_width` | yes | yes | `dict[str, int]` |
-| `variable_missing` | yes | yes | `dict[str, list[dict]]` |
-| `spss_variable_types` | yes | yes | `dict[str, str]` |
-| `rust_variable_types` | yes | — | `dict[str, str]` |
+| `variable_missing_values` | yes | yes | `dict[str, list[dict]]` |
+| `variable_format` | yes | yes | `dict[str, str]` |
+| `arrow_data_types` | yes | — | `dict[str, str]` |
 | `weight_variable` | yes | yes | `str \| None` |
 | `mr_sets` | yes | yes | `dict[str, dict]` |
 | `file_label` | yes | yes | `str` |

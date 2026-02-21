@@ -47,13 +47,13 @@ fn test_temporal_types_real_file() {
     let total_temporal = date_cols.len() + timestamp_cols.len() + duration_cols.len();
     println!("\nTotal temporal columns: {}", total_temporal);
 
-    // Print rust_variable_types for temporal columns
-    println!("\n=== Metadata rust_variable_types for temporal cols ===");
+    // Print arrow_data_types for temporal columns
+    println!("\n=== Metadata arrow_data_types for temporal cols ===");
     for name in date_cols.iter().chain(timestamp_cols.iter()).chain(duration_cols.iter()) {
-        if let Some(rust_type) = meta.rust_variable_types.get(name.as_str()) {
+        if let Some(rust_type) = meta.arrow_data_types.get(name.as_str()) {
             println!("  {} -> rust_type={}", name, rust_type);
         }
-        if let Some(spss_type) = meta.spss_variable_types.get(name.as_str()) {
+        if let Some(spss_type) = meta.variable_format.get(name.as_str()) {
             println!("  {} -> spss_type={}", name, spss_type);
         }
     }

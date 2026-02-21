@@ -149,13 +149,13 @@ impl PySpssMetadata {
     }
 
     #[getter]
-    fn spss_variable_types(&self) -> IndexMap<String, String> {
-        self.inner.spss_variable_types.clone()
+    fn variable_format(&self) -> IndexMap<String, String> {
+        self.inner.variable_format.clone()
     }
 
     #[getter]
-    fn rust_variable_types(&self) -> IndexMap<String, String> {
-        self.inner.rust_variable_types.clone()
+    fn arrow_data_types(&self) -> IndexMap<String, String> {
+        self.inner.arrow_data_types.clone()
     }
 
     #[getter]
@@ -200,9 +200,9 @@ impl PySpssMetadata {
     }
 
     #[getter]
-    fn variable_missing<'py>(&self, py: Python<'py>) -> PyResult<Py<PyAny>> {
+    fn variable_missing_values<'py>(&self, py: Python<'py>) -> PyResult<Py<PyAny>> {
         let outer = PyDict::new(py);
-        for (var_name, specs) in &self.inner.variable_missing {
+        for (var_name, specs) in &self.inner.variable_missing_values {
             let inner = PyList::empty(py);
             for spec in specs {
                 inner.append(missing_spec_to_py(py, spec)?)?;
@@ -304,12 +304,12 @@ impl PySpssMetadata {
         d.set_item("variable_labels", self.variable_labels(py)?)?;
         d.set_item("variable_value_labels", self.variable_value_labels(py)?)?;
         d.set_item("variable_measure", self.variable_measure())?;
-        d.set_item("spss_variable_types", m.spss_variable_types.clone())?;
-        d.set_item("rust_variable_types", m.rust_variable_types.clone())?;
+        d.set_item("variable_format", m.variable_format.clone())?;
+        d.set_item("arrow_data_types", m.arrow_data_types.clone())?;
         d.set_item("variable_alignment", self.variable_alignment())?;
         d.set_item("variable_display_width", m.variable_display_width.clone())?;
         d.set_item("variable_storage_width", m.variable_storage_width.clone())?;
-        d.set_item("variable_missing", self.variable_missing(py)?)?;
+        d.set_item("variable_missing_values", self.variable_missing_values(py)?)?;
         d.set_item("mr_sets", self.mr_sets(py)?)?;
 
         Ok(d.unbind().into_any())
@@ -371,7 +371,7 @@ impl PySpssMetadata {
         // Variables section
         let mut n_numeric = 0usize;
         let mut n_string = 0usize;
-        for fmt in m.spss_variable_types.values() {
+        for fmt in m.variable_format.values() {
             if fmt.starts_with('A') {
                 n_string += 1;
             } else {
@@ -423,7 +423,7 @@ impl PySpssMetadata {
         // Annotations section
         let n_with_labels = m.variable_labels.len();
         let n_with_values = m.variable_value_labels.len();
-        let n_with_missing = m.variable_missing.len();
+        let n_with_missing = m.variable_missing_values.len();
         let n_mr = m.mr_sets.len();
 
         println!();
@@ -477,7 +477,7 @@ impl PySpssMetadata {
             }
 
             let label = m.variable_labels.get(name).map(|s| s.as_str()).unwrap_or("(none)");
-            let fmt = m.spss_variable_types.get(name).map(|s| s.as_str()).unwrap_or("?");
+            let fmt = m.variable_format.get(name).map(|s| s.as_str()).unwrap_or("?");
             let measure_str = m
                 .variable_measure
                 .get(name)
@@ -508,7 +508,7 @@ impl PySpssMetadata {
             println!("Display:  {display_w:<12}Storage: {storage_w}");
 
             // Missing values
-            if let Some(specs) = m.variable_missing.get(name) {
+            if let Some(specs) = m.variable_missing_values.get(name) {
                 if specs.is_empty() {
                     println!("Missing:  (none)");
                 } else {
@@ -594,7 +594,7 @@ impl PySpssMetadata {
         // Per-field diffs on shared variables
         let label_diffs = diff_string_maps(py, &a.variable_labels, &b.variable_labels, &shared)?;
         let type_diffs =
-            diff_string_maps(py, &a.spss_variable_types, &b.spss_variable_types, &shared)?;
+            diff_string_maps(py, &a.variable_format, &b.variable_format, &shared)?;
         let measure_diffs = diff_measure_maps(py, &a.variable_measure, &b.variable_measure, &shared)?;
         let display_diffs = diff_u32_maps(
             py,
@@ -616,8 +616,8 @@ impl PySpssMetadata {
         )?;
         let missing_diffs = diff_missing_maps(
             py,
-            &a.variable_missing,
-            &b.variable_missing,
+            &a.variable_missing_values,
+            &b.variable_missing_values,
             &shared,
         )?;
         let mr_diffs = diff_key_sets(py, &a.mr_sets, &b.mr_sets)?;
@@ -641,11 +641,11 @@ impl PySpssMetadata {
             variables_only_in_other: only_other,
             variable_labels: label_diffs.clone_ref(py),
             variable_value_labels: vvl_diffs.clone_ref(py),
-            spss_variable_types: type_diffs.clone_ref(py),
+            variable_format: type_diffs.clone_ref(py),
             variable_measure: measure_diffs.clone_ref(py),
             variable_display_width: display_diffs.clone_ref(py),
             variable_storage_width: storage_diffs.clone_ref(py),
-            variable_missing: missing_diffs.clone_ref(py),
+            variable_missing_values: missing_diffs.clone_ref(py),
             mr_sets: mr_diffs.clone_ref(py),
         };
 
@@ -690,11 +690,11 @@ pub struct PyMetaDiff {
     variables_only_in_other: Vec<String>,
     variable_labels: Py<PyAny>,
     variable_value_labels: Py<PyAny>,
-    spss_variable_types: Py<PyAny>,
+    variable_format: Py<PyAny>,
     variable_measure: Py<PyAny>,
     variable_display_width: Py<PyAny>,
     variable_storage_width: Py<PyAny>,
-    variable_missing: Py<PyAny>,
+    variable_missing_values: Py<PyAny>,
     mr_sets: Py<PyAny>,
 }
 
@@ -731,8 +731,8 @@ impl PyMetaDiff {
     }
 
     #[getter]
-    fn spss_variable_types(&self, py: Python<'_>) -> Py<PyAny> {
-        self.spss_variable_types.clone_ref(py)
+    fn variable_format(&self, py: Python<'_>) -> Py<PyAny> {
+        self.variable_format.clone_ref(py)
     }
 
     #[getter]
@@ -751,8 +751,8 @@ impl PyMetaDiff {
     }
 
     #[getter]
-    fn variable_missing(&self, py: Python<'_>) -> Py<PyAny> {
-        self.variable_missing.clone_ref(py)
+    fn variable_missing_values(&self, py: Python<'_>) -> Py<PyAny> {
+        self.variable_missing_values.clone_ref(py)
     }
 
     #[getter]
@@ -765,7 +765,7 @@ impl PyMetaDiff {
         let n_other = self.variables_only_in_other.len();
         let n_label = list_len(py, &self.variable_labels);
         let n_vvl = list_len(py, &self.variable_value_labels);
-        let n_type = list_len(py, &self.spss_variable_types);
+        let n_type = list_len(py, &self.variable_format);
         let total_diffs = n_self + n_other + n_label + n_vvl + n_type;
         format!(
             "MetaDiff(is_match={}, diffs={})",
@@ -797,11 +797,11 @@ impl PyMetaDiff {
                 .unbind()),
             "variable_labels" => Ok(self.variable_labels.clone_ref(py)),
             "variable_value_labels" => Ok(self.variable_value_labels.clone_ref(py)),
-            "spss_variable_types" => Ok(self.spss_variable_types.clone_ref(py)),
+            "variable_format" => Ok(self.variable_format.clone_ref(py)),
             "variable_measure" => Ok(self.variable_measure.clone_ref(py)),
             "variable_display_width" => Ok(self.variable_display_width.clone_ref(py)),
             "variable_storage_width" => Ok(self.variable_storage_width.clone_ref(py)),
-            "variable_missing" => Ok(self.variable_missing.clone_ref(py)),
+            "variable_missing_values" => Ok(self.variable_missing_values.clone_ref(py)),
             "mr_sets" => Ok(self.mr_sets.clone_ref(py)),
             _ => Err(PyKeyError::new_err(format!("'{key}'"))),
         }
@@ -851,11 +851,11 @@ impl PyMetaDiff {
         let fields: &[(&str, &Py<PyAny>)] = &[
             ("variable_labels", &self.variable_labels),
             ("variable_value_labels", &self.variable_value_labels),
-            ("spss_variable_types", &self.spss_variable_types),
+            ("variable_format", &self.variable_format),
             ("variable_measure", &self.variable_measure),
             ("variable_display_width", &self.variable_display_width),
             ("variable_storage_width", &self.variable_storage_width),
-            ("variable_missing", &self.variable_missing),
+            ("variable_missing_values", &self.variable_missing_values),
             ("mr_sets", &self.mr_sets),
         ];
 

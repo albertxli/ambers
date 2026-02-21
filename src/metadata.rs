@@ -196,8 +196,8 @@ pub struct SpssMetadata {
     pub variable_labels: IndexMap<String, String>,
 
     // Type info
-    pub spss_variable_types: IndexMap<String, String>,
-    pub rust_variable_types: IndexMap<String, String>,
+    pub variable_format: IndexMap<String, String>,
+    pub arrow_data_types: IndexMap<String, String>,
 
     // Value labels: {var_name -> {value -> label}}
     pub variable_value_labels: IndexMap<String, IndexMap<Value, String>>,
@@ -209,7 +209,7 @@ pub struct SpssMetadata {
     pub variable_measure: IndexMap<String, Measure>,
 
     // Missing values
-    pub variable_missing: IndexMap<String, Vec<MissingSpec>>,
+    pub variable_missing_values: IndexMap<String, Vec<MissingSpec>>,
 
     // SPSS-specific
     pub mr_sets: IndexMap<String, MrSet>,
@@ -229,7 +229,7 @@ impl SpssMetadata {
 
     /// Get the SPSS format string for a variable (e.g., "F8.2", "A50").
     pub fn format(&self, name: &str) -> Option<&str> {
-        self.spss_variable_types.get(name).map(|s| s.as_str())
+        self.variable_format.get(name).map(|s| s.as_str())
     }
 
     /// Get the measurement level for a variable.
@@ -274,8 +274,8 @@ impl SpssMetadata {
             } else {
                 8
             };
-            meta.spss_variable_types.insert(name.clone(), fmt_str);
-            meta.rust_variable_types.insert(name.clone(), rust_type.to_string());
+            meta.variable_format.insert(name.clone(), fmt_str);
+            meta.arrow_data_types.insert(name.clone(), rust_type.to_string());
             meta.variable_measure.insert(name.clone(), measure);
             meta.variable_alignment.insert(name.clone(), alignment);
             meta.variable_display_width.insert(name.clone(), 8);
@@ -300,14 +300,14 @@ impl Default for SpssMetadata {
             file_format: "sav".to_string(),
             variable_names: Vec::new(),
             variable_labels: IndexMap::new(),
-            spss_variable_types: IndexMap::new(),
-            rust_variable_types: IndexMap::new(),
+            variable_format: IndexMap::new(),
+            arrow_data_types: IndexMap::new(),
             variable_value_labels: IndexMap::new(),
             variable_alignment: IndexMap::new(),
             variable_storage_width: IndexMap::new(),
             variable_display_width: IndexMap::new(),
             variable_measure: IndexMap::new(),
-            variable_missing: IndexMap::new(),
+            variable_missing_values: IndexMap::new(),
             mr_sets: IndexMap::new(),
             weight_variable: None,
         }

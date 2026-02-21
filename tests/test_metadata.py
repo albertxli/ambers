@@ -111,10 +111,10 @@ class TestDictFields:
         )
         assert diffs == [], f"{len(diffs)} diffs: {diffs[:5]}"
 
-    def test_spss_variable_types(self, pyreadstat_meta, ambers_meta):
+    def test_variable_format(self, pyreadstat_meta, ambers_meta):
         diffs = deep_diff(
             pyreadstat_meta.original_variable_types,
-            ambers_meta.spss_variable_types,
+            ambers_meta.variable_format,
         )
         assert diffs == [], f"{len(diffs)} diffs: {diffs[:5]}"
 
@@ -157,7 +157,7 @@ class TestKeySetFields:
 
     def test_missing_ranges_keys(self, pyreadstat_meta, ambers_meta):
         pr_keys = set(pyreadstat_meta.missing_ranges.keys())
-        am_keys = set(ambers_meta.variable_missing.keys())
+        am_keys = set(ambers_meta.variable_missing_values.keys())
         removed = sorted(pr_keys - am_keys)
         added = sorted(am_keys - pr_keys)
         assert removed == [], f"In pyreadstat only: {removed}"

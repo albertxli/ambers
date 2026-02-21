@@ -274,7 +274,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
                 }
                 _ => fmt.to_spss_string(),
             };
-            meta.spss_variable_types
+            meta.variable_format
                 .insert(name.clone(), format_str);
         }
 
@@ -294,7 +294,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
             }
             VarType::String(_) => "String".to_string(),
         };
-        meta.rust_variable_types.insert(name.clone(), rust_type);
+        meta.arrow_data_types.insert(name.clone(), rust_type);
 
         // Display properties
         meta.variable_measure.insert(name.clone(), var.measure);
@@ -320,7 +320,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
         // Missing values
         let specs = metadata::missing_to_specs(&var.missing_values);
         if !specs.is_empty() {
-            meta.variable_missing.insert(name.clone(), specs);
+            meta.variable_missing_values.insert(name.clone(), specs);
         }
     }
 
@@ -435,7 +435,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
             .collect();
 
         if !specs.is_empty() {
-            meta.variable_missing
+            meta.variable_missing_values
                 .insert(ls_missing.var_name.clone(), specs);
         }
     }
