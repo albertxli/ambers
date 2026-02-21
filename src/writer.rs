@@ -496,12 +496,14 @@ fn write_header<W: Write>(
     // Bias
     w.write_f64_le(DEFAULT_BIAS)?;
 
-    // Creation date (9 bytes: "DD MMM YY")
-    let now = current_date_time();
-    w.write_fixed_string(&now.0, 9)?;
-
-    // Creation time (8 bytes: "HH:MM:SS")
-    w.write_fixed_string(&now.1, 8)?;
+    // SPSS header has one timestamp split across two fields:
+    //   creation_time = date part "DD MMM YY" (9 bytes)
+    //   modification_time = time part "HH:MM:SS" (8 bytes)
+    // Preserve creation_time from metadata on roundtrip; always update modification_time to current UTC.
+    let (date_now, time_now) = current_date_time();
+    let creation_date = if meta.creation_time.is_empty() { &date_now } else { &meta.creation_time };
+    w.write_fixed_string(creation_date, 9)?;
+    w.write_fixed_string(&time_now, 8)?;
 
     // File label (64 bytes, space-padded)
     w.write_fixed_string(&meta.file_label, 64)?;
@@ -1208,7 +1210,7 @@ fn fill_row_buffer(
                         let useful = if seg < var.n_segments - 1 {
                             255
                         } else {
-                            *width - (var.n_segments - 1) * 255
+                            width.saturating_sub((var.n_segments - 1) * 255)
                         };
                         let copy_len = str_bytes.len().saturating_sub(str_pos).min(useful);
                         if copy_len > 0 {
@@ -1429,14 +1431,65 @@ fn write_data_zsav<W: Write + Seek>(
 // Date/time helpers
 // ---------------------------------------------------------------------------
 
+/// Return the current date and time in SPSS header format.
+/// Date: "DD MMM YY" (9 bytes), Time: "HH:MM:SS" (8 bytes).
 fn current_date_time() -> (String, String) {
-    // Simple fallback: use a fixed format that SPSS expects
-    // Date: "DD MMM YY" e.g. "21 Feb 26"
-    // Time: "HH:MM:SS" e.g. "12:00:00"
-    //
-    // We avoid pulling in chrono; just use a reasonable default.
-    // The timestamp will be updated if the user's metadata has one.
-    ("01 Jan 00".to_string(), "00:00:00".to_string())
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    // Convert epoch seconds to date/time components.
+    // Simple civil-time calculation (no leap seconds, good enough for timestamps).
+    let secs_per_day = 86400u64;
+    let time_of_day = secs % secs_per_day;
+    let hh = time_of_day / 3600;
+    let mm = (time_of_day % 3600) / 60;
+    let ss = time_of_day % 60;
+
+    // Days since 1970-01-01
+    let mut days = (secs / secs_per_day) as i64;
+
+    // Compute year/month/day from days since epoch
+    let mut year = 1970i32;
+    loop {
+        let days_in_year = if is_leap(year) { 366 } else { 365 };
+        if days < days_in_year {
+            break;
+        }
+        days -= days_in_year;
+        year += 1;
+    }
+    let months_days: [i64; 12] = if is_leap(year) {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+    let mut month = 0usize;
+    for (i, &md) in months_days.iter().enumerate() {
+        if days < md {
+            month = i;
+            break;
+        }
+        days -= md;
+    }
+    let day = days + 1;
+
+    const MONTH_ABBR: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+
+    let yy = year % 100;
+    let date = format!("{:02} {} {:02}", day, MONTH_ABBR[month], yy);
+    let time = format!("{:02}:{:02}:{:02}", hh, mm, ss);
+    (date, time)
+}
+
+fn is_leap(y: i32) -> bool {
+    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
 }
 
 // ---------------------------------------------------------------------------

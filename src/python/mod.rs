@@ -298,15 +298,12 @@ impl PySpssMetadata {
         let d = PyDict::new(py);
         let m = &self.inner;
 
-        // Combine date + time into ISO-ish datetime
-        let datetime = format_spss_datetime(&m.creation_time, &m.modification_time);
-
         // File-level scalars
         d.set_item("file_label", &m.file_label)?;
         d.set_item("file_format", &m.file_format)?;
         d.set_item("file_encoding", &m.file_encoding)?;
-        d.set_item("creation_time", &datetime)?;
-        d.set_item("modification_time", &datetime)?;
+        d.set_item("creation_time", &m.creation_time)?;
+        d.set_item("modification_time", &m.modification_time)?;
         d.set_item("number_rows", m.number_rows)?;
         d.set_item("number_columns", m.number_columns)?;
         d.set_item("weight_variable", m.weight_variable.as_deref())?;
@@ -345,8 +342,6 @@ impl PySpssMetadata {
             .number_rows
             .map(|n| format_count(n as usize))
             .unwrap_or_else(|| "unknown".into());
-        let datetime = format_spss_datetime(&m.creation_time, &m.modification_time);
-
         println!("SPSS Metadata Summary");
         println!("\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}");
 
@@ -363,7 +358,7 @@ impl PySpssMetadata {
         );
         println!("  Format:       {}", m.file_format);
         println!("  Encoding:     {}", m.file_encoding);
-        println!("  Created:      {}", datetime);
+        println!("  Created:      {}", format_spss_datetime(&m.creation_time, &m.modification_time));
         println!("  Rows:         {}", rows_str);
         println!("  Columns:      {}", format_count(ncols));
         println!(
