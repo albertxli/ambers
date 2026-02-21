@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import polars
 
 class SpssMetadata:
@@ -103,3 +105,19 @@ def scan_sav(
     row_index_name: str | None = None,
     row_index_offset: int = 0,
 ) -> tuple[polars.LazyFrame, SpssMetadata]: ...
+def write_sav(
+    df: polars.DataFrame,
+    path: str | Path,
+    *,
+    meta: SpssMetadata | None = None,
+    compress: bool = True,
+    file_label: str | None = None,
+    variable_labels: dict[str, str] | None = None,
+    variable_value_labels: dict[str, dict] | None = None,
+    variable_measure: dict[str, str] | None = None,
+    variable_format: dict[str, str] | None = None,
+    variable_display_width: dict[str, int] | None = None,
+    missing_ranges: dict[str, list] | None = None,
+    notes: str | list[str] | None = None,
+    weight_variable: str | None = None,
+) -> None: ...

@@ -1,6 +1,8 @@
-"""ambers: Pure Rust SPSS .sav/.zsav reader."""
+"""ambers: Pure Rust SPSS .sav/.zsav reader and writer."""
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from ambers._ambers import (
     MetaDiff,
@@ -8,12 +10,14 @@ from ambers._ambers import (
     _SavBatchReader,
     _read_sav,
     _read_sav_metadata,
+    _write_sav,
 )
 
 __all__ = [
     "read_sav",
     "read_sav_metadata",
     "scan_sav",
+    "write_sav",
     "SpssMetadata",
     "MetaDiff",
 ]
@@ -198,3 +202,65 @@ def scan_sav(
     if row_index_name is not None:
         lf = lf.with_row_index(row_index_name, offset=row_index_offset)
     return lf, meta
+
+
+def write_sav(
+    df,
+    path: str | Path,
+    *,
+    meta: SpssMetadata | None = None,
+    compress: bool = True,
+    file_label: str | None = None,
+    variable_labels: dict[str, str] | None = None,
+    variable_value_labels: dict[str, dict] | None = None,
+    variable_measure: dict[str, str] | None = None,
+    variable_format: dict[str, str] | None = None,
+    variable_display_width: dict[str, int] | None = None,
+    missing_ranges: dict[str, list] | None = None,
+    notes: str | list[str] | None = None,
+    weight_variable: str | None = None,
+) -> None:
+    """Write a Polars DataFrame to an SPSS .sav or .zsav file.
+
+    Supports two workflows:
+
+    1. **Roundtrip** -- pass the ``meta`` from a prior ``read_sav()``::
+
+        df, meta = am.read_sav("input.sav")
+        am.write_sav(df, "output.sav", meta=meta)
+
+    2. **From scratch** -- metadata is inferred from the DataFrame::
+
+        am.write_sav(df, "new.sav")
+
+    Args:
+        df: A Polars DataFrame (or any object implementing
+            ``__arrow_c_stream__``).
+        path: Output file path. Use ``.zsav`` extension for zlib
+            compression.
+        meta: An ``SpssMetadata`` object from a prior ``read_sav()``.
+            If None, metadata is inferred from the DataFrame schema.
+        compress: If True (default), use bytecode compression for
+            ``.sav`` files. If False, write uncompressed. ``.zsav``
+            files always use zlib compression regardless of this flag.
+        file_label: Reserved for future use.
+        variable_labels: Reserved for future use.
+        variable_value_labels: Reserved for future use.
+        variable_measure: Reserved for future use.
+        variable_format: Reserved for future use.
+        variable_display_width: Reserved for future use.
+        missing_ranges: Reserved for future use.
+        notes: Reserved for future use.
+        weight_variable: Reserved for future use.
+    """
+    path = str(path)
+
+    # Determine compression from extension and compress flag
+    if path.lower().endswith(".zsav"):
+        compression = "zlib"
+    elif compress:
+        compression = "bytecode"
+    else:
+        compression = "none"
+
+    _write_sav(path, df, metadata=meta, compression=compression)

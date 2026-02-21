@@ -5,7 +5,7 @@ use std::io::BufReader;
 
 use indexmap::IndexMap;
 
-use arrow::ffi_stream::FFI_ArrowArrayStream;
+use arrow::ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream};
 use arrow::record_batch::{RecordBatch, RecordBatchIterator, RecordBatchReader};
 use pyo3::exceptions::{PyIOError, PyKeyError};
 use pyo3::prelude::*;
@@ -1247,6 +1247,97 @@ fn _read_sav_metadata(path: &str) -> PyResult<PySpssMetadata> {
 }
 
 // ---------------------------------------------------------------------------
+// #[pyfunction] write_sav
+// ---------------------------------------------------------------------------
+
+/// Write a DataFrame to an SPSS .sav or .zsav file.
+///
+/// Accepts any object that implements the Arrow PyCapsule Interface
+/// (`__arrow_c_stream__`), such as a Polars DataFrame.
+#[pyfunction]
+#[pyo3(signature = (path, data, metadata=None, compression="bytecode"))]
+fn _write_sav(
+    py: Python<'_>,
+    path: &str,
+    data: &Bound<'_, PyAny>,
+    metadata: Option<&PySpssMetadata>,
+    compression: &str,
+) -> PyResult<()> {
+    // Parse compression
+    let comp = match compression {
+        "none" => Compression::None,
+        "bytecode" => Compression::Bytecode,
+        "zlib" => Compression::Zlib,
+        _ => {
+            return Err(PyIOError::new_err(format!(
+                "unknown compression: {compression:?}. Expected 'none', 'bytecode', or 'zlib'"
+            )));
+        }
+    };
+
+    // Consume Arrow data via PyCapsule Interface
+    let batch = arrow_from_pycapsule(py, data)?;
+
+    // Build metadata: use provided or infer from schema
+    let meta = match metadata {
+        Some(py_meta) => py_meta.inner.clone(),
+        None => SpssMetadata::from_arrow_schema(batch.schema().as_ref()),
+    };
+
+    // Write
+    crate::write_sav(path, &batch, &meta, comp).map_err(spss_err)?;
+
+    Ok(())
+}
+
+/// Extract a RecordBatch from a Python object that implements `__arrow_c_stream__`.
+fn arrow_from_pycapsule(py: Python<'_>, data: &Bound<'_, PyAny>) -> PyResult<RecordBatch> {
+    // Call __arrow_c_stream__ to get the PyCapsule
+    let capsule: Bound<'_, PyCapsule> = data
+        .call_method1("__arrow_c_stream__", (py.None(),))?
+        .downcast_into()?;
+
+    // SAFETY: The PyCapsule wraps an FFI_ArrowArrayStream allocated by the producer.
+    // We consume it by reading the struct and nulling the release callback on the
+    // original, so the PyCapsule destructor becomes a no-op (prevents double-free).
+    let stream = unsafe { capsule.reference::<FFI_ArrowArrayStream>() };
+    let stream_ptr = stream as *const FFI_ArrowArrayStream as *mut FFI_ArrowArrayStream;
+    let stream_owned = unsafe { std::ptr::read(stream_ptr) };
+    // Prevent double-free: null out the release callback on the PyCapsule's copy
+    unsafe {
+        (*stream_ptr).release = None;
+    }
+
+    let reader = ArrowArrayStreamReader::try_new(stream_owned)
+        .map_err(|e| PyIOError::new_err(format!("failed to read Arrow stream: {e}")))?;
+
+    // Collect all batches into a single RecordBatch
+    let schema = reader.schema();
+    let mut batches: Vec<RecordBatch> = Vec::new();
+    for batch_result in reader {
+        let batch = batch_result
+            .map_err(|e| PyIOError::new_err(format!("error reading Arrow batch: {e}")))?;
+        batches.push(batch);
+    }
+
+    if batches.is_empty() {
+        // Return empty batch with the schema
+        return Ok(RecordBatch::new_empty(schema));
+    }
+
+    if batches.len() == 1 {
+        return Ok(batches.into_iter().next().unwrap());
+    }
+
+    // Multiple batches: use arrow-select concat_batches
+    // This shouldn't happen with Polars (always single batch), but handle gracefully.
+    Err(PyIOError::new_err(format!(
+        "expected a single Arrow batch, got {}. Pass a single DataFrame.",
+        batches.len()
+    )))
+}
+
+// ---------------------------------------------------------------------------
 // #[pymodule]
 // ---------------------------------------------------------------------------
 
@@ -1254,6 +1345,7 @@ fn _read_sav_metadata(path: &str) -> PyResult<PySpssMetadata> {
 fn _ambers(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(_read_sav, m)?)?;
     m.add_function(wrap_pyfunction!(_read_sav_metadata, m)?)?;
+    m.add_function(wrap_pyfunction!(_write_sav, m)?)?;
     m.add_class::<PySpssMetadata>()?;
     m.add_class::<PyMetaDiff>()?;
     m.add_class::<PyArrowData>()?;

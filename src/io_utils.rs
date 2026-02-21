@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Read, Write};
 
 use crate::error::{Result, SpssError};
 
@@ -193,6 +193,53 @@ pub fn detect_endianness(layout_code_bytes: [u8; 4]) -> Result<bool> {
         )))
     }
 }
+
+// ---------------------------------------------------------------------------
+// SavWriteExt — endian-aware binary writing (always little-endian)
+// ---------------------------------------------------------------------------
+
+/// Extension trait for endian-aware binary writing to SAV files.
+/// Always writes little-endian (modern SPSS convention).
+pub trait SavWriteExt: Write {
+    fn write_i32_le(&mut self, val: i32) -> Result<()> {
+        self.write_all(&val.to_le_bytes())?;
+        Ok(())
+    }
+
+    fn write_f64_le(&mut self, val: f64) -> Result<()> {
+        self.write_all(&val.to_le_bytes())?;
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    fn write_i64_le(&mut self, val: i64) -> Result<()> {
+        self.write_all(&val.to_le_bytes())?;
+        Ok(())
+    }
+
+    /// Write a string, space-padded or truncated to exactly `len` bytes.
+    fn write_fixed_string(&mut self, s: &str, len: usize) -> Result<()> {
+        let bytes = s.as_bytes();
+        let to_write = bytes.len().min(len);
+        self.write_all(&bytes[..to_write])?;
+        if to_write < len {
+            let padding = vec![b' '; len - to_write];
+            self.write_all(&padding)?;
+        }
+        Ok(())
+    }
+
+    /// Write `count` zero bytes.
+    fn write_zero_padding(&mut self, count: usize) -> Result<()> {
+        if count > 0 {
+            let buf = vec![0u8; count];
+            self.write_all(&buf)?;
+        }
+        Ok(())
+    }
+}
+
+impl<W: Write> SavWriteExt for W {}
 
 #[cfg(test)]
 mod tests {

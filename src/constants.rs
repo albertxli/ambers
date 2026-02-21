@@ -64,6 +64,14 @@ impl Compression {
             _ => None,
         }
     }
+
+    pub fn to_i32(self) -> i32 {
+        match self {
+            Compression::None => 0,
+            Compression::Bytecode => 1,
+            Compression::Zlib => 2,
+        }
+    }
 }
 
 /// Variable measurement level.
@@ -93,6 +101,15 @@ impl Measure {
             Measure::Scale => "scale",
         }
     }
+
+    pub fn to_i32(self) -> i32 {
+        match self {
+            Measure::Unknown => 0,
+            Measure::Nominal => 1,
+            Measure::Ordinal => 2,
+            Measure::Scale => 3,
+        }
+    }
 }
 
 /// Variable alignment.
@@ -120,6 +137,14 @@ impl Alignment {
             Alignment::Left => "left",
             Alignment::Right => "right",
             Alignment::Center => "center",
+        }
+    }
+
+    pub fn to_i32(self) -> i32 {
+        match self {
+            Alignment::Unknown | Alignment::Left => 0,
+            Alignment::Right => 1,
+            Alignment::Center => 2,
         }
     }
 }
@@ -201,6 +226,49 @@ pub enum FormatType {
 }
 
 impl FormatType {
+    pub fn from_prefix(s: &str) -> Option<FormatType> {
+        match s.to_uppercase().as_str() {
+            "A" => Some(FormatType::A),
+            "AHEX" => Some(FormatType::Ahex),
+            "COMMA" => Some(FormatType::Comma),
+            "DOLLAR" => Some(FormatType::Dollar),
+            "F" => Some(FormatType::F),
+            "IB" => Some(FormatType::Ib),
+            "PIBHEX" => Some(FormatType::PibHex),
+            "P" => Some(FormatType::P),
+            "PIB" => Some(FormatType::Pib),
+            "PK" => Some(FormatType::Pk),
+            "RB" => Some(FormatType::Rb),
+            "RBHEX" => Some(FormatType::RbHex),
+            "Z" => Some(FormatType::Z),
+            "N" => Some(FormatType::N),
+            "E" => Some(FormatType::E),
+            "DATE" => Some(FormatType::Date),
+            "TIME" => Some(FormatType::Time),
+            "DATETIME" => Some(FormatType::DateTime),
+            "ADATE" => Some(FormatType::ADate),
+            "JDATE" => Some(FormatType::JDate),
+            "DTIME" => Some(FormatType::DTime),
+            "WKDAY" => Some(FormatType::Wkday),
+            "MONTH" => Some(FormatType::Month),
+            "MOYR" => Some(FormatType::Moyr),
+            "QYR" => Some(FormatType::Qyr),
+            "WKYR" => Some(FormatType::Wkyr),
+            "PCT" => Some(FormatType::Pct),
+            "DOT" => Some(FormatType::Dot),
+            "CCA" => Some(FormatType::Cca),
+            "CCB" => Some(FormatType::Ccb),
+            "CCC" => Some(FormatType::Ccc),
+            "CCD" => Some(FormatType::Ccd),
+            "CCE" => Some(FormatType::Cce),
+            "EDATE" => Some(FormatType::EDate),
+            "SDATE" => Some(FormatType::SDate),
+            "MTIME" => Some(FormatType::MTime),
+            "YMDHMS" => Some(FormatType::YmDhms),
+            _ => None,
+        }
+    }
+
     pub fn from_u8(val: u8) -> Option<FormatType> {
         match val {
             1 => Some(FormatType::A),
@@ -355,6 +423,51 @@ impl SpssFormat {
         let decimals = (raw & 0xFF) as u8;
 
         FormatType::from_u8(format_type_byte).map(|format_type| SpssFormat {
+            format_type,
+            width,
+            decimals,
+        })
+    }
+
+    /// Encode to packed i32 format: `(type << 16) | (width << 8) | decimals`.
+    /// Reverse of `from_packed`.
+    pub fn to_packed(&self) -> i32 {
+        ((self.format_type as u8 as i32) << 16)
+            | ((self.width as i32) << 8)
+            | (self.decimals as i32)
+    }
+
+    /// Parse an SPSS format string like "F8.2", "A50", "DATE11" back to SpssFormat.
+    pub fn from_string(s: &str) -> Option<SpssFormat> {
+        let s = s.trim();
+        if s.is_empty() {
+            return None;
+        }
+        // Split at boundary between letters and digits
+        let prefix_end = s
+            .find(|c: char| c.is_ascii_digit() || c == '.')
+            .unwrap_or(s.len());
+        let prefix = &s[..prefix_end];
+        let rest = &s[prefix_end..];
+
+        let format_type = FormatType::from_prefix(prefix)?;
+
+        // Parse "width.decimals" or just "width"
+        // Width can exceed 255 for VLS strings (e.g. "A281"), so parse as u32
+        // and clamp to 255 for the packed format representation.
+        let (width, decimals) = if let Some(dot_pos) = rest.find('.') {
+            let w: u32 = rest[..dot_pos].parse().ok()?;
+            let d: u32 = rest[dot_pos + 1..].parse().ok()?;
+            ((w.min(255)) as u8, (d.min(255)) as u8)
+        } else if rest.is_empty() {
+            // Format with no width (rare, use defaults)
+            (8, 0)
+        } else {
+            let w: u32 = rest.parse().ok()?;
+            ((w.min(255)) as u8, 0)
+        };
+
+        Some(SpssFormat {
             format_type,
             width,
             decimals,

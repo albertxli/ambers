@@ -1,3 +1,4 @@
+use arrow::datatypes::{DataType, Schema, TimeUnit};
 use indexmap::IndexMap;
 
 use crate::constants::{Alignment, Compression, Measure};
@@ -84,6 +85,45 @@ pub enum MissingSpec {
     Range { lo: f64, hi: f64 },
     /// A discrete string missing value.
     StringValue(String),
+}
+
+/// Convert public MissingSpec list back to internal MissingValues.
+pub fn specs_to_missing(specs: &[MissingSpec]) -> MissingValues {
+    if specs.is_empty() {
+        return MissingValues::None;
+    }
+    // Separate ranges from discrete values
+    let mut ranges: Vec<(f64, f64)> = Vec::new();
+    let mut discrete_f64: Vec<f64> = Vec::new();
+    let mut discrete_str: Vec<Vec<u8>> = Vec::new();
+    for spec in specs {
+        match spec {
+            MissingSpec::Range { lo, hi } => ranges.push((*lo, *hi)),
+            MissingSpec::Value(v) => discrete_f64.push(*v),
+            MissingSpec::StringValue(s) => {
+                let mut bytes = s.as_bytes().to_vec();
+                bytes.resize(8, b' ');
+                discrete_str.push(bytes);
+            }
+        }
+    }
+    if !discrete_str.is_empty() {
+        return MissingValues::DiscreteString(discrete_str);
+    }
+    if let Some((lo, hi)) = ranges.first() {
+        if let Some(&val) = discrete_f64.first() {
+            return MissingValues::RangeAndValue {
+                low: *lo,
+                high: *hi,
+                value: val,
+            };
+        }
+        return MissingValues::Range {
+            low: *lo,
+            high: *hi,
+        };
+    }
+    MissingValues::DiscreteNumeric(discrete_f64)
 }
 
 /// Convert internal MissingValues to public MissingSpec list.
@@ -197,6 +237,53 @@ impl SpssMetadata {
         self.variable_measure.get(name).copied()
     }
 
+    /// Infer metadata from an Arrow schema (for write_sav without prior read metadata).
+    pub fn from_arrow_schema(schema: &Schema) -> Self {
+        let mut meta = SpssMetadata::default();
+        meta.file_encoding = "UTF-8".to_string();
+        meta.file_format = "sav".to_string();
+        meta.number_columns = schema.fields().len();
+
+        for field in schema.fields() {
+            let name = field.name().clone();
+            meta.variable_names.push(name.clone());
+
+            let (fmt_str, rust_type, measure, alignment) = match field.data_type() {
+                DataType::Float64 => ("F8.2".to_string(), "f64", Measure::Scale, Alignment::Right),
+                DataType::Int64 | DataType::Int32 | DataType::Int16 | DataType::Int8 => {
+                    ("F8.0".to_string(), "f64", Measure::Scale, Alignment::Right)
+                }
+                DataType::Boolean => ("F1.0".to_string(), "f64", Measure::Nominal, Alignment::Right),
+                DataType::Date32 => ("DATE11".to_string(), "Date32", Measure::Scale, Alignment::Right),
+                DataType::Timestamp(TimeUnit::Microsecond, _) => {
+                    ("DATETIME23.2".to_string(), "Timestamp[us]", Measure::Scale, Alignment::Right)
+                }
+                DataType::Duration(TimeUnit::Microsecond) => {
+                    ("TIME11.2".to_string(), "Duration[us]", Measure::Scale, Alignment::Right)
+                }
+                DataType::Utf8 | DataType::Utf8View | DataType::LargeUtf8 => {
+                    ("A255".to_string(), "String", Measure::Nominal, Alignment::Left)
+                }
+                _ => ("F8.2".to_string(), "f64", Measure::Scale, Alignment::Right),
+            };
+
+            // String storage width must match the format width so compute_layout()
+            // uses the correct VLS segment count.
+            let sw = if fmt_str.starts_with('A') {
+                fmt_str[1..].parse::<usize>().unwrap_or(255)
+            } else {
+                8
+            };
+            meta.spss_variable_types.insert(name.clone(), fmt_str);
+            meta.rust_variable_types.insert(name.clone(), rust_type.to_string());
+            meta.variable_measure.insert(name.clone(), measure);
+            meta.variable_alignment.insert(name.clone(), alignment);
+            meta.variable_display_width.insert(name.clone(), 8);
+            meta.variable_storage_width.insert(name.clone(), sw);
+        }
+
+        meta
+    }
 }
 
 impl Default for SpssMetadata {

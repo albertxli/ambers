@@ -41,6 +41,9 @@ pub enum SpssError {
 
     #[error("unsupported feature: {0}")]
     Unsupported(String),
+
+    #[error("write error: {0}")]
+    WriteError(String),
 }
 
 pub type Result<T> = std::result::Result<T, SpssError>;

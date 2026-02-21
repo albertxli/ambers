@@ -34,6 +34,7 @@ pub mod metadata;
 pub mod scanner;
 pub(crate) mod value_labels;
 pub(crate) mod variable;
+pub mod writer;
 
 #[cfg(feature = "python")]
 mod python;
@@ -48,9 +49,10 @@ use crate::error::Result;
 use crate::scanner::SavScanner;
 
 // Re-export key public types
-pub use crate::constants::{Alignment, Measure};
+pub use crate::constants::{Alignment, Compression, Measure};
 pub use crate::metadata::{MissingSpec, MrSet, MrType, SpssMetadata, Value};
 pub use crate::scanner::SavScanner as Scanner;
+pub use crate::writer::{write_sav, write_sav_to_writer};
 
 /// Read an SPSS .sav or .zsav file, returning all data as an Arrow RecordBatch
 /// plus the file's metadata.
