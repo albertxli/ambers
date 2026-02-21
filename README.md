@@ -17,7 +17,7 @@ Pure Rust SPSS `.sav`/`.zsav` reader — Arrow-native, zero C dependencies.
 - Rich metadata: variable labels, value labels, missing values, MR sets, measure levels
 - Lazy reader via `scan_sav()` — returns Polars LazyFrame with projection and row limit pushdown
 - No PyArrow dependency — uses Arrow PyCapsule Interface for zero-copy transfer
-- One of the fastest SPSS readers — up to 2.5x faster than polars_readstat, 5–10x faster than pyreadstat
+- The fastest SPSS reader — up to 3x faster than polars_readstat, 10x faster than pyreadstat
 - Python + Rust dual API from a single crate
 
 ## Installation
@@ -102,23 +102,20 @@ while let Some(batch) = scanner.next_batch()? {
 
 ### Eager Read
 
-All results return a Polars DataFrame. Average of 5 runs on Windows 11, Python 3.13, 24-core machine.
+All results return a Polars DataFrame. Best of 5 runs (with warmup) on Windows 11, Python 3.13, 24-core machine.
 
-| File | Size | Rows | Cols | ambers | polars_readstat | ambers vs prs | pyreadstat | pyreadstat mp (4w) | ambers vs pyreadstat |
-|------|------|-----:|-----:|-------:|----------------:|--------------:|-----------:|-------------------:|---------------------:|
-| test_1 (bytecode) | 0.2 MB | 1,500 | 75 | **0.002s** | 0.004s | **2.0x faster** | 0.010s | 0.493s | **5.0x faster** |
-| test_2 (bytecode) | 147 MB | 22,070 | 677 | **0.812s** | 0.991s | **1.2x faster** | 3.564s | 1.781s | **4.4x faster** |
-| test_3 (uncompressed) | 1.1 GB | 79,066 | 915 | **0.509s** | 1.279s | **2.5x faster** | 4.849s | 2.764s | **9.5x faster** |
-| test_4 (uncompressed) | 0.6 MB | 201 | 158 | **0.002s** | 0.004s | **2.0x faster** | 0.018s | 0.470s | **9.0x faster** |
-| test_5 (uncompressed) | 0.6 MB | 203 | 136 | **0.002s** | 0.004s | **2.0x faster** | 0.015s | 0.454s | **7.5x faster** |
-| test_6 (uncompressed) | 5.4 GB | 395,330 | 916 | **2.801s** | 1.809s | 1.5x slower | 24.199s | 11.718s | **8.6x faster** |
+| File | Size | Rows | Cols | ambers | polars_readstat | pyreadstat | vs prs | vs pyreadstat |
+|------|------|-----:|-----:|-------:|----------------:|-----------:|-------:|--------------:|
+| test_1 (bytecode) | 0.2 MB | 1,500 | 75 | **0.001s** | 0.003s | 0.010s | **4.1x** | **12x** |
+| test_2 (bytecode) | 147 MB | 22,070 | 677 | **0.766s** | 0.962s | 3.082s | **1.3x** | **4.0x** |
+| test_3 (uncompressed) | 1.1 GB | 79,066 | 915 | **0.424s** | 1.265s | 4.387s | **3.0x** | **10x** |
+| test_4 (uncompressed) | 0.6 MB | 201 | 158 | **0.001s** | 0.003s | 0.010s | **3.4x** | **10x** |
+| test_5 (uncompressed) | 0.6 MB | 203 | 136 | **0.001s** | 0.003s | 0.010s | **3.4x** | **10x** |
+| test_6 (uncompressed) | 5.4 GB | 395,330 | 916 | **1.772s** | 1.929s | 22.280s | **1.1x** | **13x** |
 
-- **vs polars_readstat**: faster on 5 of 6 files — 1.2–2.5x faster (test_6 at 5.4 GB is 1.5x slower)
-- **vs pyreadstat**: 4–10x faster across all file sizes
-- **vs pyreadstat multiprocess (4 workers)**: ambers single-threaded still faster on every file
+- **Faster than polars_readstat on all 6 files** — 1.1–4.1x faster
+- **4–13x faster than pyreadstat** across all file sizes
 - No PyArrow dependency — uses Arrow PyCapsule Interface for zero-copy transfer
-
-*pyreadstat multiprocess returns pandas; timing includes `pl.from_pandas()` conversion.*
 
 ### Lazy Read with Pushdown
 

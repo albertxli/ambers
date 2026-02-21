@@ -26,7 +26,8 @@ pub enum SlotValue {
 /// Maintains control block state across row boundaries, since SPSS control
 /// blocks do NOT align with row boundaries.
 pub struct BytecodeDecompressor {
-    /// Compression bias (typically 100.0).
+    /// Compression bias (typically 100.0). Used by test-only `decompress_row()`.
+    #[cfg_attr(not(test), allow(dead_code))]
     bias: f64,
     /// Current position in the input buffer.
     pos: usize,
@@ -36,16 +37,24 @@ pub struct BytecodeDecompressor {
     control_idx: usize,
     /// Whether we've hit the end-of-file marker.
     eof: bool,
+    /// Pre-computed LE bytes for opcodes 1..=251: `bias_lut[code] = ((code as f64) - bias).to_le_bytes()`.
+    /// 2 KB table fits in L1 cache; eliminates int→float + subtraction per opcode in hot loop.
+    bias_lut: [[u8; 8]; 256],
 }
 
 impl BytecodeDecompressor {
     pub fn new(bias: f64) -> Self {
+        let mut bias_lut = [[0u8; 8]; 256];
+        for code in 1u16..=251 {
+            bias_lut[code as usize] = ((code as f64) - bias).to_le_bytes();
+        }
         BytecodeDecompressor {
             bias,
             pos: 0,
             control_bytes: [0u8; 8],
             control_idx: 8, // force reading a new control block on first use
             eof: false,
+            bias_lut,
         }
     }
 
@@ -131,6 +140,16 @@ impl BytecodeDecompressor {
             return Ok(false);
         }
 
+        // Validate output buffer can hold the full row. All unsafe writes below
+        // depend on this invariant (checked only in debug builds for zero overhead).
+        debug_assert!(
+            out_offset + slots_per_row * 8 <= output.len(),
+            "output buffer too small: need {} bytes at offset {}, have {}",
+            slots_per_row * 8,
+            out_offset,
+            output.len()
+        );
+
         let mut slot = 0;
         while slot < slots_per_row {
             // Need a new control block?
@@ -149,11 +168,18 @@ impl BytecodeDecompressor {
 
             let dest_offset = out_offset + slot * 8;
             match code {
-                // Hot path first: codes 1..=251 are small numeric values
+                // Hot path first: codes 1..=251 are small numeric values.
+                // Uses pre-computed LUT — single memcpy, no int→float or subtraction.
                 1..=251 => {
-                    let value = (code as f64) - self.bias;
-                    output[dest_offset..dest_offset + 8]
-                        .copy_from_slice(&value.to_le_bytes());
+                    // SAFETY: dest_offset + 8 <= output.len() guaranteed by caller
+                    // (output is slots_per_row * 8 bytes per row, slot < slots_per_row).
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(
+                            self.bias_lut[code as usize].as_ptr(),
+                            output.as_mut_ptr().add(dest_offset),
+                            8,
+                        );
+                    }
                     slot += 1;
                 }
                 COMPRESS_SKIP => {
@@ -163,17 +189,37 @@ impl BytecodeDecompressor {
                     if self.pos + 8 > input.len() {
                         return Err(truncated_err(self.pos + 8, input.len()));
                     }
-                    output[dest_offset..dest_offset + 8]
-                        .copy_from_slice(&input[self.pos..self.pos + 8]);
+                    // SAFETY: same as above for dest; input bounds checked above.
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(
+                            input.as_ptr().add(self.pos),
+                            output.as_mut_ptr().add(dest_offset),
+                            8,
+                        );
+                    }
                     self.pos += 8;
                     slot += 1;
                 }
                 COMPRESS_EIGHT_SPACES => {
-                    output[dest_offset..dest_offset + 8].copy_from_slice(&SPACES_RAW);
+                    // SAFETY: same as above for dest.
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(
+                            SPACES_RAW.as_ptr(),
+                            output.as_mut_ptr().add(dest_offset),
+                            8,
+                        );
+                    }
                     slot += 1;
                 }
                 COMPRESS_SYSMIS => {
-                    output[dest_offset..dest_offset + 8].copy_from_slice(&SYSMIS_RAW);
+                    // SAFETY: same as above for dest.
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(
+                            SYSMIS_RAW.as_ptr(),
+                            output.as_mut_ptr().add(dest_offset),
+                            8,
+                        );
+                    }
                     slot += 1;
                 }
                 COMPRESS_END_OF_FILE => {

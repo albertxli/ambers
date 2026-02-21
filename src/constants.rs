@@ -378,7 +378,7 @@ impl SpssFormat {
 }
 
 /// Check if a raw f64 bit pattern is SYSMIS.
-#[inline]
+#[inline(always)]
 pub fn is_sysmis(val: f64) -> bool {
     val.to_bits() == SYSMIS_BITS
 }

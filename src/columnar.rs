@@ -193,9 +193,12 @@ impl ColumnarBatchBuilder {
                             let slot_offset = mapping.slot_index * 8;
                             for row in 0..num_rows {
                                 let offset = row * row_bytes + slot_offset;
-                                let val = f64::from_le_bytes(
-                                    chunk[offset..offset + 8].try_into().unwrap(),
-                                );
+                                // SAFETY: offset + 8 <= chunk.len() because
+                                // num_rows * row_bytes <= chunk.len() and
+                                // offset = row * row_bytes + slot_offset where slot_offset + 8 <= row_bytes.
+                                let val = f64::from_le_bytes(unsafe {
+                                    *(chunk.as_ptr().add(offset) as *const [u8; 8])
+                                });
                                 if is_sysmis(val) {
                                     b.append_null();
                                 } else {
@@ -241,9 +244,10 @@ impl ColumnarBatchBuilder {
                         let slot_offset = mapping.slot_index * 8;
                         for row in 0..num_rows {
                             let offset = row * row_bytes + slot_offset;
-                            let val = f64::from_le_bytes(
-                                chunk[offset..offset + 8].try_into().unwrap(),
-                            );
+                            // SAFETY: same invariant as parallel path above.
+                            let val = f64::from_le_bytes(unsafe {
+                                *(chunk.as_ptr().add(offset) as *const [u8; 8])
+                            });
                             if is_sysmis(val) {
                                 builder.append_null();
                             } else {
