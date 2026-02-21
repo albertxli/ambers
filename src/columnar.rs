@@ -3,9 +3,9 @@
 //! Eliminates the `Vec<Vec<CellValue>>` intermediate by pushing decoded values
 //! directly from decompressed slots into pre-allocated Arrow column builders.
 //!
-//! **Performance rule:** The hot paths (`push_slot_row`, `push_raw_chunk`) must
-//! stay minimal — only Float64 + String. Temporal conversion happens in `finish()`
-//! as a post-processing step. Never add new ColBuilder variants or match arms to
+//! **Performance rule:** The hot paths (`push_raw_chunk`) must stay minimal —
+//! only Float64 + String. Temporal conversion happens in `finish()` as a
+//! post-processing step. Never add new ColBuilder variants or match arms to
 //! the hot loops; it causes icache pressure that slows ALL columns.
 
 use std::sync::Arc;
@@ -30,8 +30,28 @@ use crate::error::Result;
 use crate::io_utils;
 use crate::variable::VariableRecord;
 
-/// Pre-computed info for one VLS segment (how many 8-byte slots to read).
+/// Row byte threshold for switching to tiled parallel column processing.
+/// When row_bytes exceeds this, the full-chunk column-at-a-time pattern
+/// thrashes L3 cache because each column pass scans the entire 256 MB chunk
+/// with only 8 useful bytes per large stride. Tiling into L3-sized row chunks
+/// keeps the working set cache-hot for all rayon threads.
+///
+/// At 12,288 bytes (~1,536 slots), files with ~915 visible columns (which may
+/// have ~1,736 total slots due to multi-slot string variables) correctly hit
+/// the tiled path.
+const WIDE_ROW_THRESHOLD: usize = 12_288;
+
+/// Target tile size in bytes for wide-file row tiling.
+/// Each tile should comfortably fit in L3 cache (~12–36 MB on modern CPUs)
+/// so all rayon threads access cache-hot data during parallel column processing.
+/// 4 MB leaves headroom for builder state and other cache residents.
+const L3_TILE_BYTES: usize = 4 * 1024 * 1024;
+
+/// Pre-computed info for one VLS (very long string) segment.
+/// VLS variables (width > 255) are stored across multiple 32-slot segments,
+/// each holding up to 252 bytes of useful data padded to 256 bytes.
 struct VlsSegmentInfo {
+    /// Number of 8-byte slots containing useful data in this segment.
     useful_slots: usize,
 }
 
@@ -66,6 +86,7 @@ pub struct ColumnarBatchBuilder {
     schema: Arc<Schema>,
     rows_appended: usize,
     /// Reusable byte buffer for string assembly (avoids per-string allocation).
+    /// Used only in the sequential path; parallel paths use thread-local buffers.
     string_buf: Vec<u8>,
     /// Column indices that need temporal conversion in finish().
     /// Empty for files with no date/time columns — zero overhead.
@@ -167,22 +188,35 @@ impl ColumnarBatchBuilder {
         }
     }
 
-    /// Push a chunk of raw bytes column-at-a-time for better cache locality.
+    /// Push a chunk of raw bytes into columnar builders.
     /// `chunk` is a contiguous buffer of `num_rows * slots_per_row * 8` bytes.
     /// Each row occupies `slots_per_row * 8` bytes.
     ///
-    /// For large chunks (>= 10,000 rows), columns are processed in parallel
-    /// using rayon. Each thread fills its own builder independently.
+    /// Dispatch strategy:
+    /// - **Wide files** (row_bytes > 12,288): tiled parallel — processes L3-sized
+    ///   row tiles with rayon, avoiding cache thrashing from large column strides.
+    /// - **Narrow files, large chunks** (>= 10,000 rows): column-at-a-time with
+    ///   rayon parallelism. Each thread fills its own builder independently.
+    /// - **Narrow files, small chunks**: sequential column-at-a-time.
     pub fn push_raw_chunk(&mut self, chunk: &[u8], num_rows: usize, slots_per_row: usize) {
         let row_bytes = slots_per_row * 8;
 
-        // Borrow fields separately to allow parallel access:
-        // mappings (read-only) + builders (each thread gets exclusive &mut to one)
+        // Wide files: tiled parallel avoids L3 cache thrashing.
+        // Column-at-a-time with large stride (e.g. 14,656 bytes for 1832 slots)
+        // causes each column pass to touch the entire 256 MB chunk with only 8
+        // useful bytes per stride, thrashing L3 cache. Tiling processes small
+        // row windows that fit in L3, keeping data cache-hot for all rayon threads.
+        if row_bytes > WIDE_ROW_THRESHOLD {
+            self.push_raw_chunk_tiled(chunk, num_rows, slots_per_row);
+            return;
+        }
+
         let mappings = &self.mappings;
         let file_encoding = self.file_encoding;
 
         if num_rows >= 10_000 {
-            // Parallel: each column processed by a separate rayon thread
+            // Parallel: each column processed by a separate rayon thread.
+            // rayon splits builders into ~24 contiguous groups (one per core).
             self.builders
                 .par_iter_mut()
                 .enumerate()
@@ -190,98 +224,87 @@ impl ColumnarBatchBuilder {
                     let mapping = &mappings[i];
                     match (&mapping.var_type, builder) {
                         (VarType::Numeric, ColBuilder::Float64(b)) => {
-                            let slot_offset = mapping.slot_index * 8;
-                            for row in 0..num_rows {
-                                let offset = row * row_bytes + slot_offset;
-                                // SAFETY: offset + 8 <= chunk.len() because
-                                // num_rows * row_bytes <= chunk.len() and
-                                // offset = row * row_bytes + slot_offset where slot_offset + 8 <= row_bytes.
-                                let val = f64::from_le_bytes(unsafe {
-                                    *(chunk.as_ptr().add(offset) as *const [u8; 8])
-                                });
-                                if is_sysmis(val) {
-                                    b.append_null();
-                                } else {
-                                    b.append_value(val);
-                                }
-                            }
+                            process_numeric_rows(b, chunk, 0, num_rows, row_bytes, mapping.slot_index);
                         }
-                        (VarType::String(width), ColBuilder::Str(b)) => {
-                            // Each thread gets its own string buffer, sized to column width
-                            let mut local_string_buf = Vec::with_capacity((*width).min(1024));
-                            for row in 0..num_rows {
-                                let row_start = row * row_bytes;
-                                let raw_slots: &[[u8; 8]] = unsafe {
-                                    std::slice::from_raw_parts(
-                                        chunk[row_start..].as_ptr() as *const [u8; 8],
-                                        slots_per_row,
-                                    )
-                                };
-                                push_string_from_raw_slots(
-                                    b,
-                                    &mut local_string_buf,
-                                    raw_slots,
-                                    mapping.slot_index,
-                                    *width,
-                                    mapping.n_segments,
-                                    &mapping.vls_layout,
-                                    file_encoding,
-                                );
-                            }
+                        (VarType::String(_), ColBuilder::Str(b)) => {
+                            let mut local_buf = Vec::with_capacity(256);
+                            process_string_rows(
+                                b, &mut local_buf, chunk, 0, num_rows,
+                                row_bytes, slots_per_row, mapping, file_encoding,
+                            );
                         }
                         _ => unreachable!(),
                     }
                 });
         } else {
-            // Sequential: small chunks (lazy head, small files)
+            // Sequential: small chunks (lazy head, small files).
             for (i, mapping) in mappings.iter().enumerate() {
-                match &mapping.var_type {
-                    VarType::Numeric => {
-                        let builder = match &mut self.builders[i] {
-                            ColBuilder::Float64(b) => b,
-                            _ => unreachable!(),
-                        };
-                        let slot_offset = mapping.slot_index * 8;
-                        for row in 0..num_rows {
-                            let offset = row * row_bytes + slot_offset;
-                            // SAFETY: same invariant as parallel path above.
-                            let val = f64::from_le_bytes(unsafe {
-                                *(chunk.as_ptr().add(offset) as *const [u8; 8])
-                            });
-                            if is_sysmis(val) {
-                                builder.append_null();
-                            } else {
-                                builder.append_value(val);
-                            }
-                        }
+                match (&mapping.var_type, &mut self.builders[i]) {
+                    (VarType::Numeric, ColBuilder::Float64(b)) => {
+                        process_numeric_rows(b, chunk, 0, num_rows, row_bytes, mapping.slot_index);
                     }
-                    VarType::String(width) => {
-                        let builder = match &mut self.builders[i] {
-                            ColBuilder::Str(b) => b,
-                            _ => unreachable!(),
-                        };
-                        for row in 0..num_rows {
-                            let row_start = row * row_bytes;
-                            let raw_slots: &[[u8; 8]] = unsafe {
-                                std::slice::from_raw_parts(
-                                    chunk[row_start..].as_ptr() as *const [u8; 8],
-                                    slots_per_row,
-                                )
-                            };
-                            push_string_from_raw_slots(
-                                builder,
-                                &mut self.string_buf,
-                                raw_slots,
-                                mapping.slot_index,
-                                *width,
-                                mapping.n_segments,
-                                &mapping.vls_layout,
-                                self.file_encoding,
-                            );
-                        }
+                    (VarType::String(_), ColBuilder::Str(b)) => {
+                        process_string_rows(
+                            b, &mut self.string_buf, chunk, 0, num_rows,
+                            row_bytes, slots_per_row, mapping, self.file_encoding,
+                        );
                     }
+                    _ => unreachable!(),
                 }
             }
+        }
+
+        self.rows_appended += num_rows;
+    }
+
+    /// Tiled parallel column processing for wide files.
+    ///
+    /// Processes the chunk in small row tiles that fit in L3 cache, with each
+    /// tile using rayon `par_iter_mut` over columns — same parallel pattern as
+    /// the untiled path but on L3-sized data windows.
+    ///
+    /// Without tiling, column-at-a-time on a 256 MB chunk with 14,656-byte
+    /// stride causes all 24 threads to thrash L3 cache. With 4 MB tiles,
+    /// the entire working set stays cache-hot.
+    fn push_raw_chunk_tiled(
+        &mut self,
+        chunk: &[u8],
+        num_rows: usize,
+        slots_per_row: usize,
+    ) {
+        let row_bytes = slots_per_row * 8;
+        let tile_rows = (L3_TILE_BYTES / row_bytes).max(64);
+
+        let mappings = &self.mappings;
+        let file_encoding = self.file_encoding;
+
+        let mut row_offset = 0;
+        while row_offset < num_rows {
+            let n = (num_rows - row_offset).min(tile_rows);
+            let tile_start = row_offset * row_bytes;
+
+            // Parallel column processing within this L3-sized tile.
+            self.builders
+                .par_iter_mut()
+                .enumerate()
+                .for_each(|(i, builder)| {
+                    let mapping = &mappings[i];
+                    match (&mapping.var_type, builder) {
+                        (VarType::Numeric, ColBuilder::Float64(b)) => {
+                            process_numeric_rows(b, chunk, tile_start, n, row_bytes, mapping.slot_index);
+                        }
+                        (VarType::String(_), ColBuilder::Str(b)) => {
+                            let mut local_buf = Vec::with_capacity(256);
+                            process_string_rows(
+                                b, &mut local_buf, chunk, tile_start, n,
+                                row_bytes, slots_per_row, mapping, file_encoding,
+                            );
+                        }
+                        _ => unreachable!(),
+                    }
+                });
+
+            row_offset += n;
         }
 
         self.rows_appended += num_rows;
@@ -320,6 +343,84 @@ impl ColumnarBatchBuilder {
     /// Number of rows appended so far.
     pub fn len(&self) -> usize {
         self.rows_appended
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Column processing helpers (shared by parallel, sequential, and tiled paths)
+// ---------------------------------------------------------------------------
+
+/// Process numeric rows from a chunk into a Float64Builder.
+///
+/// Reads `num_rows` f64 values starting at `base_offset` in the chunk,
+/// with `row_bytes` stride and `slot_index` column offset.
+#[inline(always)]
+fn process_numeric_rows(
+    builder: &mut Float64Builder,
+    chunk: &[u8],
+    base_offset: usize,
+    num_rows: usize,
+    row_bytes: usize,
+    slot_index: usize,
+) {
+    let slot_offset = slot_index * 8;
+    for row in 0..num_rows {
+        let offset = base_offset + row * row_bytes + slot_offset;
+        // SAFETY: offset + 8 <= chunk.len() because the caller guarantees
+        // (base_offset + num_rows * row_bytes) <= chunk.len() and
+        // slot_offset + 8 <= row_bytes. [u8; 8] has 1-byte alignment,
+        // so any byte-aligned pointer from chunk is valid.
+        let val = f64::from_le_bytes(unsafe {
+            *(chunk.as_ptr().add(offset) as *const [u8; 8])
+        });
+        if is_sysmis(val) {
+            builder.append_null();
+        } else {
+            builder.append_value(val);
+        }
+    }
+}
+
+/// Process string rows from a chunk into a StringViewBuilder.
+///
+/// Reads `num_rows` string values starting at `base_offset` in the chunk,
+/// assembling bytes from the appropriate slots per the column mapping.
+#[inline(always)]
+fn process_string_rows(
+    builder: &mut StringViewBuilder,
+    string_buf: &mut Vec<u8>,
+    chunk: &[u8],
+    base_offset: usize,
+    num_rows: usize,
+    row_bytes: usize,
+    slots_per_row: usize,
+    mapping: &ColumnMapping,
+    file_encoding: &'static Encoding,
+) {
+    let width = match &mapping.var_type {
+        VarType::String(w) => *w,
+        _ => unreachable!(),
+    };
+    for row in 0..num_rows {
+        let row_start = base_offset + row * row_bytes;
+        // SAFETY: row_start + slots_per_row * 8 <= chunk.len() (same caller
+        // invariant as process_numeric_rows). [u8; 8] has 1-byte alignment.
+        let raw_slots: &[[u8; 8]] = unsafe {
+            std::slice::from_raw_parts(
+                chunk[row_start..].as_ptr() as *const [u8; 8],
+                slots_per_row,
+            )
+        };
+        push_string_from_raw_slots(
+            builder,
+            string_buf,
+            raw_slots,
+            mapping.slot_index,
+            width,
+            mapping.n_segments,
+            &mapping.vls_layout,
+            file_encoding,
+        );
     }
 }
 
@@ -407,4 +508,3 @@ fn push_string_from_raw_slots(
     let decoded = encoding::decode_str_lossy(trimmed, file_encoding);
     builder.append_value(&*decoded);
 }
-

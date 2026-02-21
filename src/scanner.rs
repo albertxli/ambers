@@ -259,11 +259,7 @@ impl<R: Read + Seek> SavScanner<R> {
                 let max_chunk_rows = (256 * 1024 * 1024 / row_bytes).max(1024);
                 let chunk_rows = cap.min(max_chunk_rows);
                 let chunk_bytes = chunk_rows * row_bytes;
-                // SAFETY: Buffer is immediately filled by read_full(). Uninitialized
-                // bytes never reach the builder — actual_rows check ensures we only
-                // process fully-read rows.
-                let mut chunk_buf = Vec::with_capacity(chunk_bytes);
-                unsafe { chunk_buf.set_len(chunk_bytes); }
+                let mut chunk_buf = vec![0u8; chunk_bytes];
 
                 let mut rows_remaining = n;
                 while rows_remaining > 0 {
@@ -295,8 +291,7 @@ impl<R: Read + Seek> SavScanner<R> {
                 let max_chunk_rows = (256 * 1024 * 1024 / row_bytes).max(1024);
                 let chunk_rows = cap.min(max_chunk_rows);
                 let chunk_bytes = chunk_rows * row_bytes;
-                let mut raw_buf = Vec::with_capacity(chunk_bytes);
-                unsafe { raw_buf.set_len(chunk_bytes); }
+                let mut raw_buf = vec![0u8; chunk_bytes];
 
                 let mut rows_in_batch = 0;
                 for _ in 0..n {

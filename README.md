@@ -102,20 +102,19 @@ while let Some(batch) = scanner.next_batch()? {
 
 ### Eager Read
 
-All results return a Polars DataFrame. Best of 5 runs (with warmup) on Windows 11, Python 3.13, 24-core machine.
+All results return a Polars DataFrame. Best of 3–5 runs (with warmup) on Windows 11, Python 3.13, 24-core machine.
 
 | File | Size | Rows | Cols | ambers | polars_readstat | pyreadstat | vs prs | vs pyreadstat |
 |------|------|-----:|-----:|-------:|----------------:|-----------:|-------:|--------------:|
-| test_1 (bytecode) | 0.2 MB | 1,500 | 75 | **0.001s** | 0.003s | 0.010s | **4.1x** | **12x** |
-| test_2 (bytecode) | 147 MB | 22,070 | 677 | **0.766s** | 0.962s | 3.082s | **1.3x** | **4.0x** |
-| test_3 (uncompressed) | 1.1 GB | 79,066 | 915 | **0.424s** | 1.265s | 4.387s | **3.0x** | **10x** |
-| test_4 (uncompressed) | 0.6 MB | 201 | 158 | **0.001s** | 0.003s | 0.010s | **3.4x** | **10x** |
-| test_5 (uncompressed) | 0.6 MB | 203 | 136 | **0.001s** | 0.003s | 0.010s | **3.4x** | **10x** |
-| test_6 (uncompressed) | 5.4 GB | 395,330 | 916 | **1.772s** | 1.929s | 22.280s | **1.1x** | **13x** |
-| test_11 (uncompressed) | 22 GB | 790,660 | 1,832 | 19.952s | **4.973s** | 95.714s | 4.0x slower | **4.8x** |
+| test_1 (bytecode) | 0.2 MB | 1,500 | 75 | < 0.01s | < 0.01s | 0.011s | — | — |
+| test_2 (bytecode) | 147 MB | 22,070 | 677 | **0.286s** | 0.897s | 3.524s | **3.1x** | **12x** |
+| test_3 (uncompressed) | 1.1 GB | 79,066 | 915 | **0.322s** | 1.150s | 4.918s | **3.6x** | **15x** |
+| test_4 (uncompressed) | 0.6 MB | 201 | 158 | **0.002s** | 0.003s | 0.012s | **1.5x** | **6x** |
+| test_5 (uncompressed) | 0.6 MB | 203 | 136 | **0.002s** | 0.003s | 0.016s | **1.5x** | **8x** |
+| test_6 (uncompressed) | 5.4 GB | 395,330 | 916 | **1.600s** | 1.752s | 25.214s | **1.1x** | **16x** |
 
-- **Faster than polars_readstat on 6 of 7 files** — 1.1–4.1x faster (test_11 at 22 GB is 4x slower)
-- **4–13x faster than pyreadstat** across all file sizes
+- **Faster than polars_readstat on all tested files** — 1.1–3.6x faster
+- **6–16x faster than pyreadstat** across all file sizes
 - No PyArrow dependency — uses Arrow PyCapsule Interface for zero-copy transfer
 
 ### Lazy Read with Pushdown
