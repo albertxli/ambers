@@ -48,11 +48,13 @@ const WIDE_ROW_THRESHOLD: usize = 12_288;
 const L3_TILE_BYTES: usize = 4 * 1024 * 1024;
 
 /// Pre-computed info for one VLS (very long string) segment.
-/// VLS variables (width > 255) are stored across multiple 32-slot segments,
-/// each holding up to 252 bytes of useful data padded to 256 bytes.
+/// VLS variables (width > 255) are stored across multiple 32-slot segments.
+/// The primary variable (segment 0) has width 255, ghost segments have width 252.
+/// Each segment occupies 32 slots (256 bytes), but only `useful_bytes` contain data.
 struct VlsSegmentInfo {
-    /// Number of 8-byte slots containing useful data in this segment.
-    useful_slots: usize,
+    /// Number of useful DATA bytes in this segment (255 for primary, 252 for ghost,
+    /// remainder for the last segment).
+    useful_bytes: usize,
 }
 
 /// Pre-computed mapping from a visible variable to its slot position and type.
@@ -122,13 +124,16 @@ impl ColumnarBatchBuilder {
                 };
                 (0..var.n_segments)
                     .map(|seg| {
+                        // Each segment stores up to 255 bytes of content in
+                        // the data section. The last segment stores only the
+                        // remaining bytes after all prior segments.
                         let seg_useful = if seg < var.n_segments - 1 {
-                            252
+                            255
                         } else {
-                            width - (var.n_segments - 1) * 252
+                            width - (var.n_segments - 1) * 255
                         };
                         VlsSegmentInfo {
-                            useful_slots: (seg_useful + 7) / 8,
+                            useful_bytes: seg_useful,
                         }
                     })
                     .collect()
@@ -491,14 +496,21 @@ fn push_string_from_raw_slots(
             }
         }
     } else {
-        // Very long string: use pre-computed segment layout
+        // Very long string: copy slots per segment, truncating each segment
+        // to its useful byte count to strip slot-alignment padding.
         let mut slot = start_slot;
+        let mut cumulative = 0;
         for seg_info in vls_layout {
-            for i in 0..seg_info.useful_slots {
+            cumulative += seg_info.useful_bytes;
+            let slots_to_read = (seg_info.useful_bytes + 7) / 8;
+            for i in 0..slots_to_read {
                 if slot + i < raw_slots.len() {
                     string_buf.extend_from_slice(&raw_slots[slot + i]);
                 }
             }
+            // Strip padding bytes at end of this segment (e.g. byte 255 of
+            // a 255-byte primary segment stored in 32 slots = 256 bytes).
+            string_buf.truncate(cumulative);
             slot += 32;
         }
     }
