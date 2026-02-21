@@ -213,6 +213,7 @@ pub struct SpssMetadata {
     // SPSS-specific
     pub mr_sets: IndexMap<String, MrSet>,
     pub variable_role: IndexMap<String, Role>,
+    pub variable_attributes: IndexMap<String, IndexMap<String, Vec<String>>>,
     pub weight_variable: Option<String>,
 }
 
@@ -240,6 +241,11 @@ impl SpssMetadata {
     /// Get the role for a variable.
     pub fn role(&self, name: &str) -> Option<Role> {
         self.variable_role.get(name).copied()
+    }
+
+    /// Get a custom attribute's values for a variable.
+    pub fn attribute(&self, var_name: &str, attr_name: &str) -> Option<&Vec<String>> {
+        self.variable_attributes.get(var_name)?.get(attr_name)
     }
 
     /// Infer metadata from an Arrow schema (for write_sav without prior read metadata).
@@ -314,6 +320,7 @@ impl Default for SpssMetadata {
             variable_missing_values: IndexMap::new(),
             mr_sets: IndexMap::new(),
             variable_role: IndexMap::new(),
+            variable_attributes: IndexMap::new(),
             weight_variable: None,
         }
     }

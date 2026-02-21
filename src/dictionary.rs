@@ -505,6 +505,11 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
                 if let Some(role) = Role::from_code(&values[0]) {
                     meta.variable_role.insert(var_name.clone(), role);
                 }
+            } else {
+                meta.variable_attributes
+                    .entry(var_name.clone())
+                    .or_default()
+                    .insert(attr_name.clone(), values.clone());
             }
         }
     }

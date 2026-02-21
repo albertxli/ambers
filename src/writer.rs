@@ -1004,7 +1004,7 @@ fn write_info_var_attributes<W: Write>(
     meta: &SpssMetadata,
     layout: &CaseLayout,
 ) -> Result<()> {
-    if meta.variable_role.is_empty() {
+    if meta.variable_role.is_empty() && meta.variable_attributes.is_empty() {
         return Ok(());
     }
 
@@ -1015,21 +1015,50 @@ fn write_info_var_attributes<W: Write>(
         .map(|(short, long)| (long.clone(), short.clone()))
         .collect();
 
+    // Collect all variable names that have either a role or custom attributes
+    let mut all_vars: IndexMap<&str, ()> = IndexMap::new();
+    for name in meta.variable_role.keys() {
+        all_vars.insert(name.as_str(), ());
+    }
+    for name in meta.variable_attributes.keys() {
+        all_vars.insert(name.as_str(), ());
+    }
+
     // Build text payload in subtype 18 format:
-    //   VAR_SHORT:$@Role('code'\n)/VAR_SHORT2:$@Role('code'\n)
+    //   VAR:$@Role('code'\n)CustomAttr('val'\n)/VAR2:...
     let mut payload = String::new();
-    for (long_name, role) in &meta.variable_role {
+    for (long_name, _) in &all_vars {
         let short_name = long_to_short
-            .get(long_name)
+            .get(*long_name)
+            .map(|s| s.as_str())
             .unwrap_or(long_name);
 
         if !payload.is_empty() {
             payload.push('/');
         }
         payload.push_str(short_name);
-        payload.push_str(":$@Role('");
-        payload.push_str(role.to_code());
-        payload.push_str("'\n)");
+        payload.push(':');
+
+        // Write custom attributes first
+        if let Some(attrs) = meta.variable_attributes.get(*long_name) {
+            for (attr_name, values) in attrs {
+                payload.push_str(attr_name);
+                payload.push('(');
+                for val in values {
+                    payload.push('\'');
+                    payload.push_str(val);
+                    payload.push_str("'\n");
+                }
+                payload.push(')');
+            }
+        }
+
+        // Write $@Role
+        if let Some(role) = meta.variable_role.get(*long_name) {
+            payload.push_str("$@Role('");
+            payload.push_str(role.to_code());
+            payload.push_str("'\n)");
+        }
     }
 
     write_info_record_header(w, INFO_VAR_ATTRIBUTES, 1, payload.len() as i32)?;

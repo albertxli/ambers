@@ -92,6 +92,7 @@ println!("{}", meta.label("Q1").unwrap_or("(no label)"));
 | `meta.format("Q1")` | SPSS format string (e.g. `"F8.2"`, `"A50"`) |
 | `meta.measure("Q1")` | Measurement level (`"nominal"`, `"ordinal"`, `"scale"`) |
 | `meta.role("Q1")` | Variable role (`"input"`, `"target"`, `"both"`, `"none"`, `"partition"`, `"split"`) |
+| `meta.attribute("Q1", "CustomNote")` | Custom attribute values (`list[str]` or `None`) |
 | `meta.schema` | Full metadata as a nested Python dict |
 
 All variable-name methods raise `KeyError` for unknown variables.
@@ -107,16 +108,17 @@ All fields returned by the reader. Fields marked **Write** are preserved when pa
 | `variable_names` | yes | yes | `list[str]` |
 | `variable_labels` | yes | yes | `dict[str, str]` |
 | `variable_value_labels` | yes | yes | `dict[str, dict[float\|str, str]]` |
+| `variable_format` | yes | yes | `dict[str, str]` |
 | `variable_measure` | yes | yes | `dict[str, str]` |
 | `variable_alignment` | yes | yes | `dict[str, str]` |
+| `variable_role` | yes | yes | `dict[str, str]` |
 | `variable_display_width` | yes | yes | `dict[str, int]` |
 | `variable_storage_width` | yes | yes | `dict[str, int]` |
 | `variable_missing_values` | yes | yes | `dict[str, list[dict]]` |
-| `variable_format` | yes | yes | `dict[str, str]` |
-| `arrow_data_types` | yes | — | `dict[str, str]` |
+| `variable_attributes` | yes | yes | `dict[str, dict[str, list[str]]]` |
 | `weight_variable` | yes | yes | `str \| None` |
 | `mr_sets` | yes | yes | `dict[str, dict]` |
-| `variable_role` | yes | yes | `dict[str, str]` |
+| `arrow_data_types` | yes | — | `dict[str, str]` |
 | `file_label` | yes | yes | `str` |
 | `file_format` | yes | — | `str` |
 | `file_encoding` | yes | — | `str` |

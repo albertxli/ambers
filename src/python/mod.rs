@@ -226,6 +226,20 @@ impl PySpssMetadata {
     }
 
     #[getter]
+    fn variable_attributes<'py>(&self, py: Python<'py>) -> PyResult<Py<PyAny>> {
+        let outer = PyDict::new(py);
+        for (var_name, attrs) in &self.inner.variable_attributes {
+            let inner = PyDict::new(py);
+            for (attr_name, values) in attrs {
+                let py_list: Vec<&str> = values.iter().map(|s| s.as_str()).collect();
+                inner.set_item(attr_name.as_str(), py_list)?;
+            }
+            outer.set_item(var_name.as_str(), inner)?;
+        }
+        Ok(outer.unbind().into_any())
+    }
+
+    #[getter]
     fn weight_variable(&self) -> Option<String> {
         self.inner.weight_variable.clone()
     }
@@ -266,6 +280,12 @@ impl PySpssMetadata {
     fn role(&self, name: &str) -> PyResult<Option<String>> {
         self.check_var(name)?;
         Ok(self.inner.role(name).map(|r| r.as_str().to_string()))
+    }
+
+    /// Get a custom attribute's values for a variable. Returns None if not set.
+    fn attribute(&self, name: &str, attr: &str) -> PyResult<Option<Vec<String>>> {
+        self.check_var(name)?;
+        Ok(self.inner.attribute(name, attr).cloned())
     }
 
     /// Get the value labels dict for a variable. Returns None if no value labels exist.
@@ -318,6 +338,7 @@ impl PySpssMetadata {
         d.set_item("variable_missing_values", self.variable_missing_values(py)?)?;
         d.set_item("mr_sets", self.mr_sets(py)?)?;
         d.set_item("variable_role", self.variable_role())?;
+        d.set_item("variable_attributes", self.variable_attributes(py)?)?;
 
         Ok(d.unbind().into_any())
     }
@@ -478,6 +499,9 @@ impl PySpssMetadata {
         println!("  Value labels: {}", ratio(n_with_values));
         println!("  Missing:      {}", ratio(n_with_missing));
         println!("  MR sets:      {:>5}", format_count(n_mr));
+        if !m.variable_attributes.is_empty() {
+            println!("  Custom attrs: {}", ratio(m.variable_attributes.len()));
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -579,6 +603,21 @@ impl PySpssMetadata {
                     }
                 }
             }
+
+            // Custom attributes
+            if let Some(attrs) = m.variable_attributes.get(name) {
+                if !attrs.is_empty() {
+                    println!();
+                    println!("Custom Attributes ({}):", attrs.len());
+                    for (attr_name, values) in attrs {
+                        if values.len() == 1 {
+                            println!("  {attr_name}: {}", values[0]);
+                        } else {
+                            println!("  {attr_name}: {:?}", values);
+                        }
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -663,6 +702,7 @@ impl PySpssMetadata {
         )?;
         let mr_diffs = diff_key_sets(py, &a.mr_sets, &b.mr_sets)?;
         let role_diffs = diff_role_maps(py, &a.variable_role, &b.variable_role, &shared)?;
+        let attr_diffs = diff_attr_maps(py, &a.variable_attributes, &b.variable_attributes, &shared)?;
 
         let is_match = file_level.is_empty()
             && only_self.is_empty()
@@ -675,7 +715,8 @@ impl PySpssMetadata {
             && list_len(py, &vvl_diffs) == 0
             && list_len(py, &missing_diffs) == 0
             && list_len(py, &mr_diffs) == 0
-            && list_len(py, &role_diffs) == 0;
+            && list_len(py, &role_diffs) == 0
+            && list_len(py, &attr_diffs) == 0;
 
         let result = PyMetaDiff {
             is_match,
@@ -691,6 +732,7 @@ impl PySpssMetadata {
             variable_missing_values: missing_diffs.clone_ref(py),
             mr_sets: mr_diffs.clone_ref(py),
             variable_role: role_diffs.clone_ref(py),
+            variable_attributes: attr_diffs.clone_ref(py),
         };
 
         if print_output {
@@ -741,6 +783,7 @@ pub struct PyMetaDiff {
     variable_missing_values: Py<PyAny>,
     mr_sets: Py<PyAny>,
     variable_role: Py<PyAny>,
+    variable_attributes: Py<PyAny>,
 }
 
 #[pymethods]
@@ -810,6 +853,11 @@ impl PyMetaDiff {
         self.variable_role.clone_ref(py)
     }
 
+    #[getter]
+    fn variable_attributes(&self, py: Python<'_>) -> Py<PyAny> {
+        self.variable_attributes.clone_ref(py)
+    }
+
     fn __repr__(&self, py: Python<'_>) -> String {
         let n_self = self.variables_only_in_self.len();
         let n_other = self.variables_only_in_other.len();
@@ -854,6 +902,7 @@ impl PyMetaDiff {
             "variable_missing_values" => Ok(self.variable_missing_values.clone_ref(py)),
             "mr_sets" => Ok(self.mr_sets.clone_ref(py)),
             "variable_role" => Ok(self.variable_role.clone_ref(py)),
+            "variable_attributes" => Ok(self.variable_attributes.clone_ref(py)),
             _ => Err(PyKeyError::new_err(format!("'{key}'"))),
         }
     }
@@ -909,6 +958,7 @@ impl PyMetaDiff {
             ("variable_missing_values", &self.variable_missing_values),
             ("mr_sets", &self.mr_sets),
             ("variable_role", &self.variable_role),
+            ("variable_attributes", &self.variable_attributes),
         ];
 
         println!();
@@ -1143,6 +1193,38 @@ fn diff_key_sets<'py, V>(
         d.set_item("key", *k)?;
         d.set_item("status", "only_in_other")?;
         list.append(d)?;
+    }
+    Ok(list.unbind().into_any())
+}
+
+/// Diff variable_attributes maps.
+fn diff_attr_maps<'py>(
+    py: Python<'py>,
+    a: &IndexMap<String, IndexMap<String, Vec<String>>>,
+    b: &IndexMap<String, IndexMap<String, Vec<String>>>,
+    shared: &HashSet<&str>,
+) -> PyResult<Py<PyAny>> {
+    let list = PyList::empty(py);
+    for &var in shared {
+        let a_attrs = a.get(var);
+        let b_attrs = b.get(var);
+        if a_attrs != b_attrs {
+            let d = PyDict::new(py);
+            d.set_item("variable", var)?;
+            d.set_item(
+                "self",
+                a_attrs
+                    .map(|m| format!("{:?}", m))
+                    .unwrap_or_else(|| "(none)".into()),
+            )?;
+            d.set_item(
+                "other",
+                b_attrs
+                    .map(|m| format!("{:?}", m))
+                    .unwrap_or_else(|| "(none)".into()),
+            )?;
+            list.append(d)?;
+        }
     }
     Ok(list.unbind().into_any())
 }
