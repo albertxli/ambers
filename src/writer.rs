@@ -195,7 +195,7 @@ fn compute_layout(batch: &RecordBatch, meta: &SpssMetadata) -> Result<CaseLayout
 
         // Compute segments for VLS (255 useful bytes per segment)
         let n_segments = match &var_type {
-            VarType::String(width) if *width > 255 => (*width + 254) / 255,
+            VarType::String(width) if *width > 255 => (*width + 251) / 252,
             _ => 1,
         };
 
@@ -313,7 +313,6 @@ fn compute_layout(batch: &RecordBatch, meta: &SpssMetadata) -> Result<CaseLayout
                     short_name.clone()
                 } else {
                     let seg_name = segment_names[seg - 1].clone();
-                    short_to_long.insert(seg_name.clone(), seg_name.clone());
                     seg_name
                 };
 
@@ -2181,5 +2180,86 @@ mod tests {
         if std::path::Path::new(path).exists() {
             roundtrip_file_zsav(path);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Large file round-trip tests (VLS segment correctness)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_roundtrip_test3_large() {
+        let path = "test_data/test_3_medium.sav";
+        if std::path::Path::new(path).exists() {
+            roundtrip_file(path);
+        }
+    }
+
+    #[test]
+    fn test_bytecode_roundtrip_test3_large() {
+        let path = "test_data/test_3_medium.sav";
+        if std::path::Path::new(path).exists() {
+            roundtrip_file_bytecode(path);
+        }
+    }
+
+    #[test]
+    fn test_zsav_roundtrip_test3_large() {
+        let path = "test_data/test_3_medium.sav";
+        if std::path::Path::new(path).exists() {
+            roundtrip_file_zsav(path);
+        }
+    }
+
+    /// Detailed metadata comparison for VLS-heavy files.
+    #[test]
+    fn test_roundtrip_test3_metadata() {
+        let path = "test_data/test_3_medium.sav";
+        if !std::path::Path::new(path).exists() {
+            return;
+        }
+
+        let (batch, meta) = crate::read_sav(path).unwrap();
+
+        let mut cursor = Cursor::new(Vec::new());
+        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Bytecode).unwrap();
+
+        let reader = Cursor::new(cursor.into_inner());
+        let (_batch2, meta2) = crate::read_sav_from_reader(reader).unwrap();
+
+        // Column names must match exactly
+        assert_eq!(
+            meta.variable_names, meta2.variable_names,
+            "variable_names mismatch"
+        );
+
+        // Value labels count must match
+        assert_eq!(
+            meta.variable_value_labels.len(),
+            meta2.variable_value_labels.len(),
+            "variable_value_labels count mismatch: orig={}, written={}",
+            meta.variable_value_labels.len(),
+            meta2.variable_value_labels.len(),
+        );
+
+        // Each variable's value labels must match
+        for (var, labels) in &meta.variable_value_labels {
+            let labels2 = meta2.variable_value_labels.get(var);
+            assert!(
+                labels2.is_some(),
+                "missing value labels for variable: {var}"
+            );
+            assert_eq!(
+                labels.len(),
+                labels2.unwrap().len(),
+                "value label count mismatch for {var}"
+            );
+        }
+
+        // Variable labels must match
+        assert_eq!(
+            meta.variable_labels.len(),
+            meta2.variable_labels.len(),
+            "variable_labels count mismatch"
+        );
     }
 }
