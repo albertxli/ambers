@@ -178,17 +178,35 @@ fn compute_layout(batch: &RecordBatch, meta: &SpssMetadata) -> Result<CaseLayout
             .and_then(|s| SpssFormat::from_string(s))
             .unwrap_or_else(|| infer_format(field.data_type()));
 
-        // Determine variable type and storage width
-        // For strings: use variable_storage_width from metadata (handles VLS > 255),
-        // falling back to format.width (capped at 255) for inferred formats.
+        // Determine variable type and storage width.
+        // Use the format string's declared width (not storage_width) to decide VLS vs non-VLS,
+        // because storage_width is 8-byte rounded (e.g., 254 → 256) and would falsely trigger VLS.
+        // For true VLS (format width > 255), use storage_width from metadata.
         let (var_type, storage_width) = if format.format_type.is_string() {
-            let w = meta
-                .variable_storage_width
+            // Parse the original format string for the declared width (not u8-capped).
+            // E.g., "A254" → 254 (non-VLS), "A2000" → 2000 (VLS).
+            let declared_width = meta
+                .spss_variable_types
                 .get(name.as_str())
-                .copied()
+                .and_then(|s| {
+                    let rest = s.trim_start_matches(|c: char| !c.is_ascii_digit());
+                    rest.split('.').next().and_then(|w| w.parse::<usize>().ok())
+                })
                 .unwrap_or(format.width as usize)
                 .max(1);
-            (VarType::String(w), w)
+
+            if declared_width > 255 {
+                // True VLS: use storage_width from metadata for the actual byte count
+                let w = meta
+                    .variable_storage_width
+                    .get(name.as_str())
+                    .copied()
+                    .unwrap_or(declared_width);
+                (VarType::String(w), w)
+            } else {
+                // Non-VLS: use format's declared width
+                (VarType::String(declared_width), declared_width)
+            }
         } else {
             (VarType::Numeric, 8)
         };

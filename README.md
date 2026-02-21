@@ -12,12 +12,12 @@ Pure Rust SPSS `.sav`/`.zsav` reader — Arrow-native, zero C dependencies.
 
 ## Features
 
-- Read `.sav` (bytecode) and `.zsav` (zlib) files
+- Read and write `.sav` (bytecode) and `.zsav` (zlib) files
 - Arrow `RecordBatch` output — zero-copy to Polars, DataFusion, DuckDB
 - Rich metadata: variable labels, value labels, missing values, MR sets, measure levels
 - Lazy reader via `scan_sav()` — returns Polars LazyFrame with projection and row limit pushdown
 - No PyArrow dependency — uses Arrow PyCapsule Interface for zero-copy transfer
-- The fastest SPSS reader — up to 3x faster than polars_readstat, 10x faster than pyreadstat
+- The fastest SPSS reader and writer — up to 3x faster reads, 4–20x faster writes vs pyreadstat
 - Python + Rust dual API from a single crate
 
 ## Installation
@@ -128,6 +128,25 @@ All results return a Polars DataFrame. Best of 3–5 runs (with warmup) on Windo
 | test_6 (5.4 GB, 395K × 916) | 3.062s | 2.343s (1.3x) | 0.022s (139x) | **0.013s (236x)** |
 
 On the 5.4 GB file, selecting 5 columns and 1000 rows completes in **13ms** — 236x faster than reading the full dataset.
+
+### Write
+
+`write_sav()` writes a Polars DataFrame + metadata back to `.sav` (bytecode) or `.zsav` (zlib). Best of 5 runs on the same machine.
+
+| File | Size | Rows | Cols | Mode | ambers | pyreadstat | Speedup |
+|------|------|-----:|-----:|------|-------:|-----------:|--------:|
+| test_1 (bytecode) | 0.2 MB | 1,500 | 75 | .sav | **0.001s** | 0.019s | **13x** |
+| | | | | .zsav | **0.004s** | 0.026s | **7x** |
+| test_2 (bytecode) | 147 MB | 22,070 | 677 | .sav | **0.567s** | 3.849s | **7x** |
+| | | | | .zsav | **1.088s** | 4.415s | **4x** |
+| test_3 (uncompressed) | 1.1 GB | 79,066 | 915 | .sav | **0.950s** | 16.152s | **17x** |
+| | | | | .zsav | **1.774s** | 17.362s | **10x** |
+| test_6 (uncompressed) | 5.4 GB | 395,330 | 916 | .sav | **5.700s** | 79.999s | **14x** |
+| | | | | .zsav | **8.193s** | 85.491s | **10x** |
+
+- **4–20x faster than pyreadstat** on writes across all files and compression modes
+- Full metadata roundtrip: variable labels, value labels, missing values, MR sets, display properties
+- Bytecode (.sav) and zlib (.zsav) compression
 
 ## License
 
