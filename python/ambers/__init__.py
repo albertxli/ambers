@@ -210,48 +210,43 @@ def write_sav(
     *,
     meta: SpssMetadata | None = None,
     compress: bool = True,
-    file_label: str | None = None,
-    variable_labels: dict[str, str] | None = None,
-    variable_value_labels: dict[str, dict] | None = None,
-    variable_measures: dict[str, str] | None = None,
-    variable_formats: dict[str, str] | None = None,
-    variable_display_widths: dict[str, int] | None = None,
-    variable_missing_values: dict[str, dict] | None = None,
-    notes: str | list[str] | None = None,
-    weight_variable: str | None = None,
 ) -> None:
     """Write a Polars DataFrame to an SPSS .sav or .zsav file.
 
-    Supports two workflows:
+    Supports three workflows:
 
     1. **Roundtrip** -- pass the ``meta`` from a prior ``read_sav()``::
 
         df, meta = am.read_sav("input.sav")
         am.write_sav(df, "output.sav", meta=meta)
 
-    2. **From scratch** -- metadata is inferred from the DataFrame::
+    2. **From scratch** -- build metadata with ``SpssMetadata()``::
+
+        meta = am.SpssMetadata(
+            variable_labels={"Q1": "Satisfaction"},
+            variable_measures={"Q1": "ordinal"},
+        )
+        am.write_sav(df, "output.sav", meta=meta)
+
+    3. **Inferred** -- metadata is inferred from the DataFrame::
 
         am.write_sav(df, "new.sav")
+
+    Missing metadata fields are automatically filled from the DataFrame
+    schema at write time (formats, measures, alignments, etc.).
 
     Args:
         df: A Polars DataFrame (or any object implementing
             ``__arrow_c_stream__``).
         path: Output file path. Use ``.zsav`` extension for zlib
             compression.
-        meta: An ``SpssMetadata`` object from a prior ``read_sav()``.
-            If None, metadata is inferred from the DataFrame schema.
+        meta: An ``SpssMetadata`` object. Can be from ``read_sav()``,
+            constructed with ``SpssMetadata()``, or built via
+            ``.update()``/``.with_*()`` methods. If None, metadata
+            is inferred from the DataFrame schema.
         compress: If True (default), use bytecode compression for
             ``.sav`` files. If False, write uncompressed. ``.zsav``
             files always use zlib compression regardless of this flag.
-        file_label: Reserved for future use.
-        variable_labels: Reserved for future use.
-        variable_value_labels: Reserved for future use.
-        variable_measures: Reserved for future use.
-        variable_formats: Reserved for future use.
-        variable_display_widths: Reserved for future use.
-        variable_missing_values: Reserved for future use.
-        notes: Reserved for future use.
-        weight_variable: Reserved for future use.
     """
     path = str(path)
 

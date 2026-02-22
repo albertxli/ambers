@@ -5,6 +5,59 @@ from pathlib import Path
 import polars
 
 class SpssMetadata:
+    def __init__(
+        self,
+        *,
+        file_label: str | None = None,
+        notes: str | list[str] | None = None,
+        weight_variable: str | None = None,
+        variable_labels: dict[str, str | None] | None = None,
+        variable_value_labels: dict[str, dict[int | float | str, str] | None] | None = None,
+        variable_formats: dict[str, str | None] | None = None,
+        variable_measures: dict[str, str | None] | None = None,
+        variable_display_widths: dict[str, int | None] | None = None,
+        variable_alignments: dict[str, str | None] | None = None,
+        variable_missing_values: dict[str, dict | None] | None = None,
+        variable_roles: dict[str, str | None] | None = None,
+        variable_attributes: dict[str, dict[str, list[str]] | None] | None = None,
+        mr_sets: dict[str, dict | None] | None = None,
+    ) -> None: ...
+
+    # Bulk update (returns new SpssMetadata)
+    def update(
+        self,
+        *,
+        file_label: str | None = None,
+        notes: str | list[str] | None = None,
+        weight_variable: str | None = None,
+        variable_labels: dict[str, str | None] | None = None,
+        variable_value_labels: dict[str, dict[int | float | str, str] | None] | None = None,
+        variable_formats: dict[str, str | None] | None = None,
+        variable_measures: dict[str, str | None] | None = None,
+        variable_display_widths: dict[str, int | None] | None = None,
+        variable_alignments: dict[str, str | None] | None = None,
+        variable_missing_values: dict[str, dict | None] | None = None,
+        variable_roles: dict[str, str | None] | None = None,
+        variable_attributes: dict[str, dict[str, list[str]] | None] | None = None,
+        mr_sets: dict[str, dict | None] | None = None,
+    ) -> SpssMetadata: ...
+
+    # Chainable single-field setters (each returns new SpssMetadata)
+    def with_file_label(self, value: str) -> SpssMetadata: ...
+    def with_notes(self, value: str | list[str]) -> SpssMetadata: ...
+    def with_weight_variable(self, value: str | None) -> SpssMetadata: ...
+    def with_variable_labels(self, value: dict[str, str | None]) -> SpssMetadata: ...
+    def with_variable_value_labels(self, value: dict[str, dict[int | float | str, str] | None]) -> SpssMetadata: ...
+    def with_variable_formats(self, value: dict[str, str | None]) -> SpssMetadata: ...
+    def with_variable_measures(self, value: dict[str, str | None]) -> SpssMetadata: ...
+    def with_variable_display_widths(self, value: dict[str, int | None]) -> SpssMetadata: ...
+    def with_variable_alignments(self, value: dict[str, str | None]) -> SpssMetadata: ...
+    def with_variable_missing_values(self, value: dict[str, dict | None]) -> SpssMetadata: ...
+    def with_variable_roles(self, value: dict[str, str | None]) -> SpssMetadata: ...
+    def with_variable_attributes(self, value: dict[str, dict[str, list[str]] | None]) -> SpssMetadata: ...
+    def with_mr_sets(self, value: dict[str, dict | None]) -> SpssMetadata: ...
+
+    # Properties (read-only)
     @property
     def file_label(self) -> str: ...
     @property
@@ -52,6 +105,7 @@ class SpssMetadata:
     @property
     def schema(self) -> dict: ...
 
+    # Convenience methods
     def label(self, name: str) -> str | None: ...
     def format(self, name: str) -> str | None: ...
     def measure(self, name: str) -> str | None: ...
@@ -119,13 +173,4 @@ def write_sav(
     *,
     meta: SpssMetadata | None = None,
     compress: bool = True,
-    file_label: str | None = None,
-    variable_labels: dict[str, str] | None = None,
-    variable_value_labels: dict[str, dict] | None = None,
-    variable_measures: dict[str, str] | None = None,
-    variable_formats: dict[str, str] | None = None,
-    variable_display_widths: dict[str, int] | None = None,
-    variable_missing_values: dict[str, dict] | None = None,
-    notes: str | list[str] | None = None,
-    weight_variable: str | None = None,
 ) -> None: ...

@@ -7,11 +7,11 @@ use indexmap::IndexMap;
 
 use arrow::ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream};
 use arrow::record_batch::{RecordBatch, RecordBatchIterator, RecordBatchReader};
-use pyo3::exceptions::{PyIOError, PyKeyError};
+use pyo3::exceptions::{PyIOError, PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyDict, PyList, PyTuple};
 
-use crate::constants::Compression;
+use crate::constants::{Alignment, Compression, Measure, Role};
 use crate::metadata::{MissingSpec, MrSet, MrType, SpssMetadata, Value};
 use crate::scanner::SavScanner;
 
@@ -94,6 +94,432 @@ fn mr_set_to_py(py: Python<'_>, mr: &MrSet) -> PyResult<Py<PyAny>> {
 }
 
 // ---------------------------------------------------------------------------
+// Python → Rust conversion helpers
+// ---------------------------------------------------------------------------
+
+fn py_to_notes(obj: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
+    if let Ok(s) = obj.extract::<String>() {
+        Ok(vec![s])
+    } else if let Ok(list) = obj.extract::<Vec<String>>() {
+        Ok(list)
+    } else {
+        Err(PyValueError::new_err(
+            "notes must be a string or list of strings",
+        ))
+    }
+}
+
+fn py_to_measure(s: &str) -> PyResult<Measure> {
+    match s.to_lowercase().as_str() {
+        "nominal" => Ok(Measure::Nominal),
+        "ordinal" => Ok(Measure::Ordinal),
+        "scale" => Ok(Measure::Scale),
+        "unknown" => Ok(Measure::Unknown),
+        _ => Err(PyValueError::new_err(format!(
+            "invalid measure '{s}', expected: nominal, ordinal, scale, unknown"
+        ))),
+    }
+}
+
+fn py_to_alignment(s: &str) -> PyResult<Alignment> {
+    match s.to_lowercase().as_str() {
+        "left" => Ok(Alignment::Left),
+        "right" => Ok(Alignment::Right),
+        "center" => Ok(Alignment::Center),
+        _ => Err(PyValueError::new_err(format!(
+            "invalid alignment '{s}', expected: left, right, center"
+        ))),
+    }
+}
+
+fn py_to_role(s: &str) -> PyResult<Role> {
+    match s.to_lowercase().as_str() {
+        "input" => Ok(Role::Input),
+        "target" => Ok(Role::Target),
+        "both" => Ok(Role::Both),
+        "none" => Ok(Role::None),
+        "partition" => Ok(Role::Partition),
+        "split" => Ok(Role::Split),
+        _ => Err(PyValueError::new_err(format!(
+            "invalid role '{s}', expected: input, target, both, none, partition, split"
+        ))),
+    }
+}
+
+/// Parse a Python dict of missing value specs into MissingSpec list with validation.
+fn py_to_missing_specs(dict: &Bound<'_, PyDict>) -> PyResult<Vec<MissingSpec>> {
+    let type_val = dict.get_item("type")?.ok_or_else(|| {
+        PyValueError::new_err("missing_values dict requires 'type' key ('discrete' or 'range')")
+    })?;
+    let type_str: String = type_val.extract()?;
+
+    match type_str.as_str() {
+        "discrete" => {
+            let values_val = dict.get_item("values")?.ok_or_else(|| {
+                PyValueError::new_err("discrete missing values requires 'values' key")
+            })?;
+            let list: &Bound<'_, PyList> = values_val.downcast()?;
+            let mut specs = Vec::new();
+            for item in list.iter() {
+                if let Ok(f) = item.extract::<f64>() {
+                    specs.push(MissingSpec::Value(f));
+                } else if let Ok(i) = item.extract::<i64>() {
+                    specs.push(MissingSpec::Value(i as f64));
+                } else {
+                    let s: String = item.extract()?;
+                    if s.len() > 8 {
+                        return Err(PyValueError::new_err(format!(
+                            "string missing value '{s}' exceeds 8 characters"
+                        )));
+                    }
+                    specs.push(MissingSpec::StringValue(s));
+                }
+            }
+            if specs.len() > 3 {
+                return Err(PyValueError::new_err(
+                    "maximum 3 discrete missing values allowed",
+                ));
+            }
+            // Check uniqueness for numeric values
+            let numeric_vals: Vec<u64> = specs
+                .iter()
+                .filter_map(|s| match s {
+                    MissingSpec::Value(v) => Some(v.to_bits()),
+                    _ => None,
+                })
+                .collect();
+            let unique: HashSet<u64> = numeric_vals.iter().copied().collect();
+            if unique.len() != numeric_vals.len() {
+                return Err(PyValueError::new_err(
+                    "discrete missing values must be unique (no duplicates)",
+                ));
+            }
+            Ok(specs)
+        }
+        "range" => {
+            let lo = dict
+                .get_item("low")?
+                .ok_or_else(|| {
+                    PyValueError::new_err("range missing values requires 'low' key")
+                })?
+                .extract::<f64>()?;
+            let hi = dict
+                .get_item("high")?
+                .ok_or_else(|| {
+                    PyValueError::new_err("range missing values requires 'high' key")
+                })?
+                .extract::<f64>()?;
+            if lo >= hi {
+                return Err(PyValueError::new_err(format!(
+                    "range 'low' ({lo}) must be less than 'high' ({hi})"
+                )));
+            }
+            let mut specs = vec![MissingSpec::Range { lo, hi }];
+            if let Some(discrete_val) = dict.get_item("discrete")? {
+                if !discrete_val.is_none() {
+                    let d = discrete_val.extract::<f64>()?;
+                    if d > lo && d < hi {
+                        return Err(PyValueError::new_err(format!(
+                            "discrete value ({d}) must not fall between low ({lo}) and high ({hi})"
+                        )));
+                    }
+                    specs.push(MissingSpec::Value(d));
+                }
+            }
+            Ok(specs)
+        }
+        _ => Err(PyValueError::new_err(format!(
+            "invalid missing value type '{type_str}', expected: 'discrete' or 'range'"
+        ))),
+    }
+}
+
+/// Parse a Python dict into an MrSet with validation.
+fn py_to_mr_set(name: &str, dict: &Bound<'_, PyDict>) -> PyResult<MrSet> {
+    if !name.starts_with('$') {
+        return Err(PyValueError::new_err(format!(
+            "MR set name '{name}' must start with '$'"
+        )));
+    }
+
+    let type_val = dict.get_item("type")?.ok_or_else(|| {
+        PyValueError::new_err("MR set requires 'type' key ('dichotomy' or 'category')")
+    })?;
+    let type_str: String = type_val.extract()?;
+
+    let mr_type = match type_str.as_str() {
+        "dichotomy" => MrType::MultipleDichotomy,
+        "category" => MrType::MultipleCategory,
+        _ => {
+            return Err(PyValueError::new_err(format!(
+                "invalid MR set type '{type_str}', expected: 'dichotomy' or 'category'"
+            )))
+        }
+    };
+
+    let label: String = dict
+        .get_item("label")?
+        .and_then(|v| if v.is_none() { None } else { Some(v) })
+        .map(|v| v.extract::<String>())
+        .transpose()?
+        .unwrap_or_default();
+
+    let variables: Vec<String> = dict
+        .get_item("variables")?
+        .ok_or_else(|| PyValueError::new_err("MR set requires 'variables' key"))?
+        .extract()?;
+
+    if variables.len() < 2 {
+        return Err(PyValueError::new_err(
+            "MR set must have at least 2 variables",
+        ));
+    }
+
+    let counted_value = match mr_type {
+        MrType::MultipleDichotomy => {
+            let cv = dict.get_item("counted_value")?.ok_or_else(|| {
+                PyValueError::new_err("dichotomy MR set requires 'counted_value'")
+            })?;
+            if cv.is_none() {
+                return Err(PyValueError::new_err(
+                    "dichotomy MR set requires a non-None 'counted_value'",
+                ));
+            }
+            if let Ok(i) = cv.extract::<i64>() {
+                Some(i.to_string())
+            } else if let Ok(f) = cv.extract::<f64>() {
+                // Format without trailing zeros for whole numbers
+                if f.fract() == 0.0 && f.is_finite() {
+                    Some(format!("{}", f as i64))
+                } else {
+                    Some(format!("{f}"))
+                }
+            } else {
+                Some(cv.extract::<String>()?)
+            }
+        }
+        MrType::MultipleCategory => None,
+    };
+
+    Ok(MrSet {
+        name: name.to_string(),
+        label,
+        mr_type,
+        counted_value,
+        variables,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// apply_kwargs — shared update logic for constructor and update()
+// ---------------------------------------------------------------------------
+
+/// Apply keyword arguments to a mutable SpssMetadata.
+/// Used by both `__init__` (on a default) and `update()` (on a clone).
+fn apply_kwargs(meta: &mut SpssMetadata, kwargs: &Bound<'_, PyDict>) -> PyResult<()> {
+    // --- Scalar fields ---
+
+    if let Some(val) = kwargs.get_item("file_label")? {
+        if val.is_none() {
+            meta.file_label = String::new();
+        } else {
+            meta.file_label = val.extract::<String>()?;
+        }
+    }
+
+    if let Some(val) = kwargs.get_item("notes")? {
+        if val.is_none() {
+            meta.notes = Vec::new();
+        } else {
+            meta.notes = py_to_notes(&val)?;
+        }
+    }
+
+    if let Some(val) = kwargs.get_item("weight_variable")? {
+        if val.is_none() {
+            meta.weight_variable = None;
+        } else {
+            meta.weight_variable = Some(val.extract::<String>()?);
+        }
+    }
+
+    // --- Dict fields (merge at top level) ---
+
+    if let Some(val) = kwargs.get_item("variable_labels")? {
+        if !val.is_none() {
+            let dict: &Bound<'_, PyDict> = val.downcast()?;
+            for (k, v) in dict.iter() {
+                let key: String = k.extract()?;
+                if v.is_none() {
+                    meta.variable_labels.swap_remove(&key);
+                } else {
+                    meta.variable_labels.insert(key, v.extract::<String>()?);
+                }
+            }
+        }
+    }
+
+    if let Some(val) = kwargs.get_item("variable_formats")? {
+        if !val.is_none() {
+            let dict: &Bound<'_, PyDict> = val.downcast()?;
+            for (k, v) in dict.iter() {
+                let key: String = k.extract()?;
+                if v.is_none() {
+                    meta.variable_formats.swap_remove(&key);
+                } else {
+                    meta.variable_formats.insert(key, v.extract::<String>()?);
+                }
+            }
+        }
+    }
+
+    if let Some(val) = kwargs.get_item("variable_measures")? {
+        if !val.is_none() {
+            let dict: &Bound<'_, PyDict> = val.downcast()?;
+            for (k, v) in dict.iter() {
+                let key: String = k.extract()?;
+                if v.is_none() {
+                    meta.variable_measures.swap_remove(&key);
+                } else {
+                    let s: String = v.extract()?;
+                    meta.variable_measures.insert(key, py_to_measure(&s)?);
+                }
+            }
+        }
+    }
+
+    if let Some(val) = kwargs.get_item("variable_display_widths")? {
+        if !val.is_none() {
+            let dict: &Bound<'_, PyDict> = val.downcast()?;
+            for (k, v) in dict.iter() {
+                let key: String = k.extract()?;
+                if v.is_none() {
+                    meta.variable_display_widths.swap_remove(&key);
+                } else {
+                    meta.variable_display_widths
+                        .insert(key, v.extract::<u32>()?);
+                }
+            }
+        }
+    }
+
+    if let Some(val) = kwargs.get_item("variable_alignments")? {
+        if !val.is_none() {
+            let dict: &Bound<'_, PyDict> = val.downcast()?;
+            for (k, v) in dict.iter() {
+                let key: String = k.extract()?;
+                if v.is_none() {
+                    meta.variable_alignments.swap_remove(&key);
+                } else {
+                    let s: String = v.extract()?;
+                    meta.variable_alignments
+                        .insert(key, py_to_alignment(&s)?);
+                }
+            }
+        }
+    }
+
+    if let Some(val) = kwargs.get_item("variable_roles")? {
+        if !val.is_none() {
+            let dict: &Bound<'_, PyDict> = val.downcast()?;
+            for (k, v) in dict.iter() {
+                let key: String = k.extract()?;
+                if v.is_none() {
+                    meta.variable_roles.swap_remove(&key);
+                } else {
+                    let s: String = v.extract()?;
+                    meta.variable_roles.insert(key, py_to_role(&s)?);
+                }
+            }
+        }
+    }
+
+    // --- Nested dict fields (merge top level, replace inner) ---
+
+    if let Some(val) = kwargs.get_item("variable_value_labels")? {
+        if !val.is_none() {
+            let dict: &Bound<'_, PyDict> = val.downcast()?;
+            for (k, v) in dict.iter() {
+                let var_name: String = k.extract()?;
+                if v.is_none() {
+                    meta.variable_value_labels.swap_remove(&var_name);
+                } else {
+                    let inner: &Bound<'_, PyDict> = v.downcast()?;
+                    let mut labels = IndexMap::new();
+                    for (val_key, val_label) in inner.iter() {
+                        let label: String = val_label.extract()?;
+                        if let Ok(f) = val_key.extract::<f64>() {
+                            labels.insert(Value::Numeric(f), label);
+                        } else if let Ok(i) = val_key.extract::<i64>() {
+                            labels.insert(Value::Numeric(i as f64), label);
+                        } else {
+                            let s: String = val_key.extract()?;
+                            labels.insert(Value::String(s), label);
+                        }
+                    }
+                    meta.variable_value_labels.insert(var_name, labels);
+                }
+            }
+        }
+    }
+
+    if let Some(val) = kwargs.get_item("variable_missing_values")? {
+        if !val.is_none() {
+            let dict: &Bound<'_, PyDict> = val.downcast()?;
+            for (k, v) in dict.iter() {
+                let key: String = k.extract()?;
+                if v.is_none() {
+                    meta.variable_missing_values.swap_remove(&key);
+                } else {
+                    let inner: &Bound<'_, PyDict> = v.downcast()?;
+                    let specs = py_to_missing_specs(inner)?;
+                    meta.variable_missing_values.insert(key, specs);
+                }
+            }
+        }
+    }
+
+    if let Some(val) = kwargs.get_item("variable_attributes")? {
+        if !val.is_none() {
+            let dict: &Bound<'_, PyDict> = val.downcast()?;
+            for (k, v) in dict.iter() {
+                let var_name: String = k.extract()?;
+                if v.is_none() {
+                    meta.variable_attributes.swap_remove(&var_name);
+                } else {
+                    let inner: &Bound<'_, PyDict> = v.downcast()?;
+                    let mut attrs = IndexMap::new();
+                    for (ak, av) in inner.iter() {
+                        let attr_name: String = ak.extract()?;
+                        let values: Vec<String> = av.extract()?;
+                        attrs.insert(attr_name, values);
+                    }
+                    meta.variable_attributes.insert(var_name, attrs);
+                }
+            }
+        }
+    }
+
+    if let Some(val) = kwargs.get_item("mr_sets")? {
+        if !val.is_none() {
+            let dict: &Bound<'_, PyDict> = val.downcast()?;
+            for (k, v) in dict.iter() {
+                let set_name: String = k.extract()?;
+                if v.is_none() {
+                    meta.mr_sets.swap_remove(&set_name);
+                } else {
+                    let inner: &Bound<'_, PyDict> = v.downcast()?;
+                    let mr = py_to_mr_set(&set_name, inner)?;
+                    meta.mr_sets.insert(set_name, mr);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // #[pyclass] SpssMetadata
 // ---------------------------------------------------------------------------
 
@@ -104,6 +530,39 @@ pub struct PySpssMetadata {
 
 #[pymethods]
 impl PySpssMetadata {
+    /// Create a new SpssMetadata, optionally with keyword arguments.
+    ///
+    /// All parameters are optional. Omitted fields use sensible defaults
+    /// (empty strings, empty maps). At write time, missing fields are
+    /// filled from the DataFrame schema automatically.
+    #[new]
+    #[pyo3(signature = (**kwargs))]
+    fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        let mut meta = SpssMetadata::default();
+        if let Some(dict) = kwargs {
+            apply_kwargs(&mut meta, dict)?;
+        }
+        Ok(PySpssMetadata { inner: meta })
+    }
+
+    /// Return a new SpssMetadata with the given fields merged/replaced.
+    ///
+    /// Dict fields merge at the variable-name level (new keys added,
+    /// existing overwritten). Pass ``{key: None}`` to remove a key.
+    /// Scalar fields (file_label, weight_variable) are replaced.
+    #[pyo3(signature = (**kwargs))]
+    fn update(&self, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PySpssMetadata> {
+        let mut meta = self.inner.clone();
+        if let Some(dict) = kwargs {
+            apply_kwargs(&mut meta, dict)?;
+        }
+        Ok(PySpssMetadata { inner: meta })
+    }
+
+    // -----------------------------------------------------------------------
+    // Getters (read-only properties)
+    // -----------------------------------------------------------------------
+
     #[getter]
     fn file_label(&self) -> &str {
         &self.inner.file_label
@@ -156,10 +615,18 @@ impl PySpssMetadata {
     #[getter]
     fn variable_labels<'py>(&self, py: Python<'py>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
-        for name in &self.inner.variable_names {
-            match self.inner.variable_labels.get(name) {
-                Some(label) => dict.set_item(name, label)?,
-                None => dict.set_item(name, py.None())?,
+        if self.inner.variable_names.is_empty() {
+            // From-scratch metadata: return the raw labels map
+            for (name, label) in &self.inner.variable_labels {
+                dict.set_item(name, label)?;
+            }
+        } else {
+            // Read metadata: return labels ordered by variable_names
+            for name in &self.inner.variable_names {
+                match self.inner.variable_labels.get(name) {
+                    Some(label) => dict.set_item(name, label)?,
+                    None => dict.set_item(name, py.None())?,
+                }
             }
         }
         Ok(dict.unbind().into_any())
@@ -267,7 +734,11 @@ impl PySpssMetadata {
     // -----------------------------------------------------------------------
 
     /// Validate that a variable name exists in the metadata.
+    /// For from-scratch metadata (empty variable_names), any name is valid.
     fn check_var(&self, name: &str) -> PyResult<()> {
+        if self.inner.variable_names.is_empty() {
+            return Ok(());
+        }
         if !self.inner.variable_names.contains(&name.to_string()) {
             return Err(PyKeyError::new_err(format!(
                 "variable '{name}' not found in metadata"
@@ -814,6 +1285,216 @@ impl PySpssMetadata {
 
     fn __str__(&self) -> String {
         self.__repr__()
+    }
+
+    // -----------------------------------------------------------------------
+    // with_*() — chainable single-field convenience methods
+    // -----------------------------------------------------------------------
+
+    /// Return a new SpssMetadata with the file label set.
+    fn with_file_label(&self, label: &str) -> PySpssMetadata {
+        let mut meta = self.inner.clone();
+        meta.file_label = label.to_string();
+        PySpssMetadata { inner: meta }
+    }
+
+    /// Return a new SpssMetadata with notes set.
+    #[pyo3(signature = (notes))]
+    fn with_notes(&self, notes: &Bound<'_, PyAny>) -> PyResult<PySpssMetadata> {
+        let mut meta = self.inner.clone();
+        meta.notes = py_to_notes(notes)?;
+        Ok(PySpssMetadata { inner: meta })
+    }
+
+    /// Return a new SpssMetadata with the weight variable set (or cleared with None).
+    fn with_weight_variable(&self, var: Option<&str>) -> PySpssMetadata {
+        let mut meta = self.inner.clone();
+        meta.weight_variable = var.map(|s| s.to_string());
+        PySpssMetadata { inner: meta }
+    }
+
+    /// Return a new SpssMetadata with variable labels merged.
+    fn with_variable_labels(&self, labels: &Bound<'_, PyDict>) -> PyResult<PySpssMetadata> {
+        let mut meta = self.inner.clone();
+        for (k, v) in labels.iter() {
+            let key: String = k.extract()?;
+            if v.is_none() {
+                meta.variable_labels.swap_remove(&key);
+            } else {
+                meta.variable_labels.insert(key, v.extract::<String>()?);
+            }
+        }
+        Ok(PySpssMetadata { inner: meta })
+    }
+
+    /// Return a new SpssMetadata with variable value labels merged.
+    fn with_variable_value_labels(
+        &self,
+        labels: &Bound<'_, PyDict>,
+    ) -> PyResult<PySpssMetadata> {
+        let mut meta = self.inner.clone();
+        for (k, v) in labels.iter() {
+            let var_name: String = k.extract()?;
+            if v.is_none() {
+                meta.variable_value_labels.swap_remove(&var_name);
+            } else {
+                let inner: &Bound<'_, PyDict> = v.downcast()?;
+                let mut map = IndexMap::new();
+                for (val_key, val_label) in inner.iter() {
+                    let label: String = val_label.extract()?;
+                    if let Ok(f) = val_key.extract::<f64>() {
+                        map.insert(Value::Numeric(f), label);
+                    } else if let Ok(i) = val_key.extract::<i64>() {
+                        map.insert(Value::Numeric(i as f64), label);
+                    } else {
+                        let s: String = val_key.extract()?;
+                        map.insert(Value::String(s), label);
+                    }
+                }
+                meta.variable_value_labels.insert(var_name, map);
+            }
+        }
+        Ok(PySpssMetadata { inner: meta })
+    }
+
+    /// Return a new SpssMetadata with variable formats merged.
+    fn with_variable_formats(&self, formats: &Bound<'_, PyDict>) -> PyResult<PySpssMetadata> {
+        let mut meta = self.inner.clone();
+        for (k, v) in formats.iter() {
+            let key: String = k.extract()?;
+            if v.is_none() {
+                meta.variable_formats.swap_remove(&key);
+            } else {
+                meta.variable_formats.insert(key, v.extract::<String>()?);
+            }
+        }
+        Ok(PySpssMetadata { inner: meta })
+    }
+
+    /// Return a new SpssMetadata with variable measures merged.
+    fn with_variable_measures(&self, measures: &Bound<'_, PyDict>) -> PyResult<PySpssMetadata> {
+        let mut meta = self.inner.clone();
+        for (k, v) in measures.iter() {
+            let key: String = k.extract()?;
+            if v.is_none() {
+                meta.variable_measures.swap_remove(&key);
+            } else {
+                let s: String = v.extract()?;
+                meta.variable_measures.insert(key, py_to_measure(&s)?);
+            }
+        }
+        Ok(PySpssMetadata { inner: meta })
+    }
+
+    /// Return a new SpssMetadata with variable display widths merged.
+    fn with_variable_display_widths(
+        &self,
+        widths: &Bound<'_, PyDict>,
+    ) -> PyResult<PySpssMetadata> {
+        let mut meta = self.inner.clone();
+        for (k, v) in widths.iter() {
+            let key: String = k.extract()?;
+            if v.is_none() {
+                meta.variable_display_widths.swap_remove(&key);
+            } else {
+                meta.variable_display_widths
+                    .insert(key, v.extract::<u32>()?);
+            }
+        }
+        Ok(PySpssMetadata { inner: meta })
+    }
+
+    /// Return a new SpssMetadata with variable alignments merged.
+    fn with_variable_alignments(
+        &self,
+        alignments: &Bound<'_, PyDict>,
+    ) -> PyResult<PySpssMetadata> {
+        let mut meta = self.inner.clone();
+        for (k, v) in alignments.iter() {
+            let key: String = k.extract()?;
+            if v.is_none() {
+                meta.variable_alignments.swap_remove(&key);
+            } else {
+                let s: String = v.extract()?;
+                meta.variable_alignments
+                    .insert(key, py_to_alignment(&s)?);
+            }
+        }
+        Ok(PySpssMetadata { inner: meta })
+    }
+
+    /// Return a new SpssMetadata with variable missing values merged.
+    fn with_variable_missing_values(
+        &self,
+        missing: &Bound<'_, PyDict>,
+    ) -> PyResult<PySpssMetadata> {
+        let mut meta = self.inner.clone();
+        for (k, v) in missing.iter() {
+            let key: String = k.extract()?;
+            if v.is_none() {
+                meta.variable_missing_values.swap_remove(&key);
+            } else {
+                let inner: &Bound<'_, PyDict> = v.downcast()?;
+                let specs = py_to_missing_specs(inner)?;
+                meta.variable_missing_values.insert(key, specs);
+            }
+        }
+        Ok(PySpssMetadata { inner: meta })
+    }
+
+    /// Return a new SpssMetadata with variable roles merged.
+    fn with_variable_roles(&self, roles: &Bound<'_, PyDict>) -> PyResult<PySpssMetadata> {
+        let mut meta = self.inner.clone();
+        for (k, v) in roles.iter() {
+            let key: String = k.extract()?;
+            if v.is_none() {
+                meta.variable_roles.swap_remove(&key);
+            } else {
+                let s: String = v.extract()?;
+                meta.variable_roles.insert(key, py_to_role(&s)?);
+            }
+        }
+        Ok(PySpssMetadata { inner: meta })
+    }
+
+    /// Return a new SpssMetadata with variable attributes merged.
+    fn with_variable_attributes(
+        &self,
+        attributes: &Bound<'_, PyDict>,
+    ) -> PyResult<PySpssMetadata> {
+        let mut meta = self.inner.clone();
+        for (k, v) in attributes.iter() {
+            let var_name: String = k.extract()?;
+            if v.is_none() {
+                meta.variable_attributes.swap_remove(&var_name);
+            } else {
+                let inner: &Bound<'_, PyDict> = v.downcast()?;
+                let mut attrs = IndexMap::new();
+                for (ak, av) in inner.iter() {
+                    let attr_name: String = ak.extract()?;
+                    let values: Vec<String> = av.extract()?;
+                    attrs.insert(attr_name, values);
+                }
+                meta.variable_attributes.insert(var_name, attrs);
+            }
+        }
+        Ok(PySpssMetadata { inner: meta })
+    }
+
+    /// Return a new SpssMetadata with MR sets merged.
+    fn with_mr_sets(&self, mr_sets: &Bound<'_, PyDict>) -> PyResult<PySpssMetadata> {
+        let mut meta = self.inner.clone();
+        for (k, v) in mr_sets.iter() {
+            let set_name: String = k.extract()?;
+            if v.is_none() {
+                meta.mr_sets.swap_remove(&set_name);
+            } else {
+                let inner: &Bound<'_, PyDict> = v.downcast()?;
+                let mr = py_to_mr_set(&set_name, inner)?;
+                meta.mr_sets.insert(set_name, mr);
+            }
+        }
+        Ok(PySpssMetadata { inner: meta })
     }
 }
 

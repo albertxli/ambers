@@ -1607,12 +1607,90 @@ pub fn write_sav(
 ///
 /// Seek is required for zsav (zlib) compression to backpatch the zheader.
 /// For non-zsav files, `std::io::Cursor<Vec<u8>>` is a convenient seekable wrapper.
+/// Fill missing metadata fields from the Arrow schema with sensible defaults.
+///
+/// For each column in the schema, if the metadata is missing a field
+/// (format, measure, alignment, display_width, role, storage_width),
+/// it is filled using the same type-based logic as `from_arrow_schema()`.
+/// User-set fields are never overwritten.
+fn fill_defaults_from_schema(meta: &mut SpssMetadata, schema: &arrow::datatypes::Schema) {
+    for field in schema.fields() {
+        let name = field.name();
+
+        // Infer defaults from Arrow type (same logic as SpssMetadata::from_arrow_schema)
+        let (default_fmt, default_measure, default_alignment) = match field.data_type() {
+            DataType::Float64 => ("F8.2", Measure::Scale, Alignment::Right),
+            DataType::Int64 | DataType::Int32 | DataType::Int16 | DataType::Int8 => {
+                ("F8.0", Measure::Scale, Alignment::Right)
+            }
+            DataType::Boolean => ("F1.0", Measure::Nominal, Alignment::Right),
+            DataType::Date32 => ("DATE11", Measure::Scale, Alignment::Right),
+            DataType::Timestamp(TimeUnit::Microsecond, _) => {
+                ("DATETIME23.2", Measure::Scale, Alignment::Right)
+            }
+            DataType::Duration(TimeUnit::Microsecond) => {
+                ("TIME11.2", Measure::Scale, Alignment::Right)
+            }
+            DataType::Utf8 | DataType::Utf8View | DataType::LargeUtf8 => {
+                ("A255", Measure::Nominal, Alignment::Left)
+            }
+            _ => ("F8.2", Measure::Scale, Alignment::Right),
+        };
+
+        if !meta.variable_formats.contains_key(name.as_str()) {
+            meta.variable_formats
+                .insert(name.clone(), default_fmt.to_string());
+        }
+
+        if !meta.variable_measures.contains_key(name.as_str()) {
+            meta.variable_measures
+                .insert(name.clone(), default_measure);
+        }
+
+        if !meta.variable_alignments.contains_key(name.as_str()) {
+            meta.variable_alignments
+                .insert(name.clone(), default_alignment);
+        }
+
+        if !meta.variable_display_widths.contains_key(name.as_str()) {
+            // Use the format width (already set above or by user)
+            let fmt_str = meta.variable_formats.get(name.as_str()).unwrap();
+            let w = SpssFormat::from_string(fmt_str)
+                .map(|f| f.width as u32)
+                .unwrap_or(8);
+            meta.variable_display_widths.insert(name.clone(), w);
+        }
+
+        if !meta.variable_roles.contains_key(name.as_str()) {
+            meta.variable_roles.insert(name.clone(), Role::Input);
+        }
+
+        if !meta.variable_storage_widths.contains_key(name.as_str()) {
+            let fmt_str = meta.variable_formats.get(name.as_str()).unwrap();
+            let sw = if fmt_str.starts_with('A') {
+                fmt_str[1..]
+                    .split('.')
+                    .next()
+                    .and_then(|w| w.parse::<usize>().ok())
+                    .unwrap_or(255)
+            } else {
+                8
+            };
+            meta.variable_storage_widths.insert(name.clone(), sw);
+        }
+    }
+}
+
 pub fn write_sav_to_writer<W: Write + Seek>(
     mut writer: W,
     batch: &RecordBatch,
     metadata: &SpssMetadata,
     compression: Compression,
 ) -> Result<()> {
+    // Fill any missing metadata fields from the schema
+    let mut meta = metadata.clone();
+    fill_defaults_from_schema(&mut meta, batch.schema().as_ref());
+    let metadata = &meta;
 
     let layout = compute_layout(batch, metadata)?;
     let nrows = batch.num_rows() as i32;
