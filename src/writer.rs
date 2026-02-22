@@ -312,7 +312,12 @@ fn compute_layout(batch: &RecordBatch, meta: &SpssMetadata) -> Result<CaseLayout
                 label: write_vars.last().unwrap().label.as_ref().map(|s| s.as_bytes().to_vec()),
                 print_format: format.clone(),
                 write_format: format.clone(),
-                missing_values: missing_values.clone(),
+                // Strings > 8 bytes: missing values go in subtype 22 only, not type-2 record
+                missing_values: if matches!(&var_type, VarType::String(w) if *w > 8) {
+                    MissingValues::None
+                } else {
+                    missing_values.clone()
+                },
                 is_ghost: false,
             });
             slot_index += 1;
@@ -362,11 +367,12 @@ fn compute_layout(batch: &RecordBatch, meta: &SpssMetadata) -> Result<CaseLayout
                     decimals: 0,
                 };
 
-                // Primary segment gets label and missing values; others don't
+                // Primary segment gets label; others don't.
+                // VLS strings (width > 8): missing values go in subtype 22 only.
                 let (seg_label, seg_missing) = if seg == 0 {
                     (
                         write_vars.last().unwrap().label.as_ref().map(|s| s.as_bytes().to_vec()),
-                        missing_values.clone(),
+                        MissingValues::None,
                     )
                 } else {
                     (None, MissingValues::None)
@@ -904,13 +910,14 @@ fn write_info_long_string_missing<W: Write>(
     layout: &CaseLayout,
     meta: &SpssMetadata,
 ) -> Result<()> {
-    // Collect long string variables (width > 8) that have missing values
-    let mut entries: Vec<(&str, &Vec<MissingSpec>)> = Vec::new();
+    // Collect long string variables (width > 8) that have missing values.
+    // Use long_name (not short_name) so reader can match without short→long mapping.
+    let mut entries: Vec<(&str, usize, &Vec<MissingSpec>)> = Vec::new();
     for var in &layout.write_vars {
         if matches!(&var.var_type, VarType::String(w) if *w > 8) {
             if let Some(specs) = meta.variable_missing_values.get(&var.long_name) {
                 if !specs.is_empty() {
-                    entries.push((&var.short_name, specs));
+                    entries.push((&var.long_name, var.storage_width, specs));
                 }
             }
         }
@@ -921,7 +928,7 @@ fn write_info_long_string_missing<W: Write>(
 
     // Build payload
     let mut payload = Vec::new();
-    for (var_name, specs) in &entries {
+    for (var_name, storage_width, specs) in &entries {
         let name_bytes = var_name.as_bytes();
         payload.extend_from_slice(&(name_bytes.len() as i32).to_le_bytes());
         payload.extend_from_slice(name_bytes);
@@ -931,19 +938,18 @@ fn write_info_long_string_missing<W: Write>(
         payload.push(n_missing);
 
         // Missing value width
-        let var_width = layout
-            .write_vars
-            .iter()
-            .find(|v| v.short_name == **var_name)
-            .map(|v| v.storage_width as i32)
-            .unwrap_or(8);
+        let var_width = *storage_width as i32;
         payload.extend_from_slice(&var_width.to_le_bytes());
 
         for spec in *specs {
             if let MissingSpec::StringValue(s) = spec {
+                // Each value is exactly var_width bytes, space-padded (no per-value length prefix)
                 let val_bytes = s.as_bytes();
-                payload.extend_from_slice(&(val_bytes.len() as i32).to_le_bytes());
-                payload.extend_from_slice(val_bytes);
+                let width = var_width as usize;
+                let mut buf = vec![b' '; width];
+                let len = val_bytes.len().min(width);
+                buf[..len].copy_from_slice(&val_bytes[..len]);
+                payload.extend_from_slice(&buf);
             }
         }
     }

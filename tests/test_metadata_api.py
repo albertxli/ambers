@@ -235,6 +235,24 @@ class TestMissingValuesValidation:
             if os.path.exists(path):
                 os.unlink(path)
 
+    def test_string_missing_on_long_string_roundtrip(self):
+        """Bug fix: string missing values on long strings (A255) go via subtype 22."""
+        df = pl.DataFrame({"q8": ["Satisfied", "Neutral", "Very satisfied"]})
+        meta = am.SpssMetadata(
+            variable_missing_values={"q8": {"type": "discrete", "values": ["N/A", "DK"]}},
+        )
+        with tempfile.NamedTemporaryFile(suffix=".sav", delete=False) as f:
+            path = f.name
+        try:
+            am.write_sav(df, path, meta=meta)
+            df2, meta2 = am.read_sav(path)
+            assert df2.shape == (3, 1)
+            mv = meta2.variable_missing_values["q8"]
+            assert mv["type"] == "discrete"
+            assert set(mv["values"]) == {"N/A", "DK"}
+        finally:
+            os.unlink(path)
+
 
 # ---------------------------------------------------------------------------
 # MR sets validation
