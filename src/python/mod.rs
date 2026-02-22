@@ -56,13 +56,12 @@ fn missing_spec_to_py(py: Python<'_>, spec: &MissingSpec) -> PyResult<Py<PyAny>>
 
 fn mr_set_to_py(py: Python<'_>, mr: &MrSet) -> PyResult<Py<PyAny>> {
     let dict = PyDict::new(py);
-    dict.set_item("name", &mr.name)?;
     dict.set_item("label", &mr.label)?;
     dict.set_item(
-        "mr_type",
+        "type",
         match mr.mr_type {
-            MrType::MultipleDichotomy => "multiple_dichotomy",
-            MrType::MultipleCategory => "multiple_category",
+            MrType::MultipleDichotomy => "dichotomy",
+            MrType::MultipleCategory => "category",
         },
     )?;
     dict.set_item("counted_value", mr.counted_value.as_deref())?;
