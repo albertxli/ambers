@@ -180,6 +180,14 @@ fn py_to_missing_specs(dict: &Bound<'_, PyDict>) -> PyResult<Vec<MissingSpec>> {
                     "maximum 3 discrete missing values allowed",
                 ));
             }
+            // Check for mixed numeric + string types
+            let has_numeric = specs.iter().any(|s| matches!(s, MissingSpec::Value(_)));
+            let has_string = specs.iter().any(|s| matches!(s, MissingSpec::StringValue(_)));
+            if has_numeric && has_string {
+                return Err(PyValueError::new_err(
+                    "missing values cannot mix numeric and string types",
+                ));
+            }
             // Check uniqueness for numeric values
             let numeric_vals: Vec<u64> = specs
                 .iter()
@@ -236,12 +244,6 @@ fn py_to_missing_specs(dict: &Bound<'_, PyDict>) -> PyResult<Vec<MissingSpec>> {
 
 /// Parse a Python dict into an MrSet with validation.
 fn py_to_mr_set(name: &str, dict: &Bound<'_, PyDict>) -> PyResult<MrSet> {
-    if !name.starts_with('$') {
-        return Err(PyValueError::new_err(format!(
-            "MR set name '{name}' must start with '$'"
-        )));
-    }
-
     let type_val = dict.get_item("type")?.ok_or_else(|| {
         PyValueError::new_err("MR set requires 'type' key ('dichotomy' or 'category')")
     })?;

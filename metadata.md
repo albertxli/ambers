@@ -217,6 +217,10 @@ meta = meta.update(variable_missing_values={"Q1": None})
 
 ### Validation Rules
 
+**General:**
+- Cannot mix numeric and string values in the same spec — `ValueError` if attempted
+- At write time, missing value type is validated against the actual column type (e.g., string missing values on a numeric column raises an error)
+
 **Numeric variables:**
 - Discrete: maximum 3 values, must be unique (no duplicates)
 - Range: `low` must be less than `high`
@@ -267,7 +271,7 @@ Binary yes/no variables where a specific `counted_value` indicates "selected".
 
 ```python
 meta = meta.update(mr_sets={
-    "$brands": {
+    "brands": {
         "label": "Brands Mentioned",
         "type": "dichotomy",
         "counted_value": "1",
@@ -282,7 +286,7 @@ Categorical response variables grouped together.
 
 ```python
 meta = meta.update(mr_sets={
-    "$hobbies": {
+    "hobbies": {
         "label": "Hobbies Selected",
         "type": "category",
         "variables": ["hobby1", "hobby2", "hobby3"],
@@ -293,12 +297,12 @@ meta = meta.update(mr_sets={
 ### Remove an MR Set
 
 ```python
-meta = meta.update(mr_sets={"$brands": None})
+meta = meta.update(mr_sets={"brands": None})
 ```
 
 ### Validation Rules
 
-- **Name**: must start with `$`
+- **Name**: any valid name (the `$` prefix is automatically added by the SAV format — do not include it yourself or it will be doubled)
 - **Type**: must be `"dichotomy"` or `"category"`
 - **Variables**: must have at least 2 variables; all must be the same type (all numeric or all string)
 - **Dichotomy sets**: `counted_value` is required (cannot be None)

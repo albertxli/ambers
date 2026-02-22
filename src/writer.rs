@@ -234,7 +234,28 @@ fn compute_layout(batch: &RecordBatch, meta: &SpssMetadata) -> Result<CaseLayout
         let missing_values = meta
             .variable_missing_values
             .get(name.as_str())
-            .map(|specs| specs_to_missing(specs))
+            .map(|specs| {
+                // Validate missing value type matches variable type
+                let is_string_var = matches!(var_type, VarType::String(_));
+                let has_numeric = specs.iter().any(|s| {
+                    matches!(s, MissingSpec::Value(_) | MissingSpec::Range { .. })
+                });
+                let has_string = specs.iter().any(|s| matches!(s, MissingSpec::StringValue(_)));
+                if is_string_var && has_numeric {
+                    return Err(SpssError::WriteError(format!(
+                        "variable '{}': numeric missing values cannot be applied to a string variable",
+                        name
+                    )));
+                }
+                if !is_string_var && has_string {
+                    return Err(SpssError::WriteError(format!(
+                        "variable '{}': string missing values cannot be applied to a numeric variable",
+                        name
+                    )));
+                }
+                Ok(specs_to_missing(specs))
+            })
+            .transpose()?
             .unwrap_or(MissingValues::None);
         let measure = meta
             .variable_measures
