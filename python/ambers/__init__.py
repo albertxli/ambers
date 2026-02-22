@@ -216,7 +216,7 @@ def write_sav(
     variable_measures: dict[str, str] | None = None,
     variable_formats: dict[str, str] | None = None,
     variable_display_widths: dict[str, int] | None = None,
-    missing_ranges: dict[str, list] | None = None,
+    variable_missing_values: dict[str, dict] | None = None,
     notes: str | list[str] | None = None,
     weight_variable: str | None = None,
 ) -> None:
@@ -249,7 +249,7 @@ def write_sav(
         variable_measures: Reserved for future use.
         variable_formats: Reserved for future use.
         variable_display_widths: Reserved for future use.
-        missing_ranges: Reserved for future use.
+        variable_missing_values: Reserved for future use.
         notes: Reserved for future use.
         weight_variable: Reserved for future use.
     """

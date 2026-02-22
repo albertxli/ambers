@@ -40,7 +40,7 @@ class SpssMetadata:
     @property
     def variable_measures(self) -> dict[str, str]: ...
     @property
-    def variable_missing_values(self) -> dict[str, list[dict]]: ...
+    def variable_missing_values(self) -> dict[str, dict]: ...
     @property
     def mr_sets(self) -> dict[str, dict]: ...
     @property
@@ -125,7 +125,7 @@ def write_sav(
     variable_measures: dict[str, str] | None = None,
     variable_formats: dict[str, str] | None = None,
     variable_display_widths: dict[str, int] | None = None,
-    missing_ranges: dict[str, list] | None = None,
+    variable_missing_values: dict[str, dict] | None = None,
     notes: str | list[str] | None = None,
     weight_variable: str | None = None,
 ) -> None: ...

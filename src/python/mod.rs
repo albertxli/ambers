@@ -34,23 +34,46 @@ fn value_to_py(py: Python<'_>, v: &Value) -> Py<PyAny> {
     }
 }
 
-fn missing_spec_to_py(py: Python<'_>, spec: &MissingSpec) -> PyResult<Py<PyAny>> {
+/// Convert a variable's MissingSpec list into a single Python dict.
+///
+/// Output formats:
+///   {"type": "discrete", "values": [98.0, 99.0, 100.0]}     — discrete numeric
+///   {"type": "discrete", "values": ["NA", "DK"]}             — discrete string
+///   {"type": "range", "low": 90.0, "high": 99.5}            — range only
+///   {"type": "range", "low": 90.0, "high": 99.5, "discrete": 33.0} — range + discrete
+fn missing_specs_to_py(py: Python<'_>, specs: &[MissingSpec]) -> PyResult<Py<PyAny>> {
     let dict = PyDict::new(py);
-    match spec {
-        MissingSpec::Value(v) => {
-            dict.set_item("type", "value")?;
-            dict.set_item("value", v)?;
-        }
-        MissingSpec::Range { lo, hi } => {
-            dict.set_item("type", "range")?;
-            dict.set_item("low", lo)?;
-            dict.set_item("high", hi)?;
-        }
-        MissingSpec::StringValue(s) => {
-            dict.set_item("type", "string_value")?;
-            dict.set_item("value", s.as_str())?;
+
+    // Separate into range and discrete values
+    let mut range: Option<(f64, f64)> = None;
+    let mut discrete_f64: Vec<f64> = Vec::new();
+    let mut discrete_str: Vec<&str> = Vec::new();
+
+    for spec in specs {
+        match spec {
+            MissingSpec::Range { lo, hi } => range = Some((*lo, *hi)),
+            MissingSpec::Value(v) => discrete_f64.push(*v),
+            MissingSpec::StringValue(s) => discrete_str.push(s.as_str()),
         }
     }
+
+    if let Some((lo, hi)) = range {
+        dict.set_item("type", "range")?;
+        dict.set_item("low", lo)?;
+        dict.set_item("high", hi)?;
+        if let Some(&val) = discrete_f64.first() {
+            dict.set_item("discrete", val)?;
+        }
+    } else if !discrete_str.is_empty() {
+        dict.set_item("type", "discrete")?;
+        let vals = PyList::new(py, &discrete_str)?;
+        dict.set_item("values", vals)?;
+    } else {
+        dict.set_item("type", "discrete")?;
+        let vals = PyList::new(py, &discrete_f64)?;
+        dict.set_item("values", vals)?;
+    }
+
     Ok(dict.unbind().into_any())
 }
 
@@ -197,11 +220,7 @@ impl PySpssMetadata {
     fn variable_missing_values<'py>(&self, py: Python<'py>) -> PyResult<Py<PyAny>> {
         let outer = PyDict::new(py);
         for (var_name, specs) in &self.inner.variable_missing_values {
-            let inner = PyList::empty(py);
-            for spec in specs {
-                inner.append(missing_spec_to_py(py, spec)?)?;
-            }
-            outer.set_item(var_name.as_str(), inner)?;
+            outer.set_item(var_name.as_str(), missing_specs_to_py(py, specs)?)?;
         }
         Ok(outer.unbind().into_any())
     }
