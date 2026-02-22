@@ -911,13 +911,13 @@ fn write_info_long_string_missing<W: Write>(
     meta: &SpssMetadata,
 ) -> Result<()> {
     // Collect long string variables (width > 8) that have missing values.
-    // Use long_name (not short_name) so reader can match without short→long mapping.
-    let mut entries: Vec<(&str, usize, &Vec<MissingSpec>)> = Vec::new();
+    // Per PSPP spec: use SHORT name, value_len = 8, each value is 8 bytes space-padded.
+    let mut entries: Vec<(&str, &Vec<MissingSpec>)> = Vec::new();
     for var in &layout.write_vars {
         if matches!(&var.var_type, VarType::String(w) if *w > 8) {
             if let Some(specs) = meta.variable_missing_values.get(&var.long_name) {
                 if !specs.is_empty() {
-                    entries.push((&var.long_name, var.storage_width, specs));
+                    entries.push((&var.short_name, specs));
                 }
             }
         }
@@ -928,7 +928,7 @@ fn write_info_long_string_missing<W: Write>(
 
     // Build payload
     let mut payload = Vec::new();
-    for (var_name, storage_width, specs) in &entries {
+    for (var_name, specs) in &entries {
         let name_bytes = var_name.as_bytes();
         payload.extend_from_slice(&(name_bytes.len() as i32).to_le_bytes());
         payload.extend_from_slice(name_bytes);
@@ -937,17 +937,15 @@ fn write_info_long_string_missing<W: Write>(
         let n_missing: u8 = specs.len() as u8;
         payload.push(n_missing);
 
-        // Missing value width
-        let var_width = *storage_width as i32;
-        payload.extend_from_slice(&var_width.to_le_bytes());
+        // Value width: always 8 per PSPP spec (string missing values are max 8 chars)
+        payload.extend_from_slice(&8_i32.to_le_bytes());
 
         for spec in *specs {
             if let MissingSpec::StringValue(s) = spec {
-                // Each value is exactly var_width bytes, space-padded (no per-value length prefix)
+                // Each value is exactly 8 bytes, space-padded
                 let val_bytes = s.as_bytes();
-                let width = var_width as usize;
-                let mut buf = vec![b' '; width];
-                let len = val_bytes.len().min(width);
+                let mut buf = [b' '; 8];
+                let len = val_bytes.len().min(8);
                 buf[..len].copy_from_slice(&val_bytes[..len]);
                 payload.extend_from_slice(&buf);
             }

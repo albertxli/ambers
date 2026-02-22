@@ -426,6 +426,12 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
     }
 
     // 8. Resolve long string missing values (subtype 22)
+    // Subtype 22 uses SHORT names — map to long names for consistent metadata.
+    let short_to_long_missing: HashMap<String, String> = variables
+        .iter()
+        .filter(|v| !v.is_ghost)
+        .map(|v| (v.short_name.clone(), v.long_name.clone()))
+        .collect();
     for ls_missing in &raw.long_string_missing {
         let specs: Vec<MissingSpec> = ls_missing
             .values
@@ -441,8 +447,12 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
             .collect();
 
         if !specs.is_empty() {
+            let long_name = short_to_long_missing
+                .get(&ls_missing.var_name)
+                .cloned()
+                .unwrap_or_else(|| ls_missing.var_name.clone());
             meta.variable_missing_values
-                .insert(ls_missing.var_name.clone(), specs);
+                .insert(long_name, specs);
         }
     }
 
