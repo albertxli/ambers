@@ -310,6 +310,38 @@ meta = meta.update(mr_sets={"brands": None})
 
 ---
 
+## Variable Attributes
+
+Attach custom key-value metadata to individual variables. Each attribute holds a list of string values.
+
+```python
+meta = meta.update(variable_attributes={
+    "Q1": {
+        "Source": ["Survey", "Online", "Wave 3"],   # multiple values
+        "SurveySection": ["Satisfaction"],
+    },
+    "Q2": {
+        "Source": ["Admin"],
+    },
+})
+```
+
+### Remove Attributes
+
+```python
+# Remove all attributes for a variable
+meta = meta.update(variable_attributes={"Q1": None})
+```
+
+### Viewing in SPSS
+
+Custom variable attributes are not shown in SPSS's Variable View by default. To view them:
+
+1. **Variable View**: Go to **View > Customize Variable View**, click **OK** (custom attributes are toggled on by default, but the dialog must be confirmed first)
+2. **Syntax**: Run `DISPLAY ATTRIBUTES` to list all custom attributes in the output viewer
+
+---
+
 ## SPSS Format Strings
 
 Format strings control how values are displayed in SPSS.

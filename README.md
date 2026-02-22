@@ -128,6 +128,8 @@ All fields returned by the reader. Fields marked **Write** are preserved when pa
 | `compression` | yes | — | `str` |
 | `notes` | yes | yes | `list[str]` |
 
+> **SPSS tip:** Custom variable attributes are not shown in SPSS's Variable View by default. Go to **View > Customize Variable View** and click **OK**, or run `DISPLAY ATTRIBUTES` in SPSS syntax.
+
 ## Streaming Reader (Rust)
 
 ```rust

@@ -1079,18 +1079,10 @@ fn write_info_mr_sets_v2<W: Write>(
 fn write_info_var_attributes<W: Write>(
     w: &mut W,
     meta: &SpssMetadata,
-    layout: &CaseLayout,
 ) -> Result<()> {
     if meta.variable_roles.is_empty() && meta.variable_attributes.is_empty() {
         return Ok(());
     }
-
-    // Build long → short name map (inverted from layout.short_to_long)
-    let long_to_short: IndexMap<String, String> = layout
-        .short_to_long
-        .iter()
-        .map(|(short, long)| (long.clone(), short.clone()))
-        .collect();
 
     // Collect all variable names that have either a role or custom attributes
     let mut all_vars: IndexMap<&str, ()> = IndexMap::new();
@@ -1101,24 +1093,22 @@ fn write_info_var_attributes<W: Write>(
         all_vars.insert(name.as_str(), ());
     }
 
-    // Build text payload in subtype 18 format:
-    //   VAR:$@Role('code'\n)CustomAttr('val'\n)/VAR2:...
+    // Build text payload in subtype 18 format (uses LONG names per PSPP spec):
+    //   varname:CustomAttr('val'\n)$@Role('code'\n)/varname2:...
     let mut payload = String::new();
     for (long_name, _) in &all_vars {
-        let short_name = long_to_short
-            .get(*long_name)
-            .map(|s| s.as_str())
-            .unwrap_or(long_name);
-
         if !payload.is_empty() {
             payload.push('/');
         }
-        payload.push_str(short_name);
+        payload.push_str(long_name);
         payload.push(':');
 
         // Write custom attributes first
         if let Some(attrs) = meta.variable_attributes.get(*long_name) {
             for (attr_name, values) in attrs {
+                if values.is_empty() {
+                    continue; // Empty value list is invalid per PSPP grammar (value+)
+                }
                 payload.push_str(attr_name);
                 payload.push('(');
                 for val in values {
@@ -1735,7 +1725,7 @@ pub fn write_sav_to_writer<W: Write + Seek>(
     write_info_long_string_missing(&mut writer, &layout, metadata)?;
     write_info_mr_sets(&mut writer, metadata, &layout)?;
     write_info_mr_sets_v2(&mut writer, metadata)?;
-    write_info_var_attributes(&mut writer, metadata, &layout)?;
+    write_info_var_attributes(&mut writer, metadata)?;
     write_dict_termination(&mut writer)?;
 
     // Write data
