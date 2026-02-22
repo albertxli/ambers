@@ -36,6 +36,7 @@ pub const RECORD_TYPE_DICT_TERMINATION: i32 = 999;
 // -- Info record subtypes --
 
 pub const INFO_MR_SETS: i32 = 7;
+pub const INFO_MR_SETS_V2: i32 = 19;
 pub const INFO_INTEGER: i32 = 3;
 pub const INFO_FLOAT: i32 = 4;
 pub const INFO_VAR_DISPLAY: i32 = 11;

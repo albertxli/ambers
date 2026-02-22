@@ -999,6 +999,58 @@ fn write_info_mr_sets<W: Write>(
     Ok(())
 }
 
+/// Write subtype 19 MR sets with LONG variable names.
+/// Modern SPSS (14+) writes MR sets to subtype 19 alongside subtype 7.
+/// Writing both ensures full roundtrip fidelity.
+fn write_info_mr_sets_v2<W: Write>(
+    w: &mut W,
+    meta: &SpssMetadata,
+) -> Result<()> {
+    if meta.mr_sets.is_empty() {
+        return Ok(());
+    }
+
+    // Same text format as subtype 7, but with long variable names directly
+    let mut payload = String::new();
+    for (name, mr) in &meta.mr_sets {
+        payload.push('$');
+        payload.push_str(name);
+        payload.push('=');
+        match mr.mr_type {
+            MrType::MultipleDichotomy => {
+                payload.push('D');
+                if let Some(ref cv) = mr.counted_value {
+                    payload.push_str(&cv.len().to_string());
+                    payload.push(' ');
+                    payload.push_str(cv);
+                } else {
+                    payload.push_str("1 1");
+                }
+            }
+            MrType::MultipleCategory => {
+                payload.push('C');
+            }
+        }
+        payload.push(' ');
+
+        let label_bytes = mr.label.as_bytes().len();
+        payload.push_str(&label_bytes.to_string());
+        payload.push(' ');
+        payload.push_str(&mr.label);
+
+        // Write space-separated LONG variable names (no short-name mapping)
+        for var in &mr.variables {
+            payload.push(' ');
+            payload.push_str(var);
+        }
+        payload.push('\n');
+    }
+
+    write_info_record_header(w, INFO_MR_SETS_V2, 1, payload.len() as i32)?;
+    w.write_all(payload.as_bytes())?;
+    Ok(())
+}
+
 fn write_info_var_attributes<W: Write>(
     w: &mut W,
     meta: &SpssMetadata,
@@ -1579,6 +1631,7 @@ pub fn write_sav_to_writer<W: Write + Seek>(
     write_info_long_string_labels(&mut writer, &layout, metadata)?;
     write_info_long_string_missing(&mut writer, &layout, metadata)?;
     write_info_mr_sets(&mut writer, metadata, &layout)?;
+    write_info_mr_sets_v2(&mut writer, metadata)?;
     write_info_var_attributes(&mut writer, metadata, &layout)?;
     write_dict_termination(&mut writer)?;
 

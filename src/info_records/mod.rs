@@ -72,6 +72,11 @@ pub fn parse_info_record<R: Read>(
             let sets = mr_sets::parse_mr_sets(&data);
             Ok(InfoRecord::MrSets(sets))
         }
+        INFO_MR_SETS_V2 => {
+            let data = reader.read_bytes(data_len)?;
+            let sets = mr_sets::parse_mr_sets_v2(&data);
+            Ok(InfoRecord::MrSets(sets))
+        }
         INFO_INTEGER => {
             let info = integer_info::IntegerInfo::parse(reader)?;
             Ok(InfoRecord::IntegerInfo(info))

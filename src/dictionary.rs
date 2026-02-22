@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 
 use indexmap::IndexMap;
@@ -458,20 +458,40 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
         .collect();
     meta.variable_value_labels = ordered_vvl;
 
-    // 9. Resolve multiple response sets (subtype 7)
-    // MR set variable names are SHORT names — convert to long names
+    // 9. Resolve multiple response sets (subtype 7 and 19)
+    // Subtype 7: variable names are SHORT → need mapping to long names
+    // Subtype 19: variable names are already LONG → validate directly
     let short_to_long: HashMap<String, String> = variables
         .iter()
         .filter(|v| !v.is_ghost)
         .map(|v| (v.short_name.clone(), v.long_name.clone()))
         .collect();
+    let long_name_set: HashSet<String> = variables
+        .iter()
+        .filter(|v| !v.is_ghost)
+        .map(|v| v.long_name.clone())
+        .collect();
     for raw_mr in &raw.mr_sets {
         let resolved_vars: Vec<String> = raw_mr
             .var_names
             .iter()
-            .filter_map(|short| {
-                let key = short.to_uppercase();
-                short_to_long.get(&key).cloned()
+            .filter_map(|name| {
+                if raw_mr.uses_long_names {
+                    // Subtype 19: names are already long names
+                    if long_name_set.contains(name) {
+                        Some(name.clone())
+                    } else {
+                        // Try case-insensitive match
+                        long_name_set
+                            .iter()
+                            .find(|ln| ln.eq_ignore_ascii_case(name))
+                            .cloned()
+                    }
+                } else {
+                    // Subtype 7: names are short names, need mapping
+                    let key = name.to_uppercase();
+                    short_to_long.get(&key).cloned()
+                }
             })
             .collect();
         if !resolved_vars.is_empty() {
