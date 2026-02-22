@@ -105,7 +105,7 @@ All fields returned by the reader. Fields marked **Write** are preserved when pa
 
 | Field | Read | Write | Type |
 |-------|:----:|:-----:|------|
-| `variable_names` | yes | yes | `list[str]` |
+| `variable_names` | yes | — | `list[str]` |
 | `variable_labels` | yes | yes | `dict[str, str]` |
 | `variable_value_labels` | yes | yes | `dict[str, dict[float\|str, str]]` |
 | `variable_formats` | yes | yes | `dict[str, str]` |
@@ -113,8 +113,8 @@ All fields returned by the reader. Fields marked **Write** are preserved when pa
 | `variable_alignments` | yes | yes | `dict[str, str]` |
 | `variable_roles` | yes | yes | `dict[str, str]` |
 | `variable_display_widths` | yes | yes | `dict[str, int]` |
-| `variable_storage_widths` | yes | yes | `dict[str, int]` |
-| `variable_missing_values` | yes | yes | `dict[str, list[dict]]` |
+| `variable_storage_widths` | yes | — | `dict[str, int]` |
+| `variable_missing_values` | yes | yes | `dict[str, dict]` |
 | `variable_attributes` | yes | yes | `dict[str, dict[str, list[str]]]` |
 | `weight_variable` | yes | yes | `str \| None` |
 | `mr_sets` | yes | yes | `dict[str, dict]` |
@@ -127,6 +127,40 @@ All fields returned by the reader. Fields marked **Write** are preserved when pa
 | `number_columns` | yes | — | `int` |
 | `compression` | yes | — | `str` |
 | `notes` | yes | yes | `list[str]` |
+
+**Creating metadata from scratch:**
+
+```python
+meta = am.SpssMetadata(
+    file_label="Customer Survey 2026",
+    variable_labels={"Q1": "Satisfaction", "Q2": "Loyalty"},
+    variable_value_labels={"Q1": {1: "Low", 5: "High"}},
+    variable_measures={"Q1": "ordinal", "Q2": "nominal"},
+)
+am.write_sav(df, "output.sav", meta=meta)
+```
+
+**Modifying existing metadata** (from `read_sav()` or a previously created `SpssMetadata`):
+
+```python
+# .update() — bulk update multiple fields at once, merges dicts, replaces scalars
+meta2 = meta.update(
+    file_label="Updated Survey",
+    variable_labels={"Q3": "NPS"},        # Q1/Q2 labels preserved, Q3 added
+    variable_measures={"Q3": "scale"},
+)
+
+# .with_*() — chainable single-field setters, with full IDE autocomplete and type hints
+meta3 = (meta
+    .with_file_label("Updated Survey")
+    .with_variable_labels({"Q3": "NPS"})
+    .with_variable_measures({"Q3": "scale"})
+)
+```
+
+> **Immutability:** `SpssMetadata` is immutable. `.update()` and `.with_*()` always return a **new** instance — the original is never modified. Assign to a new variable if you need to keep both copies.
+
+See [metadata.md](metadata.md) for the full API reference including missing values, MR sets, and validation rules.
 
 > **SPSS tip:** Custom variable attributes are not shown in SPSS's Variable View by default. Go to **View > Customize Variable View** and click **OK**, or run `DISPLAY ATTRIBUTES` in SPSS syntax.
 
