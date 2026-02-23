@@ -278,7 +278,7 @@ class SpssMetadata:
         ...
     @property
     def compression(self) -> str:
-        """Compression type: "none", "bytecode" (.sav), or "zlib" (.zsav)."""
+        """Compression type: "uncompressed", "bytecode" (.sav), or "zlib" (.zsav)."""
         ...
     @property
     def creation_time(self) -> str:
@@ -642,11 +642,11 @@ def write_sav(
     path: str | Path,
     *,
     meta: SpssMetadata | None = None,
-    compress: bool = True,
+    compression: str | None = None,
+    compression_level: int | None = None,
 ) -> None:
     """Write a Polars DataFrame to an SPSS .sav or .zsav file.
 
-    Use ``.sav`` extension for bytecode compression, ``.zsav`` for zlib compression.
     If ``meta`` is omitted, formats, measures, and other properties are inferred
     from the DataFrame schema.
 
@@ -658,12 +658,29 @@ def write_sav(
         Output file path. Extension determines format (.sav or .zsav).
     meta
         SpssMetadata to include. If None, defaults are inferred.
-    compress
-        If True (default), use bytecode compression for .sav files.
+    compression
+        Compression mode. If None, auto-detects from extension
+        (.sav → bytecode, .zsav → zlib). Valid values:
+
+        - ``"uncompressed"`` — no compression (.sav only)
+        - ``"bytecode"`` — SPSS bytecode compression (.sav only)
+        - ``"zlib"`` — zlib block compression (.zsav only)
+    compression_level
+        Zlib compression level for .zsav files (1–9).
+        Recommended values: 1 = "fast", 3 = "balanced", 6 = "compact" (default).
+        If None, defaults to 6 (compact). Raises ValueError for non-zlib output.
+
+    Raises
+    ------
+    ValueError
+        If compression mode is invalid for the file extension, or
+        compression_level is set for non-zlib output.
 
     Examples
     --------
-    >>> am.write_sav(df, "output.sav", meta=meta)
-    >>> am.write_sav(df, "compressed.zsav", meta=meta)
+    >>> am.write_sav(df, "output.sav", meta=meta)                       # bytecode
+    >>> am.write_sav(df, "output.zsav", meta=meta)                      # zlib (level 6)
+    >>> am.write_sav(df, "output.zsav", meta=meta, compression_level=1) # fast zlib
+    >>> am.write_sav(df, "raw.sav", meta=meta, compression="uncompressed")
     """
     ...

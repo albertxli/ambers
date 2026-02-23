@@ -578,7 +578,7 @@ impl PySpssMetadata {
     #[getter]
     fn compression(&self) -> &str {
         match self.inner.compression {
-            Compression::None => "none",
+            Compression::None => "uncompressed",
             Compression::Bytecode => "bytecode",
             Compression::Zlib => "zlib",
         }
@@ -2117,22 +2117,23 @@ fn _read_sav_metadata(path: &str) -> PyResult<PySpssMetadata> {
 /// Accepts any object that implements the Arrow PyCapsule Interface
 /// (`__arrow_c_stream__`), such as a Polars DataFrame.
 #[pyfunction]
-#[pyo3(signature = (path, data, metadata=None, compression="bytecode"))]
+#[pyo3(signature = (path, data, metadata=None, compression="bytecode", compression_level=None))]
 fn _write_sav(
     py: Python<'_>,
     path: &str,
     data: &Bound<'_, PyAny>,
     metadata: Option<&PySpssMetadata>,
     compression: &str,
+    compression_level: Option<u32>,
 ) -> PyResult<()> {
     // Parse compression
     let comp = match compression {
-        "none" => Compression::None,
+        "none" | "uncompressed" => Compression::None,
         "bytecode" => Compression::Bytecode,
         "zlib" => Compression::Zlib,
         _ => {
             return Err(PyIOError::new_err(format!(
-                "unknown compression: {compression:?}. Expected 'none', 'bytecode', or 'zlib'"
+                "unknown compression: {compression:?}. Expected 'uncompressed', 'bytecode', or 'zlib'"
             )));
         }
     };
@@ -2147,7 +2148,7 @@ fn _write_sav(
     };
 
     // Write
-    crate::write_sav(path, &batch, &meta, comp).map_err(spss_err)?;
+    crate::write_sav(path, &batch, &meta, comp, compression_level).map_err(spss_err)?;
 
     Ok(())
 }

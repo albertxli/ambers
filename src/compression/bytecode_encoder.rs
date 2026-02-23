@@ -43,7 +43,6 @@ impl BytecodeEncoder {
     }
 
     /// Pre-allocate output buffer for estimated data size.
-    #[allow(dead_code)]
     pub fn with_capacity(bias: f64, capacity: usize) -> Self {
         BytecodeEncoder {
             bias,

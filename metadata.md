@@ -188,7 +188,7 @@ These fields are populated when reading from a file. They cannot be set directly
 | Field | Python type | Example | Description |
 |---|---|---|---|
 | `file_encoding` | `str` | `"UTF-8"` | Character encoding (always UTF-8 for writes) |
-| `compression` | `str` | `"bytecode"` | `"none"` / `"bytecode"` / `"zlib"` |
+| `compression` | `str` | `"bytecode"` | `"uncompressed"` / `"bytecode"` / `"zlib"` |
 | `creation_time` | `str` | `"2026-02-21 12:38:47"` | Auto-set at write time |
 | `number_rows` | `int \| None` | `22070` | From file header |
 | `number_columns` | `int` | `677` | From file header |
@@ -532,3 +532,50 @@ meta = (am.SpssMetadata()
 
 am.write_sav(df, "nps.sav", meta=meta)
 ```
+
+## Compression
+
+### `meta.compression` (read-only)
+
+After reading a file, `meta.compression` tells you what compression the source file used:
+
+```python
+df, meta = am.read_sav("data.sav")
+print(meta.compression)  # "uncompressed", "bytecode", or "zlib"
+```
+
+This is informational only — it cannot be set.
+
+### `write_sav()` compression parameter
+
+The `compression=` parameter on `write_sav()` controls output compression. If omitted, the mode is auto-detected from the file extension.
+
+| Extension | `compression=` | Result |
+|---|---|---|
+| `.sav` | `None` (default) | bytecode |
+| `.sav` | `"bytecode"` | bytecode |
+| `.sav` | `"uncompressed"` | uncompressed |
+| `.sav` | `"zlib"` | **ValueError** |
+| `.zsav` | `None` (default) | zlib |
+| `.zsav` | `"zlib"` | zlib |
+| `.zsav` | `"uncompressed"` | **ValueError** |
+| `.zsav` | `"bytecode"` | **ValueError** |
+
+```python
+am.write_sav(df, "output.sav", meta=meta)                        # bytecode (default)
+am.write_sav(df, "output.sav", meta=meta, compression="uncompressed")  # no compression
+am.write_sav(df, "output.zsav", meta=meta)                       # zlib (default)
+am.write_sav(df, "output.zsav", meta=meta, compression_level=1)  # fast zlib
+```
+
+### `compression_level` (zsav only)
+
+Controls zlib compression intensity for `.zsav` files. Raises `ValueError` if set for non-zlib output.
+
+| Level | Label | Description |
+|---|---|---|
+| `1` | fast | Fastest writes, largest files |
+| `3` | balanced | Moderate speed, moderate size |
+| `6` | compact | Slower writes, smallest files **(default)** |
+
+Full range 1–9 accepted. If `None`, defaults to 6.

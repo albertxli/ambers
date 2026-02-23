@@ -1331,6 +1331,71 @@ fn fill_row_buffer(
 // Data writers
 // ---------------------------------------------------------------------------
 
+/// Maximum rows to fill in one parallel chunk (~256 MB for 1000 slots).
+const CHUNK_ROWS: usize = 32_768;
+
+/// Minimum rows to justify rayon parallel overhead.
+const MIN_PARALLEL_ROWS: usize = 5_000;
+
+/// Fill row buffers in parallel for a chunk of rows.
+/// `big_buf` must have length `nrows * row_bytes` and will be filled with
+/// space-padded row data. Each row is independent — no data races.
+fn fill_rows_parallel(
+    big_buf: &mut [u8],
+    start_row: usize,
+    nrows: usize,
+    row_bytes: usize,
+    batch: &RecordBatch,
+    layout: &CaseLayout,
+    temporal_arrays: &[Option<Float64Array>],
+) {
+    use rayon::prelude::*;
+
+    big_buf[..nrows * row_bytes]
+        .par_chunks_mut(row_bytes)
+        .enumerate()
+        .for_each(|(chunk_idx, row_buf)| {
+            row_buf.fill(b' ');
+            fill_row_buffer(row_buf, start_row + chunk_idx, batch, layout, temporal_arrays);
+        });
+}
+
+/// Fill row buffers sequentially (for small files where rayon overhead exceeds benefit).
+fn fill_rows_sequential(
+    big_buf: &mut [u8],
+    start_row: usize,
+    nrows: usize,
+    row_bytes: usize,
+    batch: &RecordBatch,
+    layout: &CaseLayout,
+    temporal_arrays: &[Option<Float64Array>],
+) {
+    for i in 0..nrows {
+        let offset = i * row_bytes;
+        let row_buf = &mut big_buf[offset..offset + row_bytes];
+        row_buf.fill(b' ');
+        fill_row_buffer(row_buf, start_row + i, batch, layout, temporal_arrays);
+    }
+}
+
+/// Fill row buffers, choosing parallel or sequential based on row count.
+#[inline]
+fn fill_rows(
+    big_buf: &mut [u8],
+    start_row: usize,
+    nrows: usize,
+    row_bytes: usize,
+    batch: &RecordBatch,
+    layout: &CaseLayout,
+    temporal_arrays: &[Option<Float64Array>],
+) {
+    if nrows >= MIN_PARALLEL_ROWS {
+        fill_rows_parallel(big_buf, start_row, nrows, row_bytes, batch, layout, temporal_arrays);
+    } else {
+        fill_rows_sequential(big_buf, start_row, nrows, row_bytes, batch, layout, temporal_arrays);
+    }
+}
+
 fn write_data_uncompressed<W: Write>(
     w: &mut W,
     batch: &RecordBatch,
@@ -1339,12 +1404,17 @@ fn write_data_uncompressed<W: Write>(
     let nrows = batch.num_rows();
     let row_bytes = layout.slots_per_row * 8;
     let temporal_arrays = preconvert_temporal_columns(batch, layout);
-    let mut row_buf = vec![b' '; row_bytes];
 
-    for row in 0..nrows {
-        row_buf.iter_mut().for_each(|b| *b = b' ');
-        fill_row_buffer(&mut row_buf, row, batch, layout, &temporal_arrays);
-        w.write_all(&row_buf)?;
+    let chunk_rows = CHUNK_ROWS.min(nrows);
+    let mut big_buf = vec![0u8; chunk_rows * row_bytes];
+
+    let mut row = 0;
+    while row < nrows {
+        let this_chunk = (nrows - row).min(chunk_rows);
+        let buf_slice = &mut big_buf[..this_chunk * row_bytes];
+        fill_rows(buf_slice, row, this_chunk, row_bytes, batch, layout, &temporal_arrays);
+        w.write_all(buf_slice)?;
+        row += this_chunk;
     }
 
     Ok(())
@@ -1362,18 +1432,29 @@ fn write_data_bytecode<W: Write>(
     let row_bytes = layout.slots_per_row * 8;
     let temporal_arrays = preconvert_temporal_columns(batch, layout);
     let mut encoder = BytecodeEncoder::new(DEFAULT_BIAS);
-    let mut row_buf = vec![b' '; row_bytes];
 
-    for row in 0..nrows {
-        row_buf.iter_mut().for_each(|b| *b = b' ');
-        fill_row_buffer(&mut row_buf, row, batch, layout, &temporal_arrays);
-        encoder.encode_row(&row_buf, layout.slots_per_row);
+    let chunk_rows = CHUNK_ROWS.min(nrows);
+    let mut big_buf = vec![0u8; chunk_rows * row_bytes];
+
+    let mut row = 0;
+    while row < nrows {
+        let this_chunk = (nrows - row).min(chunk_rows);
+        let buf_slice = &mut big_buf[..this_chunk * row_bytes];
+        fill_rows(buf_slice, row, this_chunk, row_bytes, batch, layout, &temporal_arrays);
+
+        // Encode rows sequentially from pre-filled buffer
+        for r in 0..this_chunk {
+            let row_slice = &buf_slice[r * row_bytes..(r + 1) * row_bytes];
+            encoder.encode_row(row_slice, layout.slots_per_row);
+        }
 
         // Periodically drain to disk to keep memory bounded
         if encoder.output_len() >= BYTECODE_DRAIN_THRESHOLD {
             let chunk = encoder.drain_output();
             w.write_all(&chunk)?;
         }
+
+        row += this_chunk;
     }
 
     // Finalize: write EOF and flush remaining
@@ -1387,9 +1468,6 @@ fn write_data_bytecode<W: Write>(
 /// Default ZSAV block size (0x3FF000 = ~4MB uncompressed bytecode per block).
 const ZSAV_BLOCK_SIZE: usize = 0x3FF000;
 
-/// Drain threshold for encoder within ZSAV writer (~64KB).
-const ZSAV_DRAIN_THRESHOLD: usize = 64 * 1024;
-
 struct ZsavBlockInfo {
     uncompressed_offset: i64,
     compressed_offset: i64,
@@ -1397,10 +1475,10 @@ struct ZsavBlockInfo {
     compressed_size: i32,
 }
 
-/// Compress a byte slice with zlib.
-fn zlib_compress(data: &[u8]) -> Result<Vec<u8>> {
+/// Compress a byte slice with zlib at the given compression level.
+fn zlib_compress(data: &[u8], level: flate2::Compression) -> Result<Vec<u8>> {
     use flate2::write::ZlibEncoder;
-    let mut zlib_enc = ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    let mut zlib_enc = ZlibEncoder::new(Vec::new(), level);
     zlib_enc
         .write_all(data)
         .map_err(|e| SpssError::Zlib(format!("zlib compression error: {e}")))?;
@@ -1409,40 +1487,14 @@ fn zlib_compress(data: &[u8]) -> Result<Vec<u8>> {
         .map_err(|e| SpssError::Zlib(format!("zlib finish error: {e}")))
 }
 
-/// Flush completed ZSAV blocks from the block buffer to disk.
-/// Writes full ZSAV_BLOCK_SIZE chunks, keeps any remainder in `block_buf`.
-fn flush_zsav_blocks<W: Write + Seek>(
-    w: &mut W,
-    block_buf: &mut Vec<u8>,
-    blocks: &mut Vec<ZsavBlockInfo>,
-    bytecode_offset: &mut i64,
-) -> Result<()> {
-    while block_buf.len() >= ZSAV_BLOCK_SIZE {
-        let compressed = zlib_compress(&block_buf[..ZSAV_BLOCK_SIZE])?;
-        let compressed_offset = w.stream_position().map_err(SpssError::Io)? as i64;
-        w.write_all(&compressed)?;
-
-        blocks.push(ZsavBlockInfo {
-            uncompressed_offset: *bytecode_offset,
-            compressed_offset,
-            uncompressed_size: ZSAV_BLOCK_SIZE as i32,
-            compressed_size: compressed.len() as i32,
-        });
-
-        *bytecode_offset += ZSAV_BLOCK_SIZE as i64;
-
-        // Remove the flushed portion
-        let remaining = block_buf[ZSAV_BLOCK_SIZE..].to_vec();
-        *block_buf = remaining;
-    }
-    Ok(())
-}
-
 fn write_data_zsav<W: Write + Seek>(
     w: &mut W,
     batch: &RecordBatch,
     layout: &CaseLayout,
+    level: flate2::Compression,
 ) -> Result<()> {
+    use rayon::prelude::*;
+
     let nrows = batch.num_rows();
     let row_bytes = layout.slots_per_row * 8;
     let temporal_arrays = preconvert_temporal_columns(batch, layout);
@@ -1451,50 +1503,61 @@ fn write_data_zsav<W: Write + Seek>(
     let zheader_offset = w.stream_position().map_err(SpssError::Io)? as i64;
     w.write_all(&[0u8; 24])?;
 
-    let mut blocks: Vec<ZsavBlockInfo> = Vec::new();
-    let mut bytecode_offset: i64 = 0;
-    let mut block_buf = Vec::with_capacity(ZSAV_BLOCK_SIZE + ZSAV_DRAIN_THRESHOLD);
+    // Phase 1: Generate ALL bytecode into a single contiguous buffer
+    let mut encoder = BytecodeEncoder::with_capacity(DEFAULT_BIAS, nrows * row_bytes);
+    let chunk_rows = CHUNK_ROWS.min(nrows);
+    let mut big_buf = vec![0u8; chunk_rows * row_bytes];
 
-    let mut encoder = BytecodeEncoder::new(DEFAULT_BIAS);
-    let mut row_buf = vec![b' '; row_bytes];
+    let mut row = 0;
+    while row < nrows {
+        let this_chunk = (nrows - row).min(chunk_rows);
+        let buf_slice = &mut big_buf[..this_chunk * row_bytes];
+        fill_rows(buf_slice, row, this_chunk, row_bytes, batch, layout, &temporal_arrays);
 
-    for row in 0..nrows {
-        row_buf.iter_mut().for_each(|b| *b = b' ');
-        fill_row_buffer(&mut row_buf, row, batch, layout, &temporal_arrays);
-        encoder.encode_row(&row_buf, layout.slots_per_row);
-
-        // Drain encoder output into block accumulator
-        if encoder.output_len() >= ZSAV_DRAIN_THRESHOLD {
-            let chunk = encoder.drain_output();
-            block_buf.extend_from_slice(&chunk);
+        for r in 0..this_chunk {
+            let row_slice = &buf_slice[r * row_bytes..(r + 1) * row_bytes];
+            encoder.encode_row(row_slice, layout.slots_per_row);
         }
-
-        // Flush completed blocks to disk
-        if block_buf.len() >= ZSAV_BLOCK_SIZE {
-            flush_zsav_blocks(w, &mut block_buf, &mut blocks, &mut bytecode_offset)?;
-        }
+        row += this_chunk;
     }
-
-    // Finalize encoder: write EOF and drain remaining bytecode
     encoder.write_eof();
-    let final_chunk = encoder.drain_output();
-    block_buf.extend_from_slice(&final_chunk);
+    let all_bytecode = encoder.drain_output();
 
-    // Flush any remaining full blocks
-    flush_zsav_blocks(w, &mut block_buf, &mut blocks, &mut bytecode_offset)?;
+    // Phase 2: Split bytecode into blocks, compress all in parallel
+    let n_full_blocks = all_bytecode.len() / ZSAV_BLOCK_SIZE;
+    let has_remainder = all_bytecode.len() % ZSAV_BLOCK_SIZE != 0;
+    let n_blocks = n_full_blocks + if has_remainder { 1 } else { 0 };
 
-    // Write remaining partial block (if any)
-    if !block_buf.is_empty() {
-        let compressed = zlib_compress(&block_buf)?;
+    let chunk_ranges: Vec<(usize, usize)> = (0..n_blocks)
+        .map(|i| {
+            let start = i * ZSAV_BLOCK_SIZE;
+            let len = (all_bytecode.len() - start).min(ZSAV_BLOCK_SIZE);
+            (start, len)
+        })
+        .collect();
+
+    let compressed_blocks: Vec<Vec<u8>> = chunk_ranges
+        .par_iter()
+        .map(|&(start, len)| zlib_compress(&all_bytecode[start..start + len], level))
+        .collect::<Result<Vec<_>>>()?;
+
+    // Phase 3: Write compressed blocks sequentially, build trailer
+    let mut blocks: Vec<ZsavBlockInfo> = Vec::with_capacity(n_blocks);
+    let mut bytecode_offset: i64 = 0;
+
+    for (i, compressed) in compressed_blocks.iter().enumerate() {
+        let (_, uncompressed_len) = chunk_ranges[i];
         let compressed_offset = w.stream_position().map_err(SpssError::Io)? as i64;
-        w.write_all(&compressed)?;
+        w.write_all(compressed)?;
 
         blocks.push(ZsavBlockInfo {
             uncompressed_offset: bytecode_offset,
             compressed_offset,
-            uncompressed_size: block_buf.len() as i32,
+            uncompressed_size: uncompressed_len as i32,
             compressed_size: compressed.len() as i32,
         });
+
+        bytecode_offset += uncompressed_len as i64;
     }
 
     // Write ztrailer
@@ -1607,21 +1670,25 @@ fn is_leap(y: i32) -> bool {
 /// - `Compression::None` — uncompressed .sav
 /// - `Compression::Bytecode` — row-compressed .sav
 /// - `Compression::Zlib` — block-compressed .zsav
+///
+/// # Compression Level (zsav only)
+/// Controls zlib compression intensity. Ignored for non-zsav files.
+/// - `None` — default (level 6, compact)
+/// - `Some(1)` — "fast": fastest compression, largest files
+/// - `Some(3)` — "balanced": moderate speed, moderate size
+/// - `Some(6)` — "compact": slower compression, smallest files (default)
 pub fn write_sav(
     path: impl AsRef<Path>,
     batch: &RecordBatch,
     metadata: &SpssMetadata,
     compression: Compression,
+    compression_level: Option<u32>,
 ) -> Result<()> {
     let file = File::create(path)?;
-    let writer = BufWriter::new(file);
-    write_sav_to_writer(writer, batch, metadata, compression)
+    let writer = BufWriter::with_capacity(4 * 1024 * 1024, file);
+    write_sav_to_writer(writer, batch, metadata, compression, compression_level)
 }
 
-/// Write to any writer that implements Write + Seek.
-///
-/// Seek is required for zsav (zlib) compression to backpatch the zheader.
-/// For non-zsav files, `std::io::Cursor<Vec<u8>>` is a convenient seekable wrapper.
 /// Fill missing metadata fields from the Arrow schema with sensible defaults.
 ///
 /// For each column in the schema, if the metadata is missing a field
@@ -1696,11 +1763,23 @@ fn fill_defaults_from_schema(meta: &mut SpssMetadata, schema: &arrow::datatypes:
     }
 }
 
+/// Write to any writer that implements Write + Seek.
+///
+/// Seek is required for zsav (zlib) compression to backpatch the zheader.
+/// For non-zsav files, `std::io::Cursor<Vec<u8>>` is a convenient seekable wrapper.
+///
+/// # Compression Level (zsav only)
+/// Controls zlib compression intensity. Ignored for non-zsav files.
+/// - `None` — default (level 6, compact)
+/// - `Some(1)` — "fast": fastest compression, largest files
+/// - `Some(3)` — "balanced": moderate speed, moderate size
+/// - `Some(6)` — "compact": slower compression, smallest files (default)
 pub fn write_sav_to_writer<W: Write + Seek>(
     mut writer: W,
     batch: &RecordBatch,
     metadata: &SpssMetadata,
     compression: Compression,
+    compression_level: Option<u32>,
 ) -> Result<()> {
     // Fill any missing metadata fields from the schema
     let mut meta = metadata.clone();
@@ -1732,7 +1811,10 @@ pub fn write_sav_to_writer<W: Write + Seek>(
     match compression {
         Compression::None => write_data_uncompressed(&mut writer, batch, &layout)?,
         Compression::Bytecode => write_data_bytecode(&mut writer, batch, &layout)?,
-        Compression::Zlib => write_data_zsav(&mut writer, batch, &layout)?,
+        Compression::Zlib => {
+            let level = flate2::Compression::new(compression_level.unwrap_or(6).min(9));
+            write_data_zsav(&mut writer, batch, &layout, level)?;
+        }
     }
 
     writer.flush()?;
@@ -1786,7 +1868,7 @@ mod tests {
         let meta = SpssMetadata::from_arrow_schema(batch.schema().as_ref());
 
         let mut cursor = Cursor::new(Vec::new());
-        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::None).unwrap();
+        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::None, None).unwrap();
 
         // Verify it's a valid SAV file by reading back
         let reader = Cursor::new(cursor.into_inner());
@@ -1851,7 +1933,7 @@ mod tests {
         let orig_cols = batch.num_columns();
 
         let mut cursor = Cursor::new(Vec::new());
-        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::None).unwrap();
+        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::None, None).unwrap();
 
         let reader = Cursor::new(cursor.into_inner());
         let (batch2, meta2) = crate::read_sav_from_reader(reader).unwrap();
@@ -1955,7 +2037,7 @@ mod tests {
             .insert("gender".to_string(), "Respondent gender".to_string());
 
         let mut cursor = Cursor::new(Vec::new());
-        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::None).unwrap();
+        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::None, None).unwrap();
 
         let reader = Cursor::new(cursor.into_inner());
         let (batch2, meta2) = crate::read_sav_from_reader(reader).unwrap();
@@ -1991,7 +2073,7 @@ mod tests {
         let meta = SpssMetadata::from_arrow_schema(batch.schema().as_ref());
 
         let mut cursor = Cursor::new(Vec::new());
-        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::None).unwrap();
+        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::None, None).unwrap();
 
         let reader = Cursor::new(cursor.into_inner());
         let (batch2, _) = crate::read_sav_from_reader(reader).unwrap();
@@ -2020,7 +2102,7 @@ mod tests {
         let meta = SpssMetadata::from_arrow_schema(batch.schema().as_ref());
 
         let mut cursor = Cursor::new(Vec::new());
-        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Bytecode).unwrap();
+        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Bytecode, None).unwrap();
 
         let reader = Cursor::new(cursor.into_inner());
         let (batch2, meta2) = crate::read_sav_from_reader(reader).unwrap();
@@ -2045,7 +2127,7 @@ mod tests {
         let meta = SpssMetadata::from_arrow_schema(batch.schema().as_ref());
 
         let mut cursor = Cursor::new(Vec::new());
-        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Bytecode).unwrap();
+        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Bytecode, None).unwrap();
 
         let reader = Cursor::new(cursor.into_inner());
         let (batch2, _) = crate::read_sav_from_reader(reader).unwrap();
@@ -2089,7 +2171,7 @@ mod tests {
         let meta = SpssMetadata::from_arrow_schema(batch.schema().as_ref());
 
         let mut cursor = Cursor::new(Vec::new());
-        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Bytecode).unwrap();
+        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Bytecode, None).unwrap();
 
         let reader = Cursor::new(cursor.into_inner());
         let (batch2, _) = crate::read_sav_from_reader(reader).unwrap();
@@ -2125,7 +2207,7 @@ mod tests {
             .insert("gender".to_string(), labels);
 
         let mut cursor = Cursor::new(Vec::new());
-        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Bytecode).unwrap();
+        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Bytecode, None).unwrap();
 
         let reader = Cursor::new(cursor.into_inner());
         let (batch2, meta2) = crate::read_sav_from_reader(reader).unwrap();
@@ -2154,10 +2236,10 @@ mod tests {
         let meta = SpssMetadata::from_arrow_schema(batch.schema().as_ref());
 
         let mut c_none = Cursor::new(Vec::new());
-        write_sav_to_writer(&mut c_none, &batch, &meta, Compression::None).unwrap();
+        write_sav_to_writer(&mut c_none, &batch, &meta, Compression::None, None).unwrap();
 
         let mut c_bytecode = Cursor::new(Vec::new());
-        write_sav_to_writer(&mut c_bytecode, &batch, &meta, Compression::Bytecode).unwrap();
+        write_sav_to_writer(&mut c_bytecode, &batch, &meta, Compression::Bytecode, None).unwrap();
 
         let len_none = c_none.into_inner().len();
         let len_bytecode = c_bytecode.into_inner().len();
@@ -2174,7 +2256,7 @@ mod tests {
         let orig_cols = batch.num_columns();
 
         let mut cursor = Cursor::new(Vec::new());
-        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Bytecode).unwrap();
+        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Bytecode, None).unwrap();
 
         let reader = Cursor::new(cursor.into_inner());
         let (batch2, meta2) = crate::read_sav_from_reader(reader).unwrap();
@@ -2255,7 +2337,7 @@ mod tests {
         let meta = SpssMetadata::from_arrow_schema(batch.schema().as_ref());
 
         let mut cursor = Cursor::new(Vec::new());
-        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Zlib).unwrap();
+        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Zlib, None).unwrap();
 
         let reader = Cursor::new(cursor.into_inner());
         let (batch2, meta2) = crate::read_sav_from_reader(reader).unwrap();
@@ -2280,7 +2362,7 @@ mod tests {
         let meta = SpssMetadata::from_arrow_schema(batch.schema().as_ref());
 
         let mut cursor = Cursor::new(Vec::new());
-        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Zlib).unwrap();
+        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Zlib, None).unwrap();
 
         let reader = Cursor::new(cursor.into_inner());
         let (batch2, _) = crate::read_sav_from_reader(reader).unwrap();
@@ -2324,7 +2406,7 @@ mod tests {
         let meta = SpssMetadata::from_arrow_schema(batch.schema().as_ref());
 
         let mut cursor = Cursor::new(Vec::new());
-        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Zlib).unwrap();
+        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Zlib, None).unwrap();
 
         let reader = Cursor::new(cursor.into_inner());
         let (batch2, _) = crate::read_sav_from_reader(reader).unwrap();
@@ -2354,10 +2436,10 @@ mod tests {
         let meta = SpssMetadata::from_arrow_schema(batch.schema().as_ref());
 
         let mut c_none = Cursor::new(Vec::new());
-        write_sav_to_writer(&mut c_none, &batch, &meta, Compression::None).unwrap();
+        write_sav_to_writer(&mut c_none, &batch, &meta, Compression::None, None).unwrap();
 
         let mut c_zlib = Cursor::new(Vec::new());
-        write_sav_to_writer(&mut c_zlib, &batch, &meta, Compression::Zlib).unwrap();
+        write_sav_to_writer(&mut c_zlib, &batch, &meta, Compression::Zlib, None).unwrap();
 
         let len_none = c_none.into_inner().len();
         let len_zlib = c_zlib.into_inner().len();
@@ -2374,7 +2456,7 @@ mod tests {
         let orig_cols = batch.num_columns();
 
         let mut cursor = Cursor::new(Vec::new());
-        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Zlib).unwrap();
+        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Zlib, None).unwrap();
 
         let reader = Cursor::new(cursor.into_inner());
         let (batch2, meta2) = crate::read_sav_from_reader(reader).unwrap();
@@ -2511,7 +2593,7 @@ mod tests {
         let (batch, meta) = crate::read_sav(path).unwrap();
 
         let mut cursor = Cursor::new(Vec::new());
-        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Bytecode).unwrap();
+        write_sav_to_writer(&mut cursor, &batch, &meta, Compression::Bytecode, None).unwrap();
 
         let reader = Cursor::new(cursor.into_inner());
         let (_batch2, meta2) = crate::read_sav_from_reader(reader).unwrap();

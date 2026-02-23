@@ -209,7 +209,8 @@ def write_sav(
     path: str | Path,
     *,
     meta: SpssMetadata | None = None,
-    compress: bool = True,
+    compression: str | None = None,
+    compression_level: int | None = None,
 ) -> None:
     """Write a Polars DataFrame to an SPSS .sav or .zsav file.
 
@@ -244,18 +245,67 @@ def write_sav(
             constructed with ``SpssMetadata()``, or built via
             ``.update()``/``.with_*()`` methods. If None, metadata
             is inferred from the DataFrame schema.
-        compress: If True (default), use bytecode compression for
-            ``.sav`` files. If False, write uncompressed. ``.zsav``
-            files always use zlib compression regardless of this flag.
+        compression: Compression mode. Valid values:
+
+            - ``None`` — auto-detect from extension (``.sav`` → bytecode,
+              ``.zsav`` → zlib)
+            - ``"uncompressed"`` — no compression (``.sav`` only)
+            - ``"bytecode"`` — SPSS bytecode compression (``.sav`` only)
+            - ``"zlib"`` — zlib block compression (``.zsav`` only)
+
+        compression_level: Zlib compression level for ``.zsav`` files
+            (1–9). Recommended values:
+
+            - ``1`` — "fast": fastest writes, larger files
+            - ``3`` — "balanced": moderate speed, moderate size
+            - ``6`` — "compact": slower writes, smallest files (default)
+
+            If None, defaults to 6 (compact).
+
+    Raises:
+        ValueError: If ``compression`` is invalid for the file extension,
+            or ``compression_level`` is set for non-zlib output.
     """
     path = str(path)
+    is_zsav = path.lower().endswith(".zsav")
 
-    # Determine compression from extension and compress flag
-    if path.lower().endswith(".zsav"):
-        compression = "zlib"
-    elif compress:
-        compression = "bytecode"
+    # Validate and resolve compression mode
+    if compression is None:
+        mode = "zlib" if is_zsav else "bytecode"
+    elif compression == "zlib":
+        if not is_zsav:
+            raise ValueError(
+                "zlib compression requires .zsav extension. "
+                "Use compression='bytecode' for .sav files, "
+                "or save as .zsav for zlib."
+            )
+        mode = "zlib"
+    elif compression == "bytecode":
+        if is_zsav:
+            raise ValueError(
+                ".zsav format requires zlib compression. "
+                "Use compression='zlib' or save as .sav for bytecode."
+            )
+        mode = "bytecode"
+    elif compression == "uncompressed":
+        if is_zsav:
+            raise ValueError(
+                ".zsav format requires zlib compression. "
+                "Use compression='zlib' or save as .sav for uncompressed."
+            )
+        mode = "uncompressed"
     else:
-        compression = "none"
+        raise ValueError(
+            f"Invalid compression: '{compression}'. "
+            "Expected 'uncompressed', 'bytecode', 'zlib', or None."
+        )
 
-    _write_sav(path, df, metadata=meta, compression=compression)
+    # compression_level only valid for zlib
+    if compression_level is not None and mode != "zlib":
+        raise ValueError(
+            "compression_level only applies to .zsav (zlib) output. "
+            "Remove compression_level for .sav files."
+        )
+
+    _write_sav(path, df, metadata=meta, compression=mode,
+               compression_level=compression_level)

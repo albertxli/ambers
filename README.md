@@ -55,16 +55,16 @@ meta = am.read_sav_metadata("survey.sav")
 
 # Write back — roundtrip with full metadata
 df = df.filter(pl.col("age") > 18)
-am.write_sav(df, "filtered.sav", meta=meta)
-
-# Write as .zsav (zlib compressed)
-am.write_sav(df, "compressed.zsav", meta=meta)
+am.write_sav(df, "filtered.sav", meta=meta)                        # bytecode (default for .sav)
+am.write_sav(df, "compressed.zsav", meta=meta)                     # zlib (default for .zsav)
+am.write_sav(df, "raw.sav", meta=meta, compression="uncompressed") # no compression
+am.write_sav(df, "fast.zsav", meta=meta, compression_level=1)      # fast zlib
 
 # From scratch — metadata is optional, inferred from DataFrame schema
 am.write_sav(df, "new.sav")
 ```
 
-Use `.sav` for bytecode compression (default), `.zsav` for zlib compression. Pass `meta=` to preserve all metadata from a prior `read_sav()`, or omit it to infer formats from the DataFrame. Individual writable fields (e.g., `variable_labels`, `variable_value_labels`) can also be passed directly as keyword arguments for fine-grained control.
+`.sav` uses bytecode compression by default, `.zsav` uses zlib. Pass `compression=` to override (`"uncompressed"`, `"bytecode"`, `"zlib"`). Pass `meta=` to preserve all metadata from a prior `read_sav()`, or omit it to infer formats from the DataFrame.
 
 ## Rust
 

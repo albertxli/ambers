@@ -27,7 +27,7 @@ fn test_medium_write_only() {
     let small_batch = batch.slice(0, 10);
     let t1 = Instant::now();
     let mut cursor = Cursor::new(Vec::new());
-    ambers::write_sav_to_writer(&mut cursor, &small_batch, &meta, ambers::Compression::None).unwrap();
+    ambers::write_sav_to_writer(&mut cursor, &small_batch, &meta, ambers::Compression::None, None).unwrap();
     let bytes_10 = cursor.into_inner().len();
     eprintln!("Write 10 rows: {:.4}s  bytes={} (per_row={})", 
         t1.elapsed().as_secs_f64(), bytes_10, bytes_10 / 10);
@@ -36,14 +36,14 @@ fn test_medium_write_only() {
     let med_batch = batch.slice(0, 100);
     let t2 = Instant::now();
     let mut cursor = Cursor::new(Vec::new());
-    ambers::write_sav_to_writer(&mut cursor, &med_batch, &meta, ambers::Compression::None).unwrap();
+    ambers::write_sav_to_writer(&mut cursor, &med_batch, &meta, ambers::Compression::None, None).unwrap();
     eprintln!("Write 100 rows: {:.4}s", t2.elapsed().as_secs_f64());
 
     // Try 1000 rows
     let big_batch = batch.slice(0, 1000);
     let t3 = Instant::now();
     let mut cursor = Cursor::new(Vec::new());
-    ambers::write_sav_to_writer(&mut cursor, &big_batch, &meta, ambers::Compression::None).unwrap();
+    ambers::write_sav_to_writer(&mut cursor, &big_batch, &meta, ambers::Compression::None, None).unwrap();
     eprintln!("Write 1000 rows: {:.4}s", t3.elapsed().as_secs_f64());
 
     eprintln!("All write tests passed!");
