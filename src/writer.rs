@@ -40,14 +40,27 @@ struct WriteVariable {
     measure: Measure,
     alignment: Alignment,
     display_width: u32,
-    /// Number of 8-byte slots this variable occupies (single segment).
+    /// Number of 8-byte slots per non-last segment (32 for VLS, variable for others).
     n_slots: usize,
     /// For VLS (width > 255): number of segments.
     n_segments: usize,
+    /// Slots for the last segment (may differ from n_slots for VLS).
+    last_n_slots: usize,
     /// Total storage width in bytes (may exceed 255 for VLS).
     storage_width: usize,
     /// Index of this variable in the RecordBatch columns.
     col_index: usize,
+}
+
+impl WriteVariable {
+    /// Total 8-byte slots for this variable across all segments.
+    fn total_slots(&self) -> usize {
+        if self.n_segments <= 1 {
+            self.n_slots
+        } else {
+            (self.n_segments - 1) * self.n_slots + self.last_n_slots
+        }
+    }
 }
 
 /// A single Type-2 record to emit (may be a primary, ghost, or segment record).
@@ -217,17 +230,29 @@ fn compute_layout(batch: &RecordBatch, meta: &SpssMetadata) -> Result<CaseLayout
             _ => 1,
         };
 
-        // Slots per segment
+        // Slots per non-last segment
         let n_slots = match &var_type {
             VarType::Numeric => 1,
             VarType::String(width) => {
                 if n_segments > 1 {
-                    // VLS: each segment is 255 bytes = ceil(255/8) = 32 slots
+                    // VLS non-last segment: 255 bytes = ceil(255/8) = 32 slots
                     32
                 } else {
                     (width + 7) / 8
                 }
             }
+        };
+
+        // Slots for the last segment (may differ for VLS)
+        let last_n_slots = if n_segments > 1 {
+            if let VarType::String(width) = &var_type {
+                let remaining = width - (n_segments - 1) * 252;
+                (remaining + 7) / 8
+            } else {
+                n_slots
+            }
+        } else {
+            n_slots
         };
 
         let label = meta.variable_labels.get(name.as_str()).cloned();
@@ -295,6 +320,7 @@ fn compute_layout(batch: &RecordBatch, meta: &SpssMetadata) -> Result<CaseLayout
             display_width,
             n_slots,
             n_segments,
+            last_n_slots,
             storage_width,
             col_index,
         });
@@ -348,22 +374,36 @@ fn compute_layout(batch: &RecordBatch, meta: &SpssMetadata) -> Result<CaseLayout
                 let _ = width; // suppress unused
             }
         } else {
-            // VLS: n_segments segments, each with 32 slots (255 bytes + 1 padding)
+            // VLS: n_segments segments.
+            // Non-last segments: 32 slots (width=255).
+            // Last segment: fewer slots based on remaining width.
             let segment_names =
                 generate_segment_names(&short_name, n_segments, &mut used_short_names);
 
+            // Remaining width for the last segment (per ReadStat convention)
+            let remaining_width = if let VarType::String(w) = &var_type {
+                w - (n_segments - 1) * 252
+            } else {
+                255
+            };
+
             for seg in 0..n_segments {
+                let is_last_seg = seg == n_segments - 1;
                 let seg_short_name = if seg == 0 {
                     short_name.clone()
                 } else {
-                    let seg_name = segment_names[seg - 1].clone();
-                    seg_name
+                    segment_names[seg - 1].clone()
                 };
 
-                // Each segment declares width=255 in its type-2 record
+                // Non-last segments declare width=255; last declares remaining width
+                let seg_width: u8 = if is_last_seg {
+                    remaining_width.min(255) as u8
+                } else {
+                    255
+                };
                 let seg_format = SpssFormat {
                     format_type: FormatType::A,
-                    width: 255,
+                    width: seg_width,
                     decimals: 0,
                 };
 
@@ -379,8 +419,9 @@ fn compute_layout(batch: &RecordBatch, meta: &SpssMetadata) -> Result<CaseLayout
                 };
 
                 // Primary record for this segment
+                let seg_slots = if is_last_seg { last_n_slots } else { n_slots };
                 slot_records.push(SlotRecord {
-                    raw_type: 255,
+                    raw_type: seg_width as i32,
                     short_name: seg_short_name,
                     label: seg_label,
                     print_format: seg_format.clone(),
@@ -390,8 +431,9 @@ fn compute_layout(batch: &RecordBatch, meta: &SpssMetadata) -> Result<CaseLayout
                 });
                 slot_index += 1;
 
-                // 31 ghost records per segment (32 slots total: 1 named + 31 ghosts)
-                for _ in 0..31 {
+                // Ghost records: seg_slots - 1 per segment
+                let n_ghosts = seg_slots - 1;
+                for _ in 0..n_ghosts {
                     slot_records.push(SlotRecord {
                         raw_type: -1,
                         short_name: String::new(),
@@ -508,7 +550,7 @@ fn write_header<W: Write>(
                 .iter()
                 .scan(0usize, |slot, var| {
                     let this_slot = *slot;
-                    *slot += var.n_slots * var.n_segments;
+                    *slot += var.total_slots();
                     Some((var, this_slot))
                 })
                 .find(|(v, _)| v.long_name == *wv)
@@ -646,7 +688,7 @@ fn write_value_label_records<W: Write>(
     let mut slot_idx = 0usize;
     for var in &layout.write_vars {
         var_slot_indices.push((slot_idx, var));
-        slot_idx += var.n_slots * var.n_segments;
+        slot_idx += var.total_slots();
     }
 
     // Group variables that share the same value label set
@@ -1295,7 +1337,7 @@ fn fill_row_buffer(
                 };
 
                 let str_bytes = str_val.as_bytes();
-                let total_slots = var.n_slots * var.n_segments;
+                let total_slots = var.total_slots();
 
                 if var.n_segments == 1 {
                     let total_slot_bytes = total_slots * 8;
@@ -2579,6 +2621,160 @@ mod tests {
         let path = "test_data/test_3_medium.sav";
         if std::path::Path::new(path).exists() {
             roundtrip_file_zsav(path);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // VLS (Very Long String) segment layout tests
+    // Regression test for bug where the writer declared width=255 for all
+    // VLS segments including the last, instead of the actual remaining width.
+    // This caused third-party SPSS readers (Q Research Software) to show
+    // extra ghost columns.
+    // -----------------------------------------------------------------------
+
+    /// Verify VLS layout: last segment gets correct remaining width and slot count.
+    #[test]
+    fn test_vls_last_segment_layout() {
+        // Create a batch with a VLS column (width=500, which needs 2 segments)
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Float64, true),
+            Field::new("longtext", DataType::Utf8, true),
+        ]));
+        let mut id_builder = Float64Builder::new();
+        id_builder.append_value(1.0);
+        id_builder.append_value(2.0);
+        let mut text_builder = StringBuilder::new();
+        text_builder.append_value(&"A".repeat(400));
+        text_builder.append_value(&"B".repeat(300));
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![Arc::new(id_builder.finish()), Arc::new(text_builder.finish())],
+        )
+        .unwrap();
+
+        let mut meta = SpssMetadata::from_arrow_schema(batch.schema().as_ref());
+        meta.variable_formats
+            .insert("longtext".to_string(), "A500".to_string());
+        meta.variable_storage_widths
+            .insert("longtext".to_string(), 500);
+
+        let layout = compute_layout(&batch, &meta).unwrap();
+
+        // Find the VLS variable
+        let vls_var = layout.write_vars.iter().find(|v| v.long_name == "longtext").unwrap();
+        assert_eq!(vls_var.n_segments, 2, "width=500 needs 2 segments");
+        assert_eq!(vls_var.n_slots, 32, "non-last segment: 32 slots");
+        // Last segment: remaining = 500 - 252 = 248, slots = (248+7)/8 = 31
+        assert_eq!(vls_var.last_n_slots, 31, "last segment: 31 slots (remaining=248)");
+        assert_eq!(vls_var.total_slots(), 63, "total: 32 + 31 = 63 slots");
+
+        // Verify slot records: non-last segment has raw_type=255, last has 248
+        let non_ghost_records: Vec<&SlotRecord> = layout.slot_records.iter()
+            .filter(|r| !r.is_ghost && r.short_name.len() > 0)
+            .collect();
+        // Should have: id (1 record) + longtext seg0 + longtext seg1 = 3 named records
+        assert_eq!(non_ghost_records.len(), 3);
+        assert_eq!(non_ghost_records[1].raw_type, 255, "seg0 raw_type=255");
+        assert_eq!(non_ghost_records[2].raw_type, 248, "seg1 raw_type=248 (last)");
+    }
+
+    /// Verify VLS layout with a width that produces 3 segments.
+    #[test]
+    fn test_vls_three_segment_layout() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("bigtext", DataType::Utf8, true),
+        ]));
+        let mut builder = StringBuilder::new();
+        builder.append_value(&"X".repeat(600));
+        let batch = RecordBatch::try_new(schema, vec![Arc::new(builder.finish())]).unwrap();
+
+        let mut meta = SpssMetadata::from_arrow_schema(batch.schema().as_ref());
+        meta.variable_formats
+            .insert("bigtext".to_string(), "A600".to_string());
+        meta.variable_storage_widths
+            .insert("bigtext".to_string(), 600);
+
+        let layout = compute_layout(&batch, &meta).unwrap();
+        let vls_var = layout.write_vars.iter().find(|v| v.long_name == "bigtext").unwrap();
+
+        // 600 / 252 = 2.38 → 3 segments
+        assert_eq!(vls_var.n_segments, 3);
+        // remaining = 600 - 2*252 = 96, last_n_slots = (96+7)/8 = 12
+        assert_eq!(vls_var.last_n_slots, 12);
+        assert_eq!(vls_var.total_slots(), 32 + 32 + 12, "32+32+12=76");
+    }
+
+    /// VLS roundtrip: write a synthetic VLS variable, read it back,
+    /// verify column count matches (no ghost columns leak).
+    #[test]
+    fn test_vls_roundtrip_no_ghost_columns() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Float64, true),
+            Field::new("short_str", DataType::Utf8, true),
+            Field::new("vls_500", DataType::Utf8, true),
+            Field::new("vls_1000", DataType::Utf8, true),
+            Field::new("score", DataType::Float64, true),
+        ]));
+        let n = 10;
+        let mut id_b = Float64Builder::new();
+        let mut short_b = StringBuilder::new();
+        let mut vls500_b = StringBuilder::new();
+        let mut vls1000_b = StringBuilder::new();
+        let mut score_b = Float64Builder::new();
+        for i in 0..n {
+            id_b.append_value(i as f64);
+            short_b.append_value(&format!("row_{i}"));
+            vls500_b.append_value(&format!("{}{}", "A".repeat(400), i));
+            vls1000_b.append_value(&format!("{}{}", "B".repeat(900), i));
+            score_b.append_value(i as f64 * 1.5);
+        }
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(id_b.finish()),
+                Arc::new(short_b.finish()),
+                Arc::new(vls500_b.finish()),
+                Arc::new(vls1000_b.finish()),
+                Arc::new(score_b.finish()),
+            ],
+        )
+        .unwrap();
+
+        let mut meta = SpssMetadata::from_arrow_schema(batch.schema().as_ref());
+        meta.variable_formats.insert("short_str".to_string(), "A20".to_string());
+        meta.variable_formats.insert("vls_500".to_string(), "A500".to_string());
+        meta.variable_storage_widths.insert("vls_500".to_string(), 500);
+        meta.variable_formats.insert("vls_1000".to_string(), "A1000".to_string());
+        meta.variable_storage_widths.insert("vls_1000".to_string(), 1000);
+
+        // Test all 3 compression modes
+        for compression in [Compression::None, Compression::Bytecode, Compression::Zlib] {
+            let mut cursor = Cursor::new(Vec::new());
+            write_sav_to_writer(&mut cursor, &batch, &meta, compression, None).unwrap();
+
+            let reader = Cursor::new(cursor.into_inner());
+            let (batch2, meta2) = crate::read_sav_from_reader(reader).unwrap();
+
+            assert_eq!(batch2.num_columns(), 5,
+                "VLS roundtrip ({compression:?}): expected 5 columns, got {}",
+                batch2.num_columns());
+            assert_eq!(batch2.num_rows(), n,
+                "VLS roundtrip ({compression:?}): row count mismatch");
+            assert_eq!(meta2.variable_names, meta.variable_names,
+                "VLS roundtrip ({compression:?}): variable names mismatch");
+
+            // Verify VLS data survived — check first and last rows
+            let vls500_col = batch2.column(2);
+            let vls500_arr = vls500_col.as_any().downcast_ref::<StringViewArray>().unwrap();
+            assert!(vls500_arr.value(0).starts_with("AAAA"),
+                "VLS 500 data corrupted ({compression:?})");
+            assert!(vls500_arr.value(0).ends_with("0"),
+                "VLS 500 data corrupted ({compression:?})");
+
+            let vls1000_col = batch2.column(3);
+            let vls1000_arr = vls1000_col.as_any().downcast_ref::<StringViewArray>().unwrap();
+            assert!(vls1000_arr.value(0).starts_with("BBBB"),
+                "VLS 1000 data corrupted ({compression:?})");
         }
     }
 

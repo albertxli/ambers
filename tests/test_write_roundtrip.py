@@ -341,3 +341,126 @@ class TestSavRoundtripPyreadstat:
             _, meta_pyr = pyreadstat_mod.read_sav(str(out))
 
         assert_metadata_cross(meta, meta_pyr, label="zsav→pyreadstat")
+
+
+# ---------------------------------------------------------------------------
+# Tests — VLS (Very Long String) writer compatibility
+# Regression test for bug where the writer declared width=255 for all VLS
+# segments including the last, instead of the actual remaining width. This
+# caused third-party SPSS readers (Q Research Software) to show extra
+# ghost columns.
+# ---------------------------------------------------------------------------
+
+class TestVlsWriterCompatibility:
+    """Verify VLS variables roundtrip without ghost column leakage."""
+
+    @staticmethod
+    def _make_vls_df():
+        """Create a DataFrame with multiple VLS columns at various widths."""
+        n = 5
+        return pl.DataFrame({
+            "id": list(range(1, n + 1)),
+            "short_str": [f"row_{i}" for i in range(n)],
+            "vls_500": [f"{'A' * 450}{i}" for i in range(n)],
+            "vls_1000": [f"{'B' * 950}{i}" for i in range(n)],
+            "vls_2000": [f"{'C' * 1950}{i}" for i in range(n)],
+            "score": [i * 1.5 for i in range(n)],
+        }).cast({"id": pl.Float64, "score": pl.Float64})
+
+    @staticmethod
+    def _make_vls_meta(am):
+        """Create metadata with VLS format declarations."""
+        return am.SpssMetadata(
+            variable_formats={
+                "id": "F8.0",
+                "short_str": "A20",
+                "vls_500": "A500",
+                "vls_1000": "A1000",
+                "vls_2000": "A2000",
+                "score": "F8.2",
+            },
+        )
+
+    def test_vls_roundtrip_ambers_column_count(self, ambers_mod):
+        """Write VLS, read back with ambers: column count must match."""
+        df = self._make_vls_df()
+        meta = self._make_vls_meta(ambers_mod)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "vls_test.sav"
+            ambers_mod.write_sav(df, out, meta=meta)
+            df_rt, meta_rt = ambers_mod.read_sav(str(out))
+
+        assert df_rt.width == 6, f"expected 6 columns, got {df_rt.width}: {df_rt.columns}"
+        assert df_rt.height == 5
+        assert df_rt.columns == df.columns
+
+    def test_vls_roundtrip_pyreadstat_column_count(self, ambers_mod, pyreadstat_mod):
+        """Write VLS with ambers, read with pyreadstat: column count must match."""
+        df = self._make_vls_df()
+        meta = self._make_vls_meta(ambers_mod)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "vls_test.sav"
+            ambers_mod.write_sav(df, out, meta=meta)
+            df_pyr, meta_pyr = pyreadstat_mod.read_sav(
+                str(out), output_format="polars"
+            )
+
+        assert df_pyr.width == 6, (
+            f"pyreadstat saw {df_pyr.width} columns (expected 6): {df_pyr.columns}"
+        )
+
+    def test_vls_data_integrity(self, ambers_mod):
+        """Write VLS, read back: string content must be preserved."""
+        df = self._make_vls_df()
+        meta = self._make_vls_meta(ambers_mod)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "vls_test.sav"
+            ambers_mod.write_sav(df, out, meta=meta)
+            df_rt, _ = ambers_mod.read_sav(str(out))
+
+        # Check VLS string data for first row
+        assert df_rt["vls_500"][0].startswith("A" * 100), "vls_500 data corrupted"
+        assert df_rt["vls_500"][0].endswith("0"), "vls_500 trailing data lost"
+        assert df_rt["vls_1000"][0].startswith("B" * 100), "vls_1000 data corrupted"
+        assert df_rt["vls_2000"][0].startswith("C" * 100), "vls_2000 data corrupted"
+
+        # Check numeric columns survived
+        assert list(df_rt["id"]) == [1.0, 2.0, 3.0, 4.0, 5.0]
+        assert list(df_rt["score"]) == [0.0, 1.5, 3.0, 4.5, 6.0]
+
+    def test_vls_zsav_roundtrip(self, ambers_mod):
+        """Write VLS as zsav, read back: column count must match."""
+        df = self._make_vls_df()
+        meta = self._make_vls_meta(ambers_mod)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "vls_test.zsav"
+            ambers_mod.write_sav(df, out, meta=meta)
+            df_rt, _ = ambers_mod.read_sav(str(out))
+
+        assert df_rt.width == 6, f"zsav: expected 6 columns, got {df_rt.width}"
+        assert df_rt.height == 5
+
+    def test_vls_metadata_preserved(self, ambers_mod):
+        """Write VLS, read back: metadata formats and storage widths preserved."""
+        df = self._make_vls_df()
+        meta = self._make_vls_meta(ambers_mod)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "vls_test.sav"
+            ambers_mod.write_sav(df, out, meta=meta)
+            _, meta_rt = ambers_mod.read_sav(str(out))
+
+        # Format strings must survive
+        assert meta_rt.format("vls_500") == "A500"
+        assert meta_rt.format("vls_1000") == "A1000"
+        assert meta_rt.format("vls_2000") == "A2000"
+
+        # Storage widths must reflect VLS
+        sw = meta_rt.variable_storage_widths
+        assert sw["vls_500"] == 500
+        assert sw["vls_1000"] == 1000
+        assert sw["vls_2000"] == 2000
