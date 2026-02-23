@@ -36,6 +36,40 @@ meta3 = (am.SpssMetadata()
 
 ---
 
+## Core Design Principles
+
+ambers separates **data** (Polars DataFrame) from **metadata** (`am.SpssMetadata`) as two independent objects — mirroring how SPSS itself keeps data and metadata as distinct layers within a `.sav` file.
+
+### 1. Explicit Control
+
+- No hidden magic or automatic transfers between data and metadata
+- You know exactly what metadata each variable has
+- Clear, predictable behavior — what you set is what gets written
+
+### 2. Clean Separation
+
+- **Data** lives in a Polars DataFrame — filter, join, rename, and transform using Polars' full API
+- **Metadata** lives in `SpssMetadata` — labels, formats, missing values, and other SPSS properties
+- Neither needs to know about changes to the other
+
+### 3. Flexibility
+
+- Read an SPSS file and get both data + metadata, or metadata only
+- Build metadata from scratch for data from any source (CSV, Excel, databases)
+- Mix and match — apply metadata from one file to data from another
+- Write with no metadata at all — sensible defaults are inferred from the DataFrame
+
+### 4. Easy to Reason About
+
+When working with ambers, the mental model is simple:
+
+- **Transforming data?** Use Polars (`df.filter()`, `df.rename()`, `df.select()`)
+- **Updating labels, formats, or SPSS properties?** Use `SpssMetadata` (`.update()`, `.with_*()`)
+- **Reading or writing files?** Use `read_sav()` / `write_sav()`
+- **Need both together?** Pass `meta=` to `write_sav()` — ambers matches metadata to DataFrame columns by name
+
+---
+
 ## Construction
 
 ### `SpssMetadata(**kwargs)`
@@ -51,21 +85,57 @@ meta = am.SpssMetadata(file_label="My Survey")    # with specific fields
 
 Returns a **new** `SpssMetadata` with the given fields merged/replaced. The original is unchanged (immutable).
 
-**Merge semantics:**
-- **Dict fields** — merge at the variable-name level. New keys are added, existing keys are overwritten. Pass `{key: None}` to remove a key.
-- **Scalar fields** (`file_label`, `weight_variable`) — replaced entirely.
-- **`notes`** — replaced entirely (pass new list or string).
+### Update Logic
+
+Updates work as an **overlay** — your changes are applied on top of existing metadata without destroying anything you didn't explicitly touch.
+
+**Dict fields** (variable_labels, variable_measures, variable_formats, etc.) are keyed by **variable name** (the column name in your DataFrame). They merge at the variable-name level:
+- **Existing key** — value is overwritten with your new value
+- **New key** — added to the dict
+- **Unlisted keys** — preserved as-is from the original
+- **`{key: None}`** — removes that key
 
 ```python
-meta2 = meta.update(
-    file_label="Updated",                         # replaces scalar
-    variable_labels={"Q3": "New Label"},           # merges — Q1/Q2 labels preserved
-    variable_measures={"Q3": "scale"},
+# Original metadata (from read_sav or constructor)
+meta = am.SpssMetadata(
+    variable_labels={"Q1": "Satisfaction", "Q2": "Loyalty", "Q3": "NPS"},
 )
 
-# Remove a variable's label
-meta3 = meta.update(variable_labels={"Q1": None})
+# Update: overwrite Q1, add Q4, leave Q2 and Q3 untouched
+meta2 = meta.update(variable_labels={"Q1": "Overall Satisfaction", "Q4": "Age"})
+# Result: {"Q1": "Overall Satisfaction", "Q2": "Loyalty", "Q3": "NPS", "Q4": "Age"}
+
+# Remove Q3's label
+meta3 = meta.update(variable_labels={"Q3": None})
+# Result: {"Q1": "Satisfaction", "Q2": "Loyalty"}
 ```
+
+**Scalar fields** (`file_label`, `weight_variable`) and **`notes`** are replaced entirely:
+
+```python
+meta2 = meta.update(file_label="Updated Survey")   # old file_label is gone
+meta3 = meta.update(notes=["Wave 2 data"])          # old notes list is replaced
+```
+
+### Column Renames
+
+Metadata is keyed by variable name. If you rename a column in your DataFrame, metadata does **not** automatically carry over — there is no tracking or mapping between old and new names.
+
+```python
+df, meta = am.read_sav("survey.sav")
+
+# Rename Q1 → satisfaction in the DataFrame
+df = df.rename({"Q1": "satisfaction"})
+
+# Metadata still has "Q1" — it does NOT follow the rename
+meta.label("Q1")              # "Overall Satisfaction" (still there)
+meta.label("satisfaction")    # KeyError — no metadata for this name
+
+# If you wish the new satisfaction column in your output spss data contains proper variable_label, you must explicitly provide metadata for the new name
+meta = meta.update(variable_labels={"satisfaction": "Overall Satisfaction"})
+```
+
+At write time, metadata for columns not present in the DataFrame is silently ignored — so the leftover `"Q1"` metadata won't cause errors, it just won't be written.
 
 ### `meta.with_*() -> SpssMetadata`
 

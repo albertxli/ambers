@@ -160,7 +160,12 @@ meta3 = (meta
 
 > **Immutability:** `SpssMetadata` is immutable. `.update()` and `.with_*()` always return a **new** instance — the original is never modified. Assign to a new variable if you need to keep both copies.
 
-See [metadata.md](metadata.md) for the full API reference including missing values, MR sets, and validation rules.
+**Update logic:**
+- **Dict fields** (labels, formats, measures, etc.) merge as an overlay — new keys are added, existing keys are overwritten, all other keys are preserved. Pass `{key: None}` to remove a key.
+- **Scalar fields** (`file_label`, `weight_variable`) and **`notes`** are replaced entirely.
+- **Column renames are not tracked.** If you rename `"Q1"` to `"Q1a"` in your DataFrame, metadata for `"Q1"` does not carry over — you must explicitly provide metadata for `"Q1a"`.
+
+See [metadata.md](metadata.md) for the full API reference including update logic details, missing values, MR sets, and validation rules.
 
 > **SPSS tip:** Custom variable attributes are not shown in SPSS's Variable View by default. Go to **View > Customize Variable View** and click **OK**, or run `DISPLAY ATTRIBUTES` in SPSS syntax.
 
