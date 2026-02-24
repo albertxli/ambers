@@ -14,6 +14,7 @@ pub struct LongStringLabelSet {
 /// Format (for each variable):
 ///   4-byte var_name_length
 ///   var_name bytes
+///   4-byte var_width
 ///   4-byte label_count
 ///   For each label:
 ///     4-byte value_length
@@ -35,6 +36,13 @@ pub fn parse_long_string_labels(data: &[u8]) -> Result<Vec<LongStringLabelSet>> 
             .trim()
             .to_string();
         pos += name_len;
+
+        // Variable width (skip — used for value padding)
+        if pos + 4 > data.len() {
+            break;
+        }
+        // let _var_width = read_i32_le(data, pos)?;
+        pos += 4;
 
         // Label count
         if pos + 4 > data.len() {

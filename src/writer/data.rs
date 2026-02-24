@@ -468,7 +468,7 @@ pub(super) fn write_data_zsav<W: Write + Seek>(
 
     // Phase 3: Write compressed blocks sequentially, build trailer
     let mut blocks: Vec<ZsavBlockInfo> = Vec::with_capacity(n_blocks);
-    let mut bytecode_offset: i64 = 0;
+    let mut bytecode_offset: i64 = zheader_offset; // per PSPP spec: starts at zheader file position
 
     for (i, compressed) in compressed_blocks.iter().enumerate() {
         let (_, uncompressed_len) = chunk_ranges[i];
@@ -487,7 +487,7 @@ pub(super) fn write_data_zsav<W: Write + Seek>(
 
     // Write ztrailer
     let ztrailer_offset = w.stream_position().map_err(SpssError::Io)? as i64;
-    w.write_all(&(DEFAULT_BIAS as i64).to_le_bytes())?;
+    w.write_all(&(-100_i64).to_le_bytes())?; // ztrailer bias is negative per PSPP spec
     w.write_all(&0_i64.to_le_bytes())?;
     w.write_i32_le(ZSAV_BLOCK_SIZE as i32)?;
     w.write_i32_le(blocks.len() as i32)?;

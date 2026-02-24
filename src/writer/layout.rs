@@ -195,14 +195,34 @@ pub(crate) fn validate_write_inputs(
             }
         }
 
-        // Validate format string is parseable if provided
-        if let Some(fmt_str) = meta.variable_formats.get(name.as_str())
-            && SpssFormat::from_string(fmt_str).is_none()
-        {
-            return Err(SpssError::WriteError(format!(
-                "variable '{}': invalid format string '{}'",
-                name, fmt_str
-            )));
+        // Validate format string is parseable if provided, and type-compatible
+        if let Some(fmt_str) = meta.variable_formats.get(name.as_str()) {
+            match SpssFormat::from_string(fmt_str) {
+                None => {
+                    return Err(SpssError::WriteError(format!(
+                        "variable '{}': invalid format string '{}'",
+                        name, fmt_str
+                    )));
+                }
+                Some(fmt) => {
+                    let is_string_col = matches!(
+                        field.data_type(),
+                        DataType::Utf8 | DataType::Utf8View | DataType::LargeUtf8
+                    );
+                    if fmt.format_type.is_string() && !is_string_col {
+                        return Err(SpssError::WriteError(format!(
+                            "variable '{}': string format '{}' cannot be applied to a non-string column ({})",
+                            name, fmt_str, field.data_type()
+                        )));
+                    }
+                    if !fmt.format_type.is_string() && is_string_col {
+                        return Err(SpssError::WriteError(format!(
+                            "variable '{}': numeric/date format '{}' cannot be applied to a string column",
+                            name, fmt_str
+                        )));
+                    }
+                }
+            }
         }
     }
     Ok(())

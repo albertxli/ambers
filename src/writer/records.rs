@@ -354,14 +354,14 @@ fn write_info_record_header<W: Write>(
     Ok(())
 }
 
-pub(super) fn write_info_integer<W: Write>(w: &mut W, compression: Compression) -> Result<()> {
+pub(super) fn write_info_integer<W: Write>(w: &mut W, _compression: Compression) -> Result<()> {
     write_info_record_header(w, INFO_INTEGER, 4, 8)?;
     w.write_i32_le(28)?; // version_major
     w.write_i32_le(0)?; // version_minor
     w.write_i32_le(0)?; // version_revision
     w.write_i32_le(-1)?; // machine_code
     w.write_i32_le(1)?; // floating_point_rep (IEEE 754)
-    w.write_i32_le(compression.to_i32())?;
+    w.write_i32_le(1)?; // compression_code: always 1 per PSPP spec, regardless of actual compression
     w.write_i32_le(2)?; // endianness (LE)
     w.write_i32_le(65001)?; // UTF-8 code page
     Ok(())
@@ -462,13 +462,13 @@ pub(super) fn write_info_long_string_labels<W: Write>(
     meta: &SpssMetadata,
 ) -> Result<()> {
     // Collect long string variables (width > 8) that have value labels
-    let mut entries: Vec<(&str, &IndexMap<Value, String>)> = Vec::new();
+    let mut entries: Vec<(&str, usize, &IndexMap<Value, String>)> = Vec::new();
     for var in &layout.write_vars {
         if matches!(&var.var_type, VarType::String(w) if *w > 8)
             && let Some(labels) = meta.variable_value_labels.get(&var.long_name)
             && !labels.is_empty()
         {
-            entries.push((&var.short_name, labels));
+            entries.push((&var.long_name, var.storage_width, labels));
         }
     }
     if entries.is_empty() {
@@ -477,33 +477,33 @@ pub(super) fn write_info_long_string_labels<W: Write>(
 
     // Build payload in pascal-string format
     let mut payload = Vec::new();
-    for (var_name, labels) in &entries {
+    for (var_name, var_width, labels) in &entries {
         // Variable name: length-prefixed
         let name_bytes = var_name.as_bytes();
         payload.extend_from_slice(&(name_bytes.len() as i32).to_le_bytes());
         payload.extend_from_slice(name_bytes);
 
-        // Width placeholder (stored as i32, use storage width)
-        let var_width = layout
-            .write_vars
-            .iter()
-            .find(|v| v.short_name == **var_name)
-            .map(|v| v.storage_width as i32)
-            .unwrap_or(0);
-        payload.extend_from_slice(&var_width.to_le_bytes());
+        // Variable width
+        payload.extend_from_slice(&(*var_width as i32).to_le_bytes());
 
         // Number of labels
         payload.extend_from_slice(&(labels.len() as i32).to_le_bytes());
 
         for (val, label) in *labels {
-            // Value: length-prefixed
+            // Value: length-prefixed, space-padded to var_width
             let val_str = match val {
                 Value::String(s) => s.clone(),
                 Value::Numeric(n) => n.to_string(),
             };
             let val_bytes = val_str.as_bytes();
-            payload.extend_from_slice(&(val_bytes.len() as i32).to_le_bytes());
-            payload.extend_from_slice(val_bytes);
+            let padded_len = *var_width;
+            payload.extend_from_slice(&(padded_len as i32).to_le_bytes());
+            let copy_len = val_bytes.len().min(padded_len);
+            payload.extend_from_slice(&val_bytes[..copy_len]);
+            // Pad with spaces to var_width
+            if copy_len < padded_len {
+                payload.extend(std::iter::repeat(b' ').take(padded_len - copy_len));
+            }
 
             // Label: length-prefixed
             let label_bytes = label.as_bytes();

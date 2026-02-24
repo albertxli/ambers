@@ -2,8 +2,16 @@
 
 All notable changes to ambers are documented in this file.
 
-## [0.3.4] - 2025-02-23
+## [0.3.4] - 2025-02-24
 
+- Fix ZSAV writer: 3 bugs causing SPSS to crash on all ambers-written .zsav files
+  - ZTrailer bias field: write -100 (negative) per PSPP spec, was incorrectly +100
+  - ZTrailer block uncompressed_offset: start at zheader file position per PSPP/ReadStat, was incorrectly 0
+  - Subtype 3 compression_code: always write 1 per PSPP spec, was incorrectly writing actual compression value
+- Fix reader subtype 21 (long string value labels): add missing var_width field parse
+- Fix writer subtype 21: use long_name instead of short_name, pad values to var_width per SPSS spec
+- Add format/type mismatch validation: reject string format on numeric column and vice versa
+- Add 36 writer stress tests (pyreadstat issues #267, #119, #264)
 - Add CI workflow (fmt, clippy, test on Linux/Windows/macOS + Python smoke test)
 - Add unit tests for arrow_convert and scanner modules (15 new tests)
 - Add overflow protection: AllocationTooLarge error, 2 GB pre-allocation cap, 16 GB zlib guard
