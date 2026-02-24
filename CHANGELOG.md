@@ -2,7 +2,7 @@
 
 All notable changes to ambers are documented in this file.
 
-## [0.3.5] - 2025-02-24
+## [0.3.6] - 2025-02-24
 
 - Fix ZSAV writer: 3 bugs causing SPSS to crash on all ambers-written .zsav files
   - ZTrailer bias field: write -100 (negative) per PSPP spec, was incorrectly +100
