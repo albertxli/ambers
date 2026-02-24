@@ -212,7 +212,9 @@ pub(crate) fn validate_write_inputs(
                     if fmt.format_type.is_string() && !is_string_col {
                         return Err(SpssError::WriteError(format!(
                             "variable '{}': string format '{}' cannot be applied to a non-string column ({})",
-                            name, fmt_str, field.data_type()
+                            name,
+                            fmt_str,
+                            field.data_type()
                         )));
                     }
                     if !fmt.format_type.is_string() && is_string_col {
