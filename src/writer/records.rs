@@ -502,7 +502,7 @@ pub(super) fn write_info_long_string_labels<W: Write>(
             payload.extend_from_slice(&val_bytes[..copy_len]);
             // Pad with spaces to var_width
             if copy_len < padded_len {
-                payload.extend(std::iter::repeat(b' ').take(padded_len - copy_len));
+                payload.extend(std::iter::repeat_n(b' ', padded_len - copy_len));
             }
 
             // Label: length-prefixed
