@@ -13,6 +13,7 @@ All notable changes to ambers are documented in this file.
 - Stream zlib decompression block-by-block instead of all blocks upfront (lower peak memory)
 - Add BytecodeDecompressor checkpoint/restore for streaming support
 - Fix 29 clippy warnings across codebase
+- Fix CI Python smoke test to use `maturin build` instead of `maturin develop`
 - Update write benchmark results: 6–41x faster than pyreadstat (up from 4–20x)
 
 ## [0.3.3] - 2025-02-21

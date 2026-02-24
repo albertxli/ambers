@@ -46,8 +46,10 @@ jobs:
       - name: Install dependencies
         run: pip install maturin polars
 
-      - name: Build and install
-        run: maturin develop --release
+      - name: Build wheel
+        run: maturin build --release -o dist
 
-      - name: Smoke test
-        run: python -c "import ambers; print('ambers imported successfully')"
+      - name: Install and smoke test
+        run: |
+          pip install dist/*.whl
+          python -c "import ambers; print('ambers imported successfully')"
