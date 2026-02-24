@@ -185,7 +185,7 @@ while let Some(batch) = scanner.next_batch()? {
 
 ### Eager Read
 
-All results return a Polars DataFrame. Best of 3–5 runs (with warmup) on Windows 11, Python 3.13, 24-core machine.
+All results return a Polars DataFrame. Best of 3–5 runs (with warmup) on Windows 11, Python 3.13, Intel Core Ultra 9 275HX (24C), 64 GB RAM (6400 MT/s).
 
 | File | Size | Rows | Cols | ambers | polars_readstat | pyreadstat | vs prs | vs pyreadstat |
 |------|------|-----:|-----:|-------:|----------------:|-----------:|-------:|--------------:|
@@ -219,15 +219,19 @@ On the 5.4 GB file, selecting 5 columns and 1000 rows completes in **13ms** — 
 | File | Size | Rows | Cols | Mode | ambers | pyreadstat | Speedup |
 |------|------|-----:|-----:|------|-------:|-----------:|--------:|
 | test_1 (bytecode) | 0.2 MB | 1,500 | 75 | .sav | **0.001s** | 0.019s | **13x** |
-| | | | | .zsav | **0.004s** | 0.026s | **7x** |
-| test_2 (bytecode) | 147 MB | 22,070 | 677 | .sav | **0.567s** | 3.849s | **7x** |
-| | | | | .zsav | **1.088s** | 4.415s | **4x** |
-| test_3 (uncompressed) | 1.1 GB | 79,066 | 915 | .sav | **0.950s** | 16.152s | **17x** |
-| | | | | .zsav | **1.774s** | 17.362s | **10x** |
-| test_6 (uncompressed) | 5.4 GB | 395,330 | 916 | .sav | **5.700s** | 79.999s | **14x** |
-| | | | | .zsav | **8.193s** | 85.491s | **10x** |
+| | | | | .zsav | **0.004s** | 0.025s | **6x** |
+| test_2 (bytecode) | 147 MB | 22,070 | 677 | .sav | **0.539s** | 3.622s | **7x** |
+| | | | | .zsav | **0.386s** | 4.174s | **11x** |
+| test_3 (uncompressed) | 1.1 GB | 79,066 | 915 | .sav | **0.439s** | 13.963s | **32x** |
+| | | | | .zsav | **0.436s** | 17.991s | **41x** |
+| test_4 (uncompressed) | 0.6 MB | 201 | 158 | .sav | **0.002s** | 0.027s | **16x** |
+| | | | | .zsav | **0.004s** | 0.035s | **9x** |
+| test_5 (uncompressed) | 0.6 MB | 203 | 136 | .sav | **0.001s** | 0.023s | **17x** |
+| | | | | .zsav | **0.003s** | 0.027s | **9x** |
+| test_6 (uncompressed) | 5.4 GB | 395,330 | 916 | .sav | **2.511s** | 84.836s | **34x** |
+| | | | | .zsav | **2.255s** | 90.499s | **40x** |
 
-- **4–20x faster than pyreadstat** on writes across all files and compression modes
+- **6–41x faster than pyreadstat** on writes across all files and compression modes
 - Full metadata roundtrip: variable labels, value labels, missing values, MR sets, display properties
 - Bytecode (.sav) and zlib (.zsav) compression
 
