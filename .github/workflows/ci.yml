@@ -43,13 +43,15 @@ jobs:
         with:
           python-version: "3.13"
 
+      - uses: astral-sh/setup-uv@v5
+
       - name: Install dependencies
-        run: pip install maturin polars
+        run: uv pip install --system maturin polars
 
       - name: Build wheel
         run: maturin build --release -o dist
 
       - name: Install and smoke test
         run: |
-          pip install dist/*.whl
+          uv pip install --system dist/*.whl
           python -c "import ambers; print('ambers imported successfully')"
