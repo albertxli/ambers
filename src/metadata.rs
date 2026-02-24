@@ -150,11 +150,7 @@ pub fn missing_to_specs(mv: &MissingValues) -> Vec<MissingSpec> {
         }
         MissingValues::DiscreteString(vals) => vals
             .iter()
-            .map(|v| {
-                MissingSpec::StringValue(
-                    String::from_utf8_lossy(v).trim_end().to_string(),
-                )
-            })
+            .map(|v| MissingSpec::StringValue(String::from_utf8_lossy(v).trim_end().to_string()))
             .collect(),
     }
 }
@@ -255,10 +251,12 @@ impl SpssMetadata {
 
     /// Infer metadata from an Arrow schema (for write_sav without prior read metadata).
     pub fn from_arrow_schema(schema: &Schema) -> Self {
-        let mut meta = SpssMetadata::default();
-        meta.file_encoding = "UTF-8".to_string();
-        meta.file_format = "sav".to_string();
-        meta.number_columns = schema.fields().len();
+        let mut meta = SpssMetadata {
+            file_encoding: "UTF-8".to_string(),
+            file_format: "sav".to_string(),
+            number_columns: schema.fields().len(),
+            ..Default::default()
+        };
 
         for field in schema.fields() {
             let name = field.name().clone();
@@ -269,29 +267,49 @@ impl SpssMetadata {
                 DataType::Int64 | DataType::Int32 | DataType::Int16 | DataType::Int8 => {
                     ("F8.0".to_string(), "f64", Measure::Scale, Alignment::Right)
                 }
-                DataType::Boolean => ("F1.0".to_string(), "f64", Measure::Nominal, Alignment::Right),
-                DataType::Date32 => ("DATE11".to_string(), "Date32", Measure::Scale, Alignment::Right),
-                DataType::Timestamp(TimeUnit::Microsecond, _) => {
-                    ("DATETIME23.2".to_string(), "Timestamp[us]", Measure::Scale, Alignment::Right)
-                }
-                DataType::Duration(TimeUnit::Microsecond) => {
-                    ("TIME11.2".to_string(), "Duration[us]", Measure::Scale, Alignment::Right)
-                }
-                DataType::Utf8 | DataType::Utf8View | DataType::LargeUtf8 => {
-                    ("A255".to_string(), "String", Measure::Nominal, Alignment::Left)
-                }
+                DataType::Boolean => (
+                    "F1.0".to_string(),
+                    "f64",
+                    Measure::Nominal,
+                    Alignment::Right,
+                ),
+                DataType::Date32 => (
+                    "DATE11".to_string(),
+                    "Date32",
+                    Measure::Scale,
+                    Alignment::Right,
+                ),
+                DataType::Timestamp(TimeUnit::Microsecond, _) => (
+                    "DATETIME23.2".to_string(),
+                    "Timestamp[us]",
+                    Measure::Scale,
+                    Alignment::Right,
+                ),
+                DataType::Duration(TimeUnit::Microsecond) => (
+                    "TIME11.2".to_string(),
+                    "Duration[us]",
+                    Measure::Scale,
+                    Alignment::Right,
+                ),
+                DataType::Utf8 | DataType::Utf8View | DataType::LargeUtf8 => (
+                    "A255".to_string(),
+                    "String",
+                    Measure::Nominal,
+                    Alignment::Left,
+                ),
                 _ => ("F8.2".to_string(), "f64", Measure::Scale, Alignment::Right),
             };
 
             // String storage width must match the format width so compute_layout()
             // uses the correct VLS segment count.
-            let sw = if fmt_str.starts_with('A') {
-                fmt_str[1..].parse::<usize>().unwrap_or(255)
+            let sw = if let Some(width_str) = fmt_str.strip_prefix('A') {
+                width_str.parse::<usize>().unwrap_or(255)
             } else {
                 8
             };
             meta.variable_formats.insert(name.clone(), fmt_str);
-            meta.arrow_data_types.insert(name.clone(), rust_type.to_string());
+            meta.arrow_data_types
+                .insert(name.clone(), rust_type.to_string());
             meta.variable_measures.insert(name.clone(), measure);
             meta.variable_alignments.insert(name.clone(), alignment);
             meta.variable_display_widths.insert(name.clone(), 8);
@@ -336,8 +354,7 @@ impl Default for SpssMetadata {
 // ---------------------------------------------------------------------------
 
 const MONTH_ABBR: [&str; 12] = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
 /// Parse SPSS header date ("21 Feb 26") + time ("12:38:47") into "2026-02-21 12:38:47".

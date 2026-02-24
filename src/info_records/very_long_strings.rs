@@ -10,15 +10,15 @@ pub fn parse_very_long_strings(data: &[u8]) -> Vec<(String, usize)> {
     let mut result = Vec::new();
 
     // Split by \0 or \t
-    for entry in text.split(|c| c == '\0' || c == '\t') {
+    for entry in text.split(['\0', '\t']) {
         let entry = entry.trim();
         if entry.is_empty() {
             continue;
         }
-        if let Some((name, width_str)) = entry.split_once('=') {
-            if let Ok(width) = width_str.trim().parse::<usize>() {
-                result.push((name.trim().to_uppercase(), width));
-            }
+        if let Some((name, width_str)) = entry.split_once('=')
+            && let Ok(width) = width_str.trim().parse::<usize>()
+        {
+            result.push((name.trim().to_uppercase(), width));
         }
     }
 

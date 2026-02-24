@@ -42,6 +42,17 @@ pub struct BytecodeDecompressor {
     bias_lut: [[u8; 8]; 256],
 }
 
+/// Saved state of a `BytecodeDecompressor` for rollback on buffer exhaustion.
+///
+/// Used by the streaming zlib scanner: save state before attempting a row,
+/// restore if the buffer runs out mid-row, load more data, then retry.
+pub struct DecompressorCheckpoint {
+    pos: usize,
+    control_bytes: [u8; 8],
+    control_idx: usize,
+    eof: bool,
+}
+
 impl BytecodeDecompressor {
     pub fn new(bias: f64) -> Self {
         let mut bias_lut = [[0u8; 8]; 256];
@@ -56,6 +67,42 @@ impl BytecodeDecompressor {
             eof: false,
             bias_lut,
         }
+    }
+
+    /// Get current position in the input buffer.
+    pub fn pos(&self) -> usize {
+        self.pos
+    }
+
+    /// Reset position for buffer management (e.g., after shifting unconsumed data).
+    pub fn set_pos(&mut self, new_pos: usize) {
+        self.pos = new_pos;
+    }
+
+    /// Whether EOF has been encountered.
+    pub fn is_eof(&self) -> bool {
+        self.eof
+    }
+
+    /// Save a checkpoint of the decompressor state for later rollback.
+    ///
+    /// Used by the streaming zlib scanner to retry a row after loading
+    /// more data when the buffer was exhausted mid-row.
+    pub fn checkpoint(&self) -> DecompressorCheckpoint {
+        DecompressorCheckpoint {
+            pos: self.pos,
+            control_bytes: self.control_bytes,
+            control_idx: self.control_idx,
+            eof: self.eof,
+        }
+    }
+
+    /// Restore a previously saved checkpoint, rolling back state changes.
+    pub fn restore(&mut self, cp: DecompressorCheckpoint) {
+        self.pos = cp.pos;
+        self.control_bytes = cp.control_bytes;
+        self.control_idx = cp.control_idx;
+        self.eof = cp.eof;
     }
 
     /// Decompress one row into SlotValue enum values (used by tests).

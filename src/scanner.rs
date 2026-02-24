@@ -24,6 +24,10 @@ enum ScanState {
     Zlib {
         data: Vec<u8>,
         decompressor: BytecodeDecompressor,
+        /// Trailer for on-demand block decompression.
+        ztrailer: zlib::ZTrailer,
+        /// Index of next block to decompress (blocks before this are already consumed).
+        next_block_idx: usize,
     },
 }
 
@@ -75,10 +79,19 @@ impl<R: Read + Seek> SavScanner<R> {
             Compression::Zlib => {
                 let zheader = zlib::read_zheader(&mut sav_reader)?;
                 let ztrailer = zlib::read_ztrailer(&mut sav_reader, &zheader)?;
-                let bytecode_data = zlib::decompress_zsav_blocks(&mut sav_reader, &ztrailer)?;
+
+                // Stream: decompress only the first block on demand instead of all blocks.
+                let first_block = if !ztrailer.entries.is_empty() {
+                    zlib::decompress_single_block(&mut sav_reader, &ztrailer.entries[0])?
+                } else {
+                    Vec::new()
+                };
+
                 ScanState::Zlib {
-                    data: bytecode_data,
+                    data: first_block,
                     decompressor: BytecodeDecompressor::new(bias),
+                    ztrailer,
+                    next_block_idx: 1,
                 }
             }
         };
@@ -126,9 +139,7 @@ impl<R: Read + Seek> SavScanner<R> {
                 .variables
                 .iter()
                 .position(|v| v.long_name == col)
-                .ok_or_else(|| {
-                    SpssError::InvalidVariable(format!("column not found: {col:?}"))
-                })?;
+                .ok_or_else(|| SpssError::InvalidVariable(format!("column not found: {col:?}")))?;
             indices.push(idx);
         }
         self.projection = Some(indices);
@@ -195,11 +206,7 @@ impl<R: Read + Seek> SavScanner<R> {
                         .iter()
                         .map(|&idx| {
                             let var = &self.dict.variables[idx];
-                            Field::new(
-                                &var.long_name,
-                                arrow_convert::var_to_arrow_type(var),
-                                true,
-                            )
+                            Field::new(&var.long_name, arrow_convert::var_to_arrow_type(var), true)
                         })
                         .collect();
                     Schema::new(fields)
@@ -242,15 +249,15 @@ impl<R: Read + Seek> SavScanner<R> {
         }
 
         let cap = self.capacity_hint(n);
-        let mut builder = ColumnarBatchBuilder::new(
-            &self.dict,
-            self.projection.as_deref(),
-            cap,
-        );
+        let mut builder = ColumnarBatchBuilder::new(&self.dict, self.projection.as_deref(), cap);
+        let slots_per_row = self.dict.header.nominal_case_size as usize;
 
-        match &mut self.state {
+        // Split borrows: state and sav_reader are independent fields of SavScanner.
+        let state = &mut self.state;
+        let sav_reader = &mut self.sav_reader;
+
+        match state {
             ScanState::Uncompressed => {
-                let slots_per_row = self.dict.header.nominal_case_size as usize;
                 let row_bytes = slots_per_row * 8;
                 // Cap chunk size to ~256 MB for better cache behavior on large files.
                 // This avoids multi-GB allocations and keeps the working set manageable
@@ -265,7 +272,7 @@ impl<R: Read + Seek> SavScanner<R> {
                 while rows_remaining > 0 {
                     let to_read = chunk_rows.min(rows_remaining);
                     let read_bytes = to_read * row_bytes;
-                    let actual = read_full(&mut self.sav_reader, &mut chunk_buf[..read_bytes])?;
+                    let actual = read_full(sav_reader, &mut chunk_buf[..read_bytes])?;
                     let actual_rows = actual / row_bytes;
                     if actual_rows == 0 {
                         break;
@@ -280,9 +287,7 @@ impl<R: Read + Seek> SavScanner<R> {
                     }
                 }
             }
-            ScanState::Bytecode { data, decompressor }
-            | ScanState::Zlib { data, decompressor } => {
-                let slots_per_row = self.dict.header.nominal_case_size as usize;
+            ScanState::Bytecode { data, decompressor } => {
                 let row_bytes = slots_per_row * 8;
                 let data_ref = data as &[u8];
 
@@ -305,6 +310,111 @@ impl<R: Read + Seek> SavScanner<R> {
                     if !ok {
                         break;
                     }
+                    rows_in_batch += 1;
+
+                    if rows_in_batch >= chunk_rows {
+                        builder.push_raw_chunk(
+                            &raw_buf[..rows_in_batch * row_bytes],
+                            rows_in_batch,
+                            slots_per_row,
+                        );
+                        rows_in_batch = 0;
+                    }
+                }
+
+                // Flush remaining rows
+                if rows_in_batch > 0 {
+                    builder.push_raw_chunk(
+                        &raw_buf[..rows_in_batch * row_bytes],
+                        rows_in_batch,
+                        slots_per_row,
+                    );
+                }
+            }
+            ScanState::Zlib {
+                data,
+                decompressor,
+                ztrailer,
+                next_block_idx,
+            } => {
+                let row_bytes = slots_per_row * 8;
+
+                // Decompress directly into raw byte buffer (no SlotValue intermediates),
+                // then process column-at-a-time via push_raw_chunk with rayon parallelism.
+                // On-demand: when the bytecode decompressor exhausts the current zlib
+                // block buffer, shift unconsumed bytes, decompress the next block, and
+                // continue. This avoids loading all decompressed blocks into memory.
+                //
+                // The decompressor can exhaust its buffer in two ways:
+                // 1. Ok(false) at control block boundary (clean: not enough for 8-byte block)
+                // 2. Err(TruncatedFile) mid-row (dirty: COMPRESS_RAW_FOLLOWS but < 8 bytes)
+                // Both trigger loading the next block. For case 2, we use checkpoint/restore
+                // to roll back the decompressor state before retrying.
+                let max_chunk_rows = (256 * 1024 * 1024 / row_bytes).max(1024);
+                let chunk_rows = cap.min(max_chunk_rows);
+                let chunk_bytes = chunk_rows * row_bytes;
+                let mut raw_buf = vec![0u8; chunk_bytes];
+
+                let mut rows_in_batch = 0;
+                for _ in 0..n {
+                    let out_offset = rows_in_batch * row_bytes;
+
+                    // Save decompressor state before the row attempt so we can
+                    // roll back if the buffer is exhausted mid-row.
+                    let cp = decompressor.checkpoint();
+
+                    let result = decompressor.decompress_row_raw(
+                        data.as_slice(),
+                        slots_per_row,
+                        &mut raw_buf,
+                        out_offset,
+                    );
+
+                    let needs_more = match &result {
+                        Ok(true) => false,                            // Row completed successfully
+                        Ok(false) if decompressor.is_eof() => break,  // True EOF marker seen
+                        Ok(false) => true, // Buffer exhausted at clean boundary
+                        Err(SpssError::TruncatedFile { .. }) => true, // Buffer exhausted mid-row
+                        Err(_) => return result.map(|_| None), // Propagate real errors
+                    };
+
+                    if needs_more {
+                        // Restore decompressor to pre-row state
+                        decompressor.restore(cp);
+
+                        if *next_block_idx < ztrailer.entries.len() {
+                            // Shift unconsumed bytes to front
+                            let consumed = decompressor.pos();
+                            let remaining = data.len() - consumed;
+                            data.copy_within(consumed.., 0);
+                            data.truncate(remaining);
+
+                            // Decompress next block and append
+                            let next_data = zlib::decompress_single_block(
+                                sav_reader,
+                                &ztrailer.entries[*next_block_idx],
+                            )?;
+                            data.extend_from_slice(&next_data);
+                            *next_block_idx += 1;
+
+                            // Reset decompressor position to start of unconsumed data
+                            decompressor.set_pos(0);
+
+                            // Retry the row with the expanded buffer
+                            let ok = decompressor.decompress_row_raw(
+                                data.as_slice(),
+                                slots_per_row,
+                                &mut raw_buf,
+                                out_offset,
+                            )?;
+                            if !ok {
+                                break; // True EOF after loading more data
+                            }
+                        } else {
+                            break; // No more blocks available
+                        }
+                    }
+
                     rows_in_batch += 1;
 
                     if rows_in_batch >= chunk_rows {
@@ -349,4 +459,105 @@ fn read_full<R: Read + Seek>(reader: &mut SavReader<R>, buf: &mut [u8]) -> Resul
         }
     }
     Ok(pos)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arrow::array::{Float64Builder, StringBuilder};
+    use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
+    use std::io::Cursor;
+    use std::sync::Arc;
+
+    /// Create a simple in-memory SAV file with 3 columns and `n` rows.
+    fn make_sav_bytes(n: usize) -> Vec<u8> {
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("age", DataType::Float64, true),
+            Field::new("score", DataType::Float64, true),
+            Field::new("name", DataType::Utf8, true),
+        ]));
+        let mut age_b = Float64Builder::with_capacity(n);
+        let mut score_b = Float64Builder::with_capacity(n);
+        let mut name_b = StringBuilder::new();
+        for i in 0..n {
+            age_b.append_value(i as f64);
+            score_b.append_value((i as f64) * 1.5);
+            name_b.append_value(format!("person_{i}"));
+        }
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(age_b.finish()),
+                Arc::new(score_b.finish()),
+                Arc::new(name_b.finish()),
+            ],
+        )
+        .unwrap();
+        let meta = SpssMetadata::from_arrow_schema(batch.schema().as_ref());
+        let mut buf = Cursor::new(Vec::new());
+        crate::write_sav_to_writer(&mut buf, &batch, &meta, Compression::None, None).unwrap();
+        buf.into_inner()
+    }
+
+    #[test]
+    fn test_select_valid_columns() {
+        let data = make_sav_bytes(5);
+        let mut scanner = SavScanner::open(Cursor::new(data), 100).unwrap();
+        assert!(scanner.select(&["age", "name"]).is_ok());
+    }
+
+    #[test]
+    fn test_select_invalid_column_errors() {
+        let data = make_sav_bytes(5);
+        let mut scanner = SavScanner::open(Cursor::new(data), 100).unwrap();
+        let result = scanner.select(&["nonexistent"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_limit_caps_rows() {
+        let data = make_sav_bytes(10);
+        let mut scanner = SavScanner::open(Cursor::new(data), 100).unwrap();
+        scanner.limit(3);
+        let batch = scanner.collect_single().unwrap();
+        assert_eq!(batch.num_rows(), 3);
+    }
+
+    #[test]
+    fn test_schema_with_projection() {
+        let data = make_sav_bytes(5);
+        let mut scanner = SavScanner::open(Cursor::new(data), 100).unwrap();
+        scanner.select(&["age", "name"]).unwrap();
+        let schema = scanner.schema();
+        assert_eq!(schema.fields().len(), 2);
+        assert_eq!(schema.field(0).name(), "age");
+        assert_eq!(schema.field(1).name(), "name");
+    }
+
+    #[test]
+    fn test_schema_without_projection() {
+        let data = make_sav_bytes(5);
+        let scanner = SavScanner::open(Cursor::new(data), 100).unwrap();
+        let schema = scanner.schema();
+        assert_eq!(schema.fields().len(), 3);
+    }
+
+    #[test]
+    fn test_collect_all_batches() {
+        let data = make_sav_bytes(10);
+        let mut scanner = SavScanner::open(Cursor::new(data), 3).unwrap();
+        let batches = scanner.collect_all().unwrap();
+        let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+        assert_eq!(total_rows, 10);
+        assert!(batches.len() >= 3); // At least 3 batches for 10 rows with batch_size=3
+    }
+
+    #[test]
+    fn test_rows_read_counter() {
+        let data = make_sav_bytes(7);
+        let mut scanner = SavScanner::open(Cursor::new(data), 100).unwrap();
+        let batch = scanner.collect_single().unwrap();
+        assert_eq!(scanner.rows_read(), batch.num_rows());
+        assert_eq!(scanner.rows_read(), 7);
+    }
 }

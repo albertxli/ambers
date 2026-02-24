@@ -15,10 +15,7 @@ pub fn parse_long_var_names(data: &[u8]) -> Vec<(String, String)> {
             continue;
         }
         if let Some((short, long)) = pair.split_once('=') {
-            result.push((
-                short.trim().to_uppercase(),
-                long.trim().to_string(),
-            ));
+            result.push((short.trim().to_uppercase(), long.trim().to_string()));
         }
     }
 

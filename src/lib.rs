@@ -109,9 +109,6 @@ pub fn scan_sav(path: impl AsRef<Path>) -> Result<SavScanner<BufReader<File>>> {
 }
 
 /// Create a streaming scanner from any Read+Seek source.
-pub fn scan_sav_from_reader<R: Read + Seek>(
-    reader: R,
-    batch_size: usize,
-) -> Result<SavScanner<R>> {
+pub fn scan_sav_from_reader<R: Read + Seek>(reader: R, batch_size: usize) -> Result<SavScanner<R>> {
     SavScanner::open(reader, batch_size)
 }

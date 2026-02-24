@@ -21,8 +21,8 @@ use rayon::prelude::*;
 
 use crate::arrow_convert;
 use crate::constants::{
-    is_sysmis, TemporalKind, VarType, MICROS_PER_SECOND, SECONDS_PER_DAY,
-    SPSS_EPOCH_OFFSET_DAYS, SPSS_EPOCH_OFFSET_SECONDS,
+    MICROS_PER_SECOND, SECONDS_PER_DAY, SPSS_EPOCH_OFFSET_DAYS, SPSS_EPOCH_OFFSET_SECONDS,
+    TemporalKind, VarType, is_sysmis,
 };
 use crate::dictionary::ResolvedDictionary;
 use crate::encoding;
@@ -101,11 +101,7 @@ impl ColumnarBatchBuilder {
     ///
     /// If `projection` is Some, only the specified variable indices are built.
     /// `capacity` is the expected number of rows (for pre-sizing builders).
-    pub fn new(
-        dict: &ResolvedDictionary,
-        projection: Option<&[usize]>,
-        capacity: usize,
-    ) -> Self {
+    pub fn new(dict: &ResolvedDictionary, projection: Option<&[usize]>, capacity: usize) -> Self {
         let vars: Vec<&VariableRecord> = match projection {
             Some(proj) => proj.iter().map(|&i| &dict.variables[i]).collect(),
             None => dict.variables.iter().collect(),
@@ -230,13 +226,27 @@ impl ColumnarBatchBuilder {
                     let mapping = &mappings[i];
                     match (&mapping.var_type, builder) {
                         (VarType::Numeric, ColBuilder::Float64(b)) => {
-                            process_numeric_rows(b, chunk, 0, num_rows, row_bytes, mapping.slot_index);
+                            process_numeric_rows(
+                                b,
+                                chunk,
+                                0,
+                                num_rows,
+                                row_bytes,
+                                mapping.slot_index,
+                            );
                         }
                         (VarType::String(_), ColBuilder::Str(b)) => {
                             let mut local_buf = Vec::with_capacity(256);
                             process_string_rows(
-                                b, &mut local_buf, chunk, 0, num_rows,
-                                row_bytes, slots_per_row, mapping, file_encoding,
+                                b,
+                                &mut local_buf,
+                                chunk,
+                                0,
+                                num_rows,
+                                row_bytes,
+                                slots_per_row,
+                                mapping,
+                                file_encoding,
                             );
                         }
                         _ => unreachable!(),
@@ -251,8 +261,15 @@ impl ColumnarBatchBuilder {
                     }
                     (VarType::String(_), ColBuilder::Str(b)) => {
                         process_string_rows(
-                            b, &mut self.string_buf, chunk, 0, num_rows,
-                            row_bytes, slots_per_row, mapping, self.file_encoding,
+                            b,
+                            &mut self.string_buf,
+                            chunk,
+                            0,
+                            num_rows,
+                            row_bytes,
+                            slots_per_row,
+                            mapping,
+                            self.file_encoding,
                         );
                     }
                     _ => unreachable!(),
@@ -272,12 +289,7 @@ impl ColumnarBatchBuilder {
     /// Without tiling, column-at-a-time on a 256 MB chunk with 14,656-byte
     /// stride causes all 24 threads to thrash L3 cache. With 4 MB tiles,
     /// the entire working set stays cache-hot.
-    fn push_raw_chunk_tiled(
-        &mut self,
-        chunk: &[u8],
-        num_rows: usize,
-        slots_per_row: usize,
-    ) {
+    fn push_raw_chunk_tiled(&mut self, chunk: &[u8], num_rows: usize, slots_per_row: usize) {
         let row_bytes = slots_per_row * 8;
         let tile_rows = (L3_TILE_BYTES / row_bytes).max(64);
 
@@ -297,13 +309,27 @@ impl ColumnarBatchBuilder {
                     let mapping = &mappings[i];
                     match (&mapping.var_type, builder) {
                         (VarType::Numeric, ColBuilder::Float64(b)) => {
-                            process_numeric_rows(b, chunk, tile_start, n, row_bytes, mapping.slot_index);
+                            process_numeric_rows(
+                                b,
+                                chunk,
+                                tile_start,
+                                n,
+                                row_bytes,
+                                mapping.slot_index,
+                            );
                         }
                         (VarType::String(_), ColBuilder::Str(b)) => {
                             let mut local_buf = Vec::with_capacity(256);
                             process_string_rows(
-                                b, &mut local_buf, chunk, tile_start, n,
-                                row_bytes, slots_per_row, mapping, file_encoding,
+                                b,
+                                &mut local_buf,
+                                chunk,
+                                tile_start,
+                                n,
+                                row_bytes,
+                                slots_per_row,
+                                mapping,
+                                file_encoding,
                             );
                         }
                         _ => unreachable!(),
@@ -376,9 +402,7 @@ fn process_numeric_rows(
         // (base_offset + num_rows * row_bytes) <= chunk.len() and
         // slot_offset + 8 <= row_bytes. [u8; 8] has 1-byte alignment,
         // so any byte-aligned pointer from chunk is valid.
-        let val = f64::from_le_bytes(unsafe {
-            *(chunk.as_ptr().add(offset) as *const [u8; 8])
-        });
+        let val = f64::from_le_bytes(unsafe { *(chunk.as_ptr().add(offset) as *const [u8; 8]) });
         if is_sysmis(val) {
             builder.append_null();
         } else {
@@ -392,6 +416,7 @@ fn process_numeric_rows(
 /// Reads `num_rows` string values starting at `base_offset` in the chunk,
 /// assembling bytes from the appropriate slots per the column mapping.
 #[inline(always)]
+#[allow(clippy::too_many_arguments)]
 fn process_string_rows(
     builder: &mut StringViewBuilder,
     string_buf: &mut Vec<u8>,
@@ -412,10 +437,7 @@ fn process_string_rows(
         // SAFETY: row_start + slots_per_row * 8 <= chunk.len() (same caller
         // invariant as process_numeric_rows). [u8; 8] has 1-byte alignment.
         let raw_slots: &[[u8; 8]] = unsafe {
-            std::slice::from_raw_parts(
-                chunk[row_start..].as_ptr() as *const [u8; 8],
-                slots_per_row,
-            )
+            std::slice::from_raw_parts(chunk[row_start..].as_ptr() as *const [u8; 8], slots_per_row)
         };
         push_string_from_raw_slots(
             builder,
@@ -445,18 +467,14 @@ fn convert_float64_to_temporal(arr: &Float64Array, kind: TemporalKind) -> ArrayR
         TemporalKind::Date => {
             let converted: Vec<i32> = values
                 .iter()
-                .map(|&v| {
-                    (v / SECONDS_PER_DAY - SPSS_EPOCH_OFFSET_DAYS as f64) as i32
-                })
+                .map(|&v| (v / SECONDS_PER_DAY - SPSS_EPOCH_OFFSET_DAYS as f64) as i32)
                 .collect();
             Arc::new(Date32Array::new(converted.into(), nulls))
         }
         TemporalKind::Timestamp => {
             let converted: Vec<i64> = values
                 .iter()
-                .map(|&v| {
-                    ((v - SPSS_EPOCH_OFFSET_SECONDS) * MICROS_PER_SECOND) as i64
-                })
+                .map(|&v| ((v - SPSS_EPOCH_OFFSET_SECONDS) * MICROS_PER_SECOND) as i64)
                 .collect();
             Arc::new(TimestampMicrosecondArray::new(converted.into(), nulls))
         }
@@ -476,6 +494,7 @@ fn convert_float64_to_temporal(arr: &Float64Array, kind: TemporalKind) -> ArrayR
 
 /// Assemble a string from raw 8-byte slots and push directly into a StringViewBuilder.
 #[inline]
+#[allow(clippy::too_many_arguments)]
 fn push_string_from_raw_slots(
     builder: &mut StringViewBuilder,
     string_buf: &mut Vec<u8>,
@@ -489,7 +508,7 @@ fn push_string_from_raw_slots(
     string_buf.clear();
 
     if n_segments <= 1 {
-        let n_slots = (width + 7) / 8;
+        let n_slots = width.div_ceil(8);
         for i in 0..n_slots {
             let idx = start_slot + i;
             if idx < raw_slots.len() {
@@ -503,7 +522,7 @@ fn push_string_from_raw_slots(
         let mut cumulative = 0;
         for seg_info in vls_layout {
             cumulative += seg_info.useful_bytes;
-            let slots_to_read = (seg_info.useful_bytes + 7) / 8;
+            let slots_to_read = seg_info.useful_bytes.div_ceil(8);
             for i in 0..slots_to_read {
                 if slot + i < raw_slots.len() {
                     string_buf.extend_from_slice(&raw_slots[slot + i]);

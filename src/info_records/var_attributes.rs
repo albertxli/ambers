@@ -9,7 +9,6 @@
 ///   value      = "'" text "'" "\n"
 ///
 /// Example: `age:$@Role('0'\n)/income:$@Role('1'\n)`
-
 /// A parsed variable attribute set.
 #[derive(Debug, Clone)]
 pub struct VarAttributeSet {
@@ -111,7 +110,9 @@ fn parse_attributes(text: &str) -> Vec<(String, Vec<String>)> {
         let mut values = Vec::new();
         while pos < bytes.len() && bytes[pos] != b')' {
             // Skip whitespace/newlines between values
-            while pos < bytes.len() && (bytes[pos] == b'\n' || bytes[pos] == b'\r' || bytes[pos] == b' ') {
+            while pos < bytes.len()
+                && (bytes[pos] == b'\n' || bytes[pos] == b'\r' || bytes[pos] == b' ')
+            {
                 pos += 1;
             }
             if pos >= bytes.len() || bytes[pos] == b')' {

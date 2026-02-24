@@ -1,13 +1,13 @@
-pub mod integer_info;
-pub mod float_info;
-pub mod mr_sets;
-pub mod var_display;
-pub mod long_var_names;
-pub mod very_long_strings;
 pub mod encoding_record;
+pub mod float_info;
+pub mod integer_info;
 pub mod long_string_labels;
 pub mod long_string_missing;
+pub mod long_var_names;
+pub mod mr_sets;
 pub mod var_attributes;
+pub mod var_display;
+pub mod very_long_strings;
 
 use std::io::Read;
 

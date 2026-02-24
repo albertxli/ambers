@@ -151,9 +151,7 @@ fn parse_one_mr_set(text: &str, uses_long_names: bool) -> Option<RawMrSet> {
 /// Parse an ASCII integer from the start of a string.
 /// Returns (value, remaining_str).
 fn parse_number(s: &str) -> Option<(usize, &str)> {
-    let end = s
-        .find(|c: char| !c.is_ascii_digit())
-        .unwrap_or(s.len());
+    let end = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
     if end == 0 {
         return None;
     }
@@ -278,7 +276,8 @@ mod tests {
 
     #[test]
     fn test_parse_v2_mixed() {
-        let data = b"$set1=D1 1 5 Label q7_1 q7_2\n$set2=E 1 2 ab 4 Test x y\n$set3=C 4 Cats a b c\n";
+        let data =
+            b"$set1=D1 1 5 Label q7_1 q7_2\n$set2=E 1 2 ab 4 Test x y\n$set3=C 4 Cats a b c\n";
         let sets = parse_mr_sets_v2(data);
         assert_eq!(sets.len(), 3);
         assert_eq!(sets[0].name, "set1");

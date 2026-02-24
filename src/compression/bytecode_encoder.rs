@@ -252,12 +252,12 @@ mod tests {
         // Encode some data, then decompress and verify we get the same slots back
         let bias = 100.0;
         let slots: Vec<[u8; 8]> = vec![
-            1.0_f64.to_le_bytes(),           // small int → opcode
-            0.0_f64.to_le_bytes(),           // zero → opcode 100
-            3.14_f64.to_le_bytes(),          // float → raw
-            SYSMIS_BITS.to_le_bytes(),       // sysmis → 255
-            [0x20; 8],                       // spaces → 254
-            (-50.0_f64).to_le_bytes(),       // negative int → opcode 50
+            1.0_f64.to_le_bytes(),     // small int → opcode
+            0.0_f64.to_le_bytes(),     // zero → opcode 100
+            3.14_f64.to_le_bytes(),    // float → raw
+            SYSMIS_BITS.to_le_bytes(), // sysmis → 255
+            [0x20; 8],                 // spaces → 254
+            (-50.0_f64).to_le_bytes(), // negative int → opcode 50
         ];
 
         let mut enc = BytecodeEncoder::new(bias);
@@ -284,10 +284,7 @@ mod tests {
                     );
                 }
                 crate::compression::bytecode::SlotValue::Raw(bytes) => {
-                    assert_eq!(
-                        bytes, original,
-                        "slot {i}: raw bytes mismatch"
-                    );
+                    assert_eq!(bytes, original, "slot {i}: raw bytes mismatch");
                 }
                 crate::compression::bytecode::SlotValue::Spaces => {
                     assert_eq!(original, &[0x20; 8], "slot {i}: expected spaces");
@@ -355,11 +352,7 @@ mod tests {
                 2.0_f64.to_le_bytes(),
                 3.0_f64.to_le_bytes(),
             ],
-            vec![
-                10.0_f64.to_le_bytes(),
-                SYSMIS_BITS.to_le_bytes(),
-                [0x20; 8],
-            ],
+            vec![10.0_f64.to_le_bytes(), SYSMIS_BITS.to_le_bytes(), [0x20; 8]],
             vec![
                 (-50.0_f64).to_le_bytes(),
                 99.99_f64.to_le_bytes(),
@@ -390,10 +383,7 @@ mod tests {
 
             for (slot_idx, original) in original_row.iter().enumerate() {
                 let decoded = &output[slot_idx * 8..(slot_idx + 1) * 8];
-                assert_eq!(
-                    decoded, original,
-                    "row {row_idx} slot {slot_idx}: mismatch"
-                );
+                assert_eq!(decoded, original, "row {row_idx} slot {slot_idx}: mismatch");
             }
         }
     }

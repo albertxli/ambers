@@ -80,6 +80,33 @@ pub fn read_ztrailer<R: Read + Seek>(
     })
 }
 
+/// Decompress a single ZSAV block from disk on demand.
+///
+/// Seeks to the block's absolute file offset, reads compressed data,
+/// and decompresses it. Used by the streaming scanner to avoid loading
+/// all blocks into memory at once.
+pub fn decompress_single_block<R: Read + Seek>(
+    reader: &mut SavReader<R>,
+    entry: &ZTrailerEntry,
+) -> Result<Vec<u8>> {
+    reader
+        .inner_mut()
+        .seek(SeekFrom::Start(entry.compressed_offset as u64))?;
+    let compressed = reader.read_bytes(entry.compressed_size as usize)?;
+    let mut output = vec![0u8; entry.uncompressed_size as usize];
+
+    let mut decompressor = Decompress::new(true);
+    match decompressor.decompress(&compressed, &mut output, flate2::FlushDecompress::Finish) {
+        Ok(flate2::Status::Ok | flate2::Status::StreamEnd) => Ok(output),
+        Ok(flate2::Status::BufError) => Err(SpssError::Zlib(
+            "single block decompression buffer too small".to_string(),
+        )),
+        Err(e) => Err(SpssError::Zlib(format!(
+            "single block decompression failed: {e}"
+        ))),
+    }
+}
+
 /// Decompress all ZSAV blocks into a single pre-allocated byte buffer.
 ///
 /// Each block is zlib-compressed. The decompressed blocks contain
@@ -89,12 +116,18 @@ pub fn read_ztrailer<R: Read + Seek>(
 /// Phase 1: Read all compressed blocks sequentially (I/O-bound).
 /// Phase 2: Decompress all blocks in parallel directly into the output buffer,
 ///          avoiding per-block Vec allocations and the final concat copy.
+///
+/// Note: The streaming scanner now uses `decompress_single_block` for on-demand
+/// decompression. This function is retained as public API for callers that
+/// prefer parallel bulk decompression.
+#[allow(dead_code)]
 pub fn decompress_zsav_blocks<R: Read + Seek>(
     reader: &mut SavReader<R>,
     trailer: &ZTrailer,
 ) -> Result<Vec<u8>> {
     // Phase 1: Sequential I/O — read all compressed blocks + compute output offsets
-    let mut compressed_blocks: Vec<(Vec<u8>, usize, usize)> = Vec::with_capacity(trailer.entries.len());
+    let mut compressed_blocks: Vec<(Vec<u8>, usize, usize)> =
+        Vec::with_capacity(trailer.entries.len());
     let mut total_uncompressed: usize = 0;
 
     for entry in &trailer.entries {
@@ -120,25 +153,16 @@ pub fn decompress_zsav_blocks<R: Read + Seek>(
             // and these ranges are non-overlapping (offsets are cumulative sums).
             // The output Vec lives longer than this par_iter scope.
             let dest = unsafe {
-                std::slice::from_raw_parts_mut(
-                    (base_addr + *offset) as *mut u8,
-                    *uncompressed_size,
-                )
+                std::slice::from_raw_parts_mut((base_addr + *offset) as *mut u8, *uncompressed_size)
             };
 
             let mut decompressor = Decompress::new(true);
-            match decompressor.decompress(
-                compressed,
-                dest,
-                flate2::FlushDecompress::Finish,
-            ) {
+            match decompressor.decompress(compressed, dest, flate2::FlushDecompress::Finish) {
                 Ok(flate2::Status::Ok | flate2::Status::StreamEnd) => Ok(()),
-                Ok(flate2::Status::BufError) => {
-                    Err(SpssError::Zlib("decompression buffer too small".to_string()))
-                }
-                Err(e) => {
-                    Err(SpssError::Zlib(format!("zlib decompression error: {e}")))
-                }
+                Ok(flate2::Status::BufError) => Err(SpssError::Zlib(
+                    "decompression buffer too small".to_string(),
+                )),
+                Err(e) => Err(SpssError::Zlib(format!("zlib decompression error: {e}"))),
             }
         })?;
 

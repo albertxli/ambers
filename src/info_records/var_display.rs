@@ -22,7 +22,7 @@ pub fn parse_var_display<R: Read>(
     count: i32,
 ) -> Result<Vec<VarDisplayEntry>> {
     let count = count as usize;
-    let has_width = count % 3 == 0;
+    let has_width = count.is_multiple_of(3);
 
     let n_vars = if has_width { count / 3 } else { count / 2 };
     let mut entries = Vec::with_capacity(n_vars);

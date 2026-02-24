@@ -10,7 +10,6 @@ pub const LOWEST_BITS: u64 = 0xFFEF_FFFF_FFFF_FFFE;
 /// Default compression bias (added to bytecodes 1..=251).
 pub const DEFAULT_BIAS: f64 = 100.0;
 
-
 // -- Bytecode compression control codes --
 
 /// Padding / skip.
@@ -656,8 +655,7 @@ mod tests {
         assert_eq!(days, 0);
 
         // Timestamp: microseconds since unix epoch → should be 0
-        let micros =
-            ((spss_unix_epoch - SPSS_EPOCH_OFFSET_SECONDS) * MICROS_PER_SECOND) as i64;
+        let micros = ((spss_unix_epoch - SPSS_EPOCH_OFFSET_SECONDS) * MICROS_PER_SECOND) as i64;
         assert_eq!(micros, 0);
 
         // Duration: 3600 SPSS seconds = 1 hour = 3,600,000,000 microseconds

@@ -179,7 +179,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
         let lookup_name = variables[i].short_name.clone();
         if let Some(&true_width) = vls_map.get(&lookup_name) {
             variables[i].var_type = VarType::String(true_width);
-            let n_segments = (true_width + 251) / 252;
+            let n_segments = true_width.div_ceil(252);
             variables[i].n_segments = n_segments;
 
             // Mark subsequent named segment variables as ghosts
@@ -227,31 +227,31 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
     }
 
     // 5. Build metadata
-    let mut meta = SpssMetadata::default();
-    meta.file_label = raw.header.file_label.clone();
-    meta.file_encoding = file_encoding.name().to_string();
-    meta.compression = raw.header.compression;
-    meta.creation_time = crate::metadata::format_spss_datetime(
-        &raw.header.creation_date,
-        &raw.header.creation_time,
-    );
-    meta.number_rows = if raw.header.ncases >= 0 {
-        Some(raw.header.ncases as i64)
-    } else {
-        None
+    let mut meta = SpssMetadata {
+        file_label: raw.header.file_label.clone(),
+        file_encoding: file_encoding.name().to_string(),
+        compression: raw.header.compression,
+        creation_time: crate::metadata::format_spss_datetime(
+            &raw.header.creation_date,
+            &raw.header.creation_time,
+        ),
+        number_rows: if raw.header.ncases >= 0 {
+            Some(raw.header.ncases as i64)
+        } else {
+            None
+        },
+        file_format: if raw.header.compression == Compression::Zlib {
+            "zsav".to_string()
+        } else {
+            "sav".to_string()
+        },
+        notes: raw
+            .document_lines
+            .iter()
+            .map(|line| encoding::decode_str_lossy(line, file_encoding).into_owned())
+            .collect(),
+        ..Default::default()
     };
-    meta.file_format = if raw.header.compression == Compression::Zlib {
-        "zsav".to_string()
-    } else {
-        "sav".to_string()
-    };
-
-    // Document lines -> notes
-    meta.notes = raw
-        .document_lines
-        .iter()
-        .map(|line| encoding::decode_str_lossy(line, file_encoding).into_owned())
-        .collect();
 
     // Build per-variable metadata
     let visible_vars: Vec<&VariableRecord> = variables.iter().filter(|v| !v.is_ghost).collect();
@@ -264,7 +264,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
         // Variable label
         if let Some(ref label_bytes) = var.label {
             let label = encoding::decode_str_lossy(label_bytes, file_encoding)
-                .trim_end_matches(|c: char| c == ' ' || c == '\u{FFFD}')
+                .trim_end_matches([' ', '\u{FFFD}'])
                 .to_string();
             if !label.is_empty() {
                 meta.variable_labels.insert(name.clone(), label);
@@ -280,8 +280,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
                 }
                 _ => fmt.to_spss_string(),
             };
-            meta.variable_formats
-                .insert(name.clone(), format_str);
+            meta.variable_formats.insert(name.clone(), format_str);
         }
 
         // Rust type
@@ -373,12 +372,13 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
                             );
                             Value::String(s.into_owned())
                         }
-                        RawValue::String(bytes) => {
-                            Value::String(encoding::decode_str_lossy(
+                        RawValue::String(bytes) => Value::String(
+                            encoding::decode_str_lossy(
                                 crate::io_utils::trim_trailing_padding(bytes),
                                 file_encoding,
-                            ).into_owned())
-                        }
+                            )
+                            .into_owned(),
+                        ),
                     }
                 } else {
                     match raw_val {
@@ -387,7 +387,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
                     }
                 };
                 let label = encoding::decode_str_lossy(label_bytes, file_encoding)
-                    .trim_end_matches(|c: char| c == ' ' || c == '\u{FFFD}')
+                    .trim_end_matches([' ', '\u{FFFD}'])
                     .to_string();
                 (value, label)
             })
@@ -408,20 +408,22 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
             .labels
             .iter()
             .map(|(value_bytes, label_bytes)| {
-                let value = Value::String(encoding::decode_str_lossy(
-                    crate::io_utils::trim_trailing_padding(value_bytes),
-                    file_encoding,
-                ).into_owned());
+                let value = Value::String(
+                    encoding::decode_str_lossy(
+                        crate::io_utils::trim_trailing_padding(value_bytes),
+                        file_encoding,
+                    )
+                    .into_owned(),
+                );
                 let label = encoding::decode_str_lossy(label_bytes, file_encoding)
-                    .trim_end_matches(|c: char| c == ' ' || c == '\u{FFFD}')
+                    .trim_end_matches([' ', '\u{FFFD}'])
                     .to_string();
                 (value, label)
             })
             .collect();
 
         if !labels.is_empty() {
-            meta.variable_value_labels
-                .insert(var_name.clone(), labels);
+            meta.variable_value_labels.insert(var_name.clone(), labels);
         }
     }
 
@@ -441,7 +443,8 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
                     encoding::decode_str_lossy(
                         crate::io_utils::trim_trailing_padding(v),
                         file_encoding,
-                    ).into_owned(),
+                    )
+                    .into_owned(),
                 )
             })
             .collect();
@@ -451,8 +454,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
                 .get(&ls_missing.var_name)
                 .cloned()
                 .unwrap_or_else(|| ls_missing.var_name.clone());
-            meta.variable_missing_values
-                .insert(long_name, specs);
+            meta.variable_missing_values.insert(long_name, specs);
         }
     }
 

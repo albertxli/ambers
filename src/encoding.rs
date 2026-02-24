@@ -41,10 +41,10 @@ pub fn encoding_from_code_page(code_page: i32) -> &'static Encoding {
         50220 => encoding_rs::ISO_2022_JP,
         51932 => encoding_rs::EUC_JP,
         51949 => encoding_rs::EUC_KR,
-        52936 => encoding_rs::GBK,          // HZ-GB-2312
+        52936 => encoding_rs::GBK, // HZ-GB-2312
         54936 => encoding_rs::GB18030,
         65001 => encoding_rs::UTF_8,
-        _ => encoding_rs::WINDOWS_1252,     // safe default
+        _ => encoding_rs::WINDOWS_1252, // safe default
     }
 }
 
@@ -90,9 +90,8 @@ pub fn decode_str(bytes: &[u8], encoding: &'static Encoding) -> Result<String> {
 pub fn decode_str_lossy<'a>(bytes: &'a [u8], encoding: &'static Encoding) -> Cow<'a, str> {
     if encoding == encoding_rs::UTF_8 {
         // Fast path: just validate UTF-8, zero-copy borrow
-        match std::str::from_utf8(bytes) {
-            Ok(s) => return Cow::Borrowed(s),
-            Err(_) => {} // fall through to encoding_rs for lossy decode
+        if let Ok(s) = std::str::from_utf8(bytes) {
+            return Cow::Borrowed(s);
         }
     }
     let (decoded, _, _) = encoding.decode(bytes);
@@ -131,7 +130,10 @@ mod tests {
     fn test_encoding_from_name() {
         assert_eq!(encoding_from_name("UTF-8"), encoding_rs::UTF_8);
         assert_eq!(encoding_from_name("utf-8"), encoding_rs::UTF_8);
-        assert_eq!(encoding_from_name("windows-1252"), encoding_rs::WINDOWS_1252);
+        assert_eq!(
+            encoding_from_name("windows-1252"),
+            encoding_rs::WINDOWS_1252
+        );
         assert_eq!(encoding_from_name("ISO-8859-1"), encoding_rs::WINDOWS_1252); // encoding_rs maps this
     }
 }

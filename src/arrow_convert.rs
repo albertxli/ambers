@@ -14,9 +14,7 @@ pub fn var_to_arrow_type(var: &VariableRecord) -> DataType {
                 .and_then(|f| f.format_type.temporal_kind())
             {
                 Some(TemporalKind::Date) => DataType::Date32,
-                Some(TemporalKind::Timestamp) => {
-                    DataType::Timestamp(TimeUnit::Microsecond, None)
-                }
+                Some(TemporalKind::Timestamp) => DataType::Timestamp(TimeUnit::Microsecond, None),
                 Some(TemporalKind::Duration) => DataType::Duration(TimeUnit::Microsecond),
                 None => DataType::Float64,
             }

@@ -15,7 +15,11 @@ fn test_temporal_types_real_file() {
         }
     };
 
-    println!("Rows: {}, Columns: {}", batch.num_rows(), batch.num_columns());
+    println!(
+        "Rows: {}, Columns: {}",
+        batch.num_rows(),
+        batch.num_columns()
+    );
 
     // Collect all temporal columns from the schema
     let schema = batch.schema();
@@ -40,8 +44,16 @@ fn test_temporal_types_real_file() {
     println!("Float64 columns: {}", float_cols);
     println!("String columns:  {}", string_cols);
     println!("Date32 columns:  {} {:?}", date_cols.len(), date_cols);
-    println!("Timestamp columns: {} {:?}", timestamp_cols.len(), timestamp_cols);
-    println!("Duration columns:  {} {:?}", duration_cols.len(), duration_cols);
+    println!(
+        "Timestamp columns: {} {:?}",
+        timestamp_cols.len(),
+        timestamp_cols
+    );
+    println!(
+        "Duration columns:  {} {:?}",
+        duration_cols.len(),
+        duration_cols
+    );
 
     // Check that at least some temporal columns were detected
     let total_temporal = date_cols.len() + timestamp_cols.len() + duration_cols.len();
@@ -49,7 +61,11 @@ fn test_temporal_types_real_file() {
 
     // Print arrow_data_types for temporal columns
     println!("\n=== Metadata arrow_data_types for temporal cols ===");
-    for name in date_cols.iter().chain(timestamp_cols.iter()).chain(duration_cols.iter()) {
+    for name in date_cols
+        .iter()
+        .chain(timestamp_cols.iter())
+        .chain(duration_cols.iter())
+    {
         if let Some(rust_type) = meta.arrow_data_types.get(name.as_str()) {
             println!("  {} -> rust_type={}", name, rust_type);
         }
@@ -62,7 +78,10 @@ fn test_temporal_types_real_file() {
     println!("\n=== Sample values ===");
     for name in date_cols.iter().take(3) {
         let col = batch.column_by_name(name).unwrap();
-        let arr = col.as_any().downcast_ref::<arrow::array::Date32Array>().unwrap();
+        let arr = col
+            .as_any()
+            .downcast_ref::<arrow::array::Date32Array>()
+            .unwrap();
         let vals: Vec<String> = (0..5.min(arr.len()))
             .map(|i| {
                 if arr.is_null(i) {
@@ -79,7 +98,10 @@ fn test_temporal_types_real_file() {
 
     for name in timestamp_cols.iter().take(3) {
         let col = batch.column_by_name(name).unwrap();
-        let arr = col.as_any().downcast_ref::<arrow::array::TimestampMicrosecondArray>().unwrap();
+        let arr = col
+            .as_any()
+            .downcast_ref::<arrow::array::TimestampMicrosecondArray>()
+            .unwrap();
         let vals: Vec<String> = (0..5.min(arr.len()))
             .map(|i| {
                 if arr.is_null(i) {
@@ -95,7 +117,10 @@ fn test_temporal_types_real_file() {
 
     for name in duration_cols.iter().take(3) {
         let col = batch.column_by_name(name).unwrap();
-        let arr = col.as_any().downcast_ref::<arrow::array::DurationMicrosecondArray>().unwrap();
+        let arr = col
+            .as_any()
+            .downcast_ref::<arrow::array::DurationMicrosecondArray>()
+            .unwrap();
         let vals: Vec<String> = (0..5.min(arr.len()))
             .map(|i| {
                 if arr.is_null(i) {
@@ -112,7 +137,10 @@ fn test_temporal_types_real_file() {
     // Verify no nulls where there shouldn't be (first non-null date value should be reasonable)
     for name in &date_cols {
         let col = batch.column_by_name(name).unwrap();
-        let arr = col.as_any().downcast_ref::<arrow::array::Date32Array>().unwrap();
+        let arr = col
+            .as_any()
+            .downcast_ref::<arrow::array::Date32Array>()
+            .unwrap();
         for i in 0..arr.len() {
             if !arr.is_null(i) {
                 let days = arr.value(i);
@@ -132,7 +160,10 @@ fn test_temporal_types_real_file() {
 
     for name in &timestamp_cols {
         let col = batch.column_by_name(name).unwrap();
-        let arr = col.as_any().downcast_ref::<arrow::array::TimestampMicrosecondArray>().unwrap();
+        let arr = col
+            .as_any()
+            .downcast_ref::<arrow::array::TimestampMicrosecondArray>()
+            .unwrap();
         for i in 0..arr.len() {
             if !arr.is_null(i) {
                 let us = arr.value(i);
@@ -150,5 +181,8 @@ fn test_temporal_types_real_file() {
         }
     }
 
-    assert!(total_temporal > 0, "Expected at least one temporal column in the test file");
+    assert!(
+        total_temporal > 0,
+        "Expected at least one temporal column in the test file"
+    );
 }

@@ -50,7 +50,8 @@ impl FileHeader {
 
         // Product name: 60 bytes
         let product_bytes = reader.read_bytes(60)?;
-        let product = io_utils::bytes_to_string_lossy(io_utils::trim_trailing_padding(&product_bytes));
+        let product =
+            io_utils::bytes_to_string_lossy(io_utils::trim_trailing_padding(&product_bytes));
 
         // Layout code: 4 bytes (used to detect endianness)
         let layout_bytes = reader.read_bytes(4)?;
@@ -67,9 +68,8 @@ impl FileHeader {
         // Now read the rest with correct endianness
         let nominal_case_size = reader.read_i32()?;
         let compression_code = reader.read_i32()?;
-        let compression = Compression::from_i32(compression_code).ok_or(
-            SpssError::UnsupportedCompression(compression_code),
-        )?;
+        let compression = Compression::from_i32(compression_code)
+            .ok_or(SpssError::UnsupportedCompression(compression_code))?;
         let weight_index = reader.read_i32()?;
         let ncases = reader.read_i32()?;
         let bias = reader.read_f64()?;

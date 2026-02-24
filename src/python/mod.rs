@@ -182,7 +182,9 @@ fn py_to_missing_specs(dict: &Bound<'_, PyDict>) -> PyResult<Vec<MissingSpec>> {
             }
             // Check for mixed numeric + string types
             let has_numeric = specs.iter().any(|s| matches!(s, MissingSpec::Value(_)));
-            let has_string = specs.iter().any(|s| matches!(s, MissingSpec::StringValue(_)));
+            let has_string = specs
+                .iter()
+                .any(|s| matches!(s, MissingSpec::StringValue(_)));
             if has_numeric && has_string {
                 return Err(PyValueError::new_err(
                     "missing values cannot mix numeric and string types",
@@ -207,15 +209,11 @@ fn py_to_missing_specs(dict: &Bound<'_, PyDict>) -> PyResult<Vec<MissingSpec>> {
         "range" => {
             let lo = dict
                 .get_item("low")?
-                .ok_or_else(|| {
-                    PyValueError::new_err("range missing values requires 'low' key")
-                })?
+                .ok_or_else(|| PyValueError::new_err("range missing values requires 'low' key"))?
                 .extract::<f64>()?;
             let hi = dict
                 .get_item("high")?
-                .ok_or_else(|| {
-                    PyValueError::new_err("range missing values requires 'high' key")
-                })?
+                .ok_or_else(|| PyValueError::new_err("range missing values requires 'high' key"))?
                 .extract::<f64>()?;
             if lo >= hi {
                 return Err(PyValueError::new_err(format!(
@@ -255,7 +253,7 @@ fn py_to_mr_set(name: &str, dict: &Bound<'_, PyDict>) -> PyResult<MrSet> {
         _ => {
             return Err(PyValueError::new_err(format!(
                 "invalid MR set type '{type_str}', expected: 'dichotomy' or 'category'"
-            )))
+            )));
         }
     };
 
@@ -414,8 +412,7 @@ fn apply_kwargs(meta: &mut SpssMetadata, kwargs: &Bound<'_, PyDict>) -> PyResult
                     meta.variable_alignments.swap_remove(&key);
                 } else {
                     let s: String = v.extract()?;
-                    meta.variable_alignments
-                        .insert(key, py_to_alignment(&s)?);
+                    meta.variable_alignments.insert(key, py_to_alignment(&s)?);
                 }
             }
         }
@@ -885,7 +882,9 @@ impl PySpssMetadata {
             .map(|n| format_count(n as usize))
             .unwrap_or_else(|| "unknown".into());
         println!("SPSS Metadata Summary");
-        println!("\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}");
+        println!(
+            "\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}"
+        );
 
         // File section
         println!();
@@ -994,12 +993,24 @@ impl PySpssMetadata {
             }
             println!();
             println!("Roles ({} variables)", m.variable_roles.len());
-            if n_input > 0 { println!("  Input         {:>5}", format_count(n_input)); }
-            if n_target > 0 { println!("  Target        {:>5}", format_count(n_target)); }
-            if n_both > 0 { println!("  Both          {:>5}", format_count(n_both)); }
-            if n_none > 0 { println!("  None          {:>5}", format_count(n_none)); }
-            if n_partition > 0 { println!("  Partition     {:>5}", format_count(n_partition)); }
-            if n_split > 0 { println!("  Split         {:>5}", format_count(n_split)); }
+            if n_input > 0 {
+                println!("  Input         {:>5}", format_count(n_input));
+            }
+            if n_target > 0 {
+                println!("  Target        {:>5}", format_count(n_target));
+            }
+            if n_both > 0 {
+                println!("  Both          {:>5}", format_count(n_both));
+            }
+            if n_none > 0 {
+                println!("  None          {:>5}", format_count(n_none));
+            }
+            if n_partition > 0 {
+                println!("  Partition     {:>5}", format_count(n_partition));
+            }
+            if n_split > 0 {
+                println!("  Split         {:>5}", format_count(n_split));
+            }
         }
 
         // Annotations section
@@ -1061,8 +1072,16 @@ impl PySpssMetadata {
                 println!();
             }
 
-            let label = m.variable_labels.get(name).map(|s| s.as_str()).unwrap_or("(none)");
-            let fmt = m.variable_formats.get(name).map(|s| s.as_str()).unwrap_or("?");
+            let label = m
+                .variable_labels
+                .get(name)
+                .map(|s| s.as_str())
+                .unwrap_or("(none)");
+            let fmt = m
+                .variable_formats
+                .get(name)
+                .map(|s| s.as_str())
+                .unwrap_or("?");
             let measure_str = m
                 .variable_measures
                 .get(name)
@@ -1084,7 +1103,11 @@ impl PySpssMetadata {
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| "?".into());
 
-            let type_str = if fmt.starts_with('A') { "String" } else { "Numeric" };
+            let type_str = if fmt.starts_with('A') {
+                "String"
+            } else {
+                "Numeric"
+            };
 
             let role_str = m
                 .variable_roles
@@ -1187,22 +1210,18 @@ impl PySpssMetadata {
         let a_vars: HashSet<&str> = a.variable_names.iter().map(|s| s.as_str()).collect();
         let b_vars: HashSet<&str> = b.variable_names.iter().map(|s| s.as_str()).collect();
         let shared: HashSet<&str> = a_vars.intersection(&b_vars).copied().collect();
-        let mut only_self: Vec<String> = a_vars
-            .difference(&b_vars)
-            .map(|s| s.to_string())
-            .collect();
-        let mut only_other: Vec<String> = b_vars
-            .difference(&a_vars)
-            .map(|s| s.to_string())
-            .collect();
+        let mut only_self: Vec<String> =
+            a_vars.difference(&b_vars).map(|s| s.to_string()).collect();
+        let mut only_other: Vec<String> =
+            b_vars.difference(&a_vars).map(|s| s.to_string()).collect();
         only_self.sort();
         only_other.sort();
 
         // Per-field diffs on shared variables
         let label_diffs = diff_string_maps(py, &a.variable_labels, &b.variable_labels, &shared)?;
-        let type_diffs =
-            diff_string_maps(py, &a.variable_formats, &b.variable_formats, &shared)?;
-        let measure_diffs = diff_measure_maps(py, &a.variable_measures, &b.variable_measures, &shared)?;
+        let type_diffs = diff_string_maps(py, &a.variable_formats, &b.variable_formats, &shared)?;
+        let measure_diffs =
+            diff_measure_maps(py, &a.variable_measures, &b.variable_measures, &shared)?;
         let display_diffs = diff_u32_maps(
             py,
             &a.variable_display_widths,
@@ -1229,7 +1248,8 @@ impl PySpssMetadata {
         )?;
         let mr_diffs = diff_key_sets(py, &a.mr_sets, &b.mr_sets)?;
         let role_diffs = diff_role_maps(py, &a.variable_roles, &b.variable_roles, &shared)?;
-        let attr_diffs = diff_attr_maps(py, &a.variable_attributes, &b.variable_attributes, &shared)?;
+        let attr_diffs =
+            diff_attr_maps(py, &a.variable_attributes, &b.variable_attributes, &shared)?;
 
         let is_match = file_level.is_empty()
             && only_self.is_empty()
@@ -1331,10 +1351,7 @@ impl PySpssMetadata {
     }
 
     /// Return a new SpssMetadata with variable value labels merged.
-    fn with_variable_value_labels(
-        &self,
-        labels: &Bound<'_, PyDict>,
-    ) -> PyResult<PySpssMetadata> {
+    fn with_variable_value_labels(&self, labels: &Bound<'_, PyDict>) -> PyResult<PySpssMetadata> {
         let mut meta = self.inner.clone();
         for (k, v) in labels.iter() {
             let var_name: String = k.extract()?;
@@ -1390,10 +1407,7 @@ impl PySpssMetadata {
     }
 
     /// Return a new SpssMetadata with variable display widths merged.
-    fn with_variable_display_widths(
-        &self,
-        widths: &Bound<'_, PyDict>,
-    ) -> PyResult<PySpssMetadata> {
+    fn with_variable_display_widths(&self, widths: &Bound<'_, PyDict>) -> PyResult<PySpssMetadata> {
         let mut meta = self.inner.clone();
         for (k, v) in widths.iter() {
             let key: String = k.extract()?;
@@ -1408,10 +1422,7 @@ impl PySpssMetadata {
     }
 
     /// Return a new SpssMetadata with variable alignments merged.
-    fn with_variable_alignments(
-        &self,
-        alignments: &Bound<'_, PyDict>,
-    ) -> PyResult<PySpssMetadata> {
+    fn with_variable_alignments(&self, alignments: &Bound<'_, PyDict>) -> PyResult<PySpssMetadata> {
         let mut meta = self.inner.clone();
         for (k, v) in alignments.iter() {
             let key: String = k.extract()?;
@@ -1419,8 +1430,7 @@ impl PySpssMetadata {
                 meta.variable_alignments.swap_remove(&key);
             } else {
                 let s: String = v.extract()?;
-                meta.variable_alignments
-                    .insert(key, py_to_alignment(&s)?);
+                meta.variable_alignments.insert(key, py_to_alignment(&s)?);
             }
         }
         Ok(PySpssMetadata { inner: meta })
@@ -1461,10 +1471,7 @@ impl PySpssMetadata {
     }
 
     /// Return a new SpssMetadata with variable attributes merged.
-    fn with_variable_attributes(
-        &self,
-        attributes: &Bound<'_, PyDict>,
-    ) -> PyResult<PySpssMetadata> {
+    fn with_variable_attributes(&self, attributes: &Bound<'_, PyDict>) -> PyResult<PySpssMetadata> {
         let mut meta = self.inner.clone();
         for (k, v) in attributes.iter() {
             let var_name: String = k.extract()?;
@@ -1614,7 +1621,13 @@ impl PyMetaDiff {
 
     fn __getitem__(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
         match key {
-            "is_match" => Ok(self.is_match.into_pyobject(py).unwrap().to_owned().into_any().unbind()),
+            "is_match" => Ok(self
+                .is_match
+                .into_pyobject(py)
+                .unwrap()
+                .to_owned()
+                .into_any()
+                .unbind()),
             "file_level" => Ok(self.file_level.clone_ref(py)),
             "variables_only_in_self" => Ok(self
                 .variables_only_in_self
@@ -1673,14 +1686,42 @@ impl PyMetaDiff {
             println!("  All variables shared");
         } else {
             if n_self > 0 {
-                let preview: Vec<&str> = self.variables_only_in_self.iter().take(5).map(|s| s.as_str()).collect();
-                let suffix = if n_self > 5 { format!(", ... +{}", n_self - 5) } else { String::new() };
-                println!("  Only in self:   {:>5}   [{}{}]", n_self, preview.join(", "), suffix);
+                let preview: Vec<&str> = self
+                    .variables_only_in_self
+                    .iter()
+                    .take(5)
+                    .map(|s| s.as_str())
+                    .collect();
+                let suffix = if n_self > 5 {
+                    format!(", ... +{}", n_self - 5)
+                } else {
+                    String::new()
+                };
+                println!(
+                    "  Only in self:   {:>5}   [{}{}]",
+                    n_self,
+                    preview.join(", "),
+                    suffix
+                );
             }
             if n_other > 0 {
-                let preview: Vec<&str> = self.variables_only_in_other.iter().take(5).map(|s| s.as_str()).collect();
-                let suffix = if n_other > 5 { format!(", ... +{}", n_other - 5) } else { String::new() };
-                println!("  Only in other:  {:>5}   [{}{}]", n_other, preview.join(", "), suffix);
+                let preview: Vec<&str> = self
+                    .variables_only_in_other
+                    .iter()
+                    .take(5)
+                    .map(|s| s.as_str())
+                    .collect();
+                let suffix = if n_other > 5 {
+                    format!(", ... +{}", n_other - 5)
+                } else {
+                    String::new()
+                };
+                println!(
+                    "  Only in other:  {:>5}   [{}{}]",
+                    n_other,
+                    preview.join(", "),
+                    suffix
+                );
             }
         }
 
@@ -2024,8 +2065,7 @@ impl PySavBatchReader {
     fn new(path: &str, batch_size: Option<usize>) -> PyResult<Self> {
         let file = File::open(path).map_err(|e| PyIOError::new_err(format!("{e}")))?;
         let buf = BufReader::with_capacity(256 * 1024, file);
-        let scanner =
-            SavScanner::open(buf, batch_size.unwrap_or(100_000)).map_err(spss_err)?;
+        let scanner = SavScanner::open(buf, batch_size.unwrap_or(100_000)).map_err(spss_err)?;
         Ok(PySavBatchReader { scanner })
     }
 
@@ -2049,8 +2089,9 @@ impl PySavBatchReader {
             .map(|f| {
                 let dtype = match f.data_type() {
                     arrow::datatypes::DataType::Float64 => "Float64",
-                    arrow::datatypes::DataType::Utf8
-                    | arrow::datatypes::DataType::Utf8View => "String",
+                    arrow::datatypes::DataType::Utf8 | arrow::datatypes::DataType::Utf8View => {
+                        "String"
+                    }
                     arrow::datatypes::DataType::Date32 => "Date",
                     arrow::datatypes::DataType::Timestamp(_, _) => "Datetime",
                     arrow::datatypes::DataType::Duration(_) => "Duration",
@@ -2138,6 +2179,39 @@ fn _write_sav(
             )));
         }
     };
+
+    // Try to validate early using metadata (avoids consuming PyCapsule on invalid input)
+    if let Some(py_meta) = metadata {
+        let meta = &py_meta.inner;
+        for (var_name, specs) in &meta.variable_missing_values {
+            let is_string_var = meta
+                .variable_formats
+                .get(var_name.as_str())
+                .is_some_and(|f| f.starts_with('A'));
+            let has_numeric = specs.iter().any(|s| {
+                matches!(
+                    s,
+                    crate::metadata::MissingSpec::Value(_)
+                        | crate::metadata::MissingSpec::Range { .. }
+                )
+            });
+            let has_string = specs
+                .iter()
+                .any(|s| matches!(s, crate::metadata::MissingSpec::StringValue(_)));
+            if is_string_var && has_numeric {
+                return Err(PyValueError::new_err(format!(
+                    "variable '{}': numeric missing values cannot be applied to a string variable",
+                    var_name
+                )));
+            }
+            if !is_string_var && has_string {
+                return Err(PyValueError::new_err(format!(
+                    "variable '{}': string missing values cannot be applied to a numeric variable",
+                    var_name
+                )));
+            }
+        }
+    }
 
     // Consume Arrow data via PyCapsule Interface
     let batch = arrow_from_pycapsule(py, data)?;

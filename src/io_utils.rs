@@ -152,7 +152,8 @@ pub fn round_up(len: usize, alignment: usize) -> usize {
 
 /// Convert a byte slice to a string, trying UTF-8 first and falling back to lossy.
 pub fn bytes_to_string_lossy(bytes: &[u8]) -> String {
-    String::from_utf8(bytes.to_vec()).unwrap_or_else(|_| String::from_utf8_lossy(bytes).into_owned())
+    String::from_utf8(bytes.to_vec())
+        .unwrap_or_else(|_| String::from_utf8_lossy(bytes).into_owned())
 }
 
 /// Read a pascal-style string: 4-byte length prefix, then that many bytes.

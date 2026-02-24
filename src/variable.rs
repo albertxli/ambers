@@ -11,7 +11,10 @@ pub enum MissingValues {
     /// Up to 3 discrete numeric values.
     DiscreteNumeric(Vec<f64>),
     /// A range of numeric values [low, high].
-    Range { low: f64, high: f64 },
+    Range {
+        low: f64,
+        high: f64,
+    },
     /// A range plus one discrete value.
     RangeAndValue {
         low: f64,
@@ -67,14 +70,15 @@ impl VariableRecord {
 
         // Short name: 8 bytes
         let name_bytes = reader.read_bytes(8)?;
-        let short_name = io_utils::bytes_to_string_lossy(io_utils::trim_trailing_padding(&name_bytes));
+        let short_name =
+            io_utils::bytes_to_string_lossy(io_utils::trim_trailing_padding(&name_bytes));
 
         // Determine variable type
         let (var_type, is_ghost) = match raw_type {
             0 => (VarType::Numeric, false),
             t if t > 0 => (VarType::String(t as usize), false),
             -1 => (VarType::Numeric, true), // ghost/continuation record
-            _ => (VarType::Numeric, true),   // treat other negatives as ghost
+            _ => (VarType::Numeric, true),  // treat other negatives as ghost
         };
 
         // Variable label
@@ -123,7 +127,7 @@ impl VariableRecord {
             VarType::String(width) => {
                 // Each 8-byte slot holds 8 bytes of string data.
                 // String width rounded up to multiple of 8.
-                (width + 7) / 8
+                width.div_ceil(8)
             }
         }
     }
