@@ -14,7 +14,9 @@ All notable changes to ambers are documented in this file.
 - Add BytecodeDecompressor checkpoint/restore for streaming support
 - Fix 29 clippy warnings across codebase
 - Fix CI Python smoke test to use `maturin build` instead of `maturin develop`
+- Use uv instead of pip in CI for faster dependency installs
 - Update write benchmark results: 6–41x faster than pyreadstat (up from 4–20x)
+- Remove Co-Authored-By trailers from git history
 
 ## [0.3.3] - 2025-02-21
 
