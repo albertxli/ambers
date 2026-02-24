@@ -358,7 +358,15 @@ class SpssMetadata:
         ...
     @property
     def schema(self) -> dict:
-        """Full metadata as a nested Python dict."""
+        """Full metadata as a nested Python dict (22 fields).
+
+        Field order: file_label, file_format, file_encoding, creation_time,
+        compression, number_columns, number_rows, weight_variable, notes,
+        variable_names, variable_labels, variable_value_labels,
+        variable_formats, variable_measures, variable_alignments,
+        variable_storage_widths, variable_display_widths, variable_roles,
+        variable_missing_values, variable_attributes, mr_sets, arrow_data_types.
+        """
         ...
 
     # Convenience methods

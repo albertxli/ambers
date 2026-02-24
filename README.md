@@ -105,28 +105,28 @@ All fields returned by the reader. Fields marked **Write** are preserved when pa
 
 | Field | Read | Write | Type |
 |-------|:----:|:-----:|------|
+| `file_label` | yes | yes | `str` |
+| `file_format` | yes | — | `str` |
+| `file_encoding` | yes | — | `str` |
+| `creation_time` | yes | — | `str` |
+| `compression` | yes | — | `str` |
+| `number_columns` | yes | — | `int` |
+| `number_rows` | yes | — | `int \| None` |
+| `weight_variable` | yes | yes | `str \| None` |
+| `notes` | yes | yes | `list[str]` |
 | `variable_names` | yes | — | `list[str]` |
 | `variable_labels` | yes | yes | `dict[str, str]` |
 | `variable_value_labels` | yes | yes | `dict[str, dict[float\|str, str]]` |
 | `variable_formats` | yes | yes | `dict[str, str]` |
 | `variable_measures` | yes | yes | `dict[str, str]` |
 | `variable_alignments` | yes | yes | `dict[str, str]` |
-| `variable_roles` | yes | yes | `dict[str, str]` |
-| `variable_display_widths` | yes | yes | `dict[str, int]` |
 | `variable_storage_widths` | yes | — | `dict[str, int]` |
+| `variable_display_widths` | yes | yes | `dict[str, int]` |
+| `variable_roles` | yes | yes | `dict[str, str]` |
 | `variable_missing_values` | yes | yes | `dict[str, dict]` |
 | `variable_attributes` | yes | yes | `dict[str, dict[str, list[str]]]` |
-| `weight_variable` | yes | yes | `str \| None` |
 | `mr_sets` | yes | yes | `dict[str, dict]` |
 | `arrow_data_types` | yes | — | `dict[str, str]` |
-| `file_label` | yes | yes | `str` |
-| `file_format` | yes | — | `str` |
-| `file_encoding` | yes | — | `str` |
-| `creation_time` | yes | — | `str` |
-| `number_rows` | yes | — | `int \| None` |
-| `number_columns` | yes | — | `int` |
-| `compression` | yes | — | `str` |
-| `notes` | yes | yes | `list[str]` |
 
 **Creating metadata from scratch:**
 

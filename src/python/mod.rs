@@ -844,27 +844,28 @@ impl PySpssMetadata {
         d.set_item("file_format", &m.file_format)?;
         d.set_item("file_encoding", &m.file_encoding)?;
         d.set_item("creation_time", &m.creation_time)?;
-        d.set_item("number_rows", m.number_rows)?;
+        d.set_item("compression", self.compression())?;
         d.set_item("number_columns", m.number_columns)?;
+        d.set_item("number_rows", m.number_rows)?;
         d.set_item("weight_variable", m.weight_variable.as_deref())?;
-
-        // Lists
         d.set_item("notes", &m.notes)?;
+
+        // Variable names
         d.set_item("variable_names", &m.variable_names)?;
 
         // Per-variable fields
         d.set_item("variable_labels", self.variable_labels(py)?)?;
         d.set_item("variable_value_labels", self.variable_value_labels(py)?)?;
-        d.set_item("variable_measures", self.variable_measures())?;
         d.set_item("variable_formats", m.variable_formats.clone())?;
-        d.set_item("arrow_data_types", m.arrow_data_types.clone())?;
+        d.set_item("variable_measures", self.variable_measures())?;
         d.set_item("variable_alignments", self.variable_alignments())?;
-        d.set_item("variable_display_widths", m.variable_display_widths.clone())?;
         d.set_item("variable_storage_widths", m.variable_storage_widths.clone())?;
-        d.set_item("variable_missing_values", self.variable_missing_values(py)?)?;
-        d.set_item("mr_sets", self.mr_sets(py)?)?;
+        d.set_item("variable_display_widths", m.variable_display_widths.clone())?;
         d.set_item("variable_roles", self.variable_roles())?;
+        d.set_item("variable_missing_values", self.variable_missing_values(py)?)?;
         d.set_item("variable_attributes", self.variable_attributes(py)?)?;
+        d.set_item("mr_sets", self.mr_sets(py)?)?;
+        d.set_item("arrow_data_types", m.arrow_data_types.clone())?;
 
         Ok(d.unbind().into_any())
     }
