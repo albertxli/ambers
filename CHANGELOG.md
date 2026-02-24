@@ -2,6 +2,19 @@
 
 All notable changes to ambers are documented in this file.
 
+## [0.3.4] - 2025-02-23
+
+- Add CI workflow (fmt, clippy, test on Linux/Windows/macOS + Python smoke test)
+- Add unit tests for arrow_convert and scanner modules (15 new tests)
+- Add overflow protection: AllocationTooLarge error, 2 GB pre-allocation cap, 16 GB zlib guard
+- Split writer.rs (2,930 lines) into writer/{mod, layout, records, data, tests} submodules
+- Add fail-fast validation: `validate_write_inputs()` catches metadata errors before data processing
+- Add Python-side early metadata validation before PyCapsule consumption
+- Stream zlib decompression block-by-block instead of all blocks upfront (lower peak memory)
+- Add BytecodeDecompressor checkpoint/restore for streaming support
+- Fix 29 clippy warnings across codebase
+- Update write benchmark results: 6–41x faster than pyreadstat (up from 4–20x)
+
 ## [0.3.3] - 2025-02-21
 
 - Add compression field to `meta.schema` and reorder schema fields
