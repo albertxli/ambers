@@ -11,8 +11,9 @@ import sys
 import time
 import tempfile
 
+import pytest
 import polars as pl
-import pyreadstat
+pyreadstat = pytest.importorskip("pyreadstat")
 import ambers
 
 PASSED = 0
@@ -29,7 +30,7 @@ def check(name, condition, detail=""):
         print(f"  FAIL: {name} — {detail}")
 
 
-def test_wide_columns(n_cols):
+def _test_wide_columns(n_cols):
     """Test reading a file with n_cols Float64 columns."""
     print(f"\n--- {n_cols:,} columns × 1 row ---")
 
@@ -116,10 +117,10 @@ def main():
     print("=" * 60)
 
     # Warm up with a smaller test first
-    test_wide_columns(100_000)
+    _test_wide_columns(100_000)
 
     # The big one: 3 million columns
-    test_wide_columns(3_000_000)
+    _test_wide_columns(3_000_000)
 
     # Summary
     total = PASSED + FAILED

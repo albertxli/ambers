@@ -425,8 +425,8 @@ class TestWriteRoundtrip:
         with tempfile.NamedTemporaryFile(suffix=".sav", delete=False) as f:
             path = f.name
         try:
-            am.write_sav(df, path, compress=False)
+            am.write_sav(df, path, compression="uncompressed")
             _, meta = am.read_sav(path)
-            assert meta.compression == "none"
+            assert meta.compression == "uncompressed"
         finally:
             os.unlink(path)

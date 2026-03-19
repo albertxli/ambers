@@ -10,8 +10,9 @@ Usage: .venv/Scripts/python tests/test_long_strings.py
 import os
 import tempfile
 
+import pytest
 import polars as pl
-import pyreadstat
+pyreadstat = pytest.importorskip("pyreadstat")
 import ambers
 
 PASSED = 0
@@ -28,7 +29,7 @@ def check(name, condition, detail=""):
         print(f"  FAIL: {name} — {detail}")
 
 
-def test_single_long_string(length, label):
+def _test_single_long_string(length, label):
     """Test a single string column with the given length."""
     print(f"\n--- {label}: single column, {length} chars ---")
 
@@ -298,11 +299,11 @@ def main():
     print("=" * 60)
 
     # Single column at various lengths
-    test_single_long_string(255, "255 chars (max normal)")
-    test_single_long_string(256, "256 chars (min VLS)")
-    test_single_long_string(504, "504 chars (issue boundary)")
-    test_single_long_string(505, "505 chars (issue boundary)")
-    test_single_long_string(1000, "1000 chars (multi-segment)")
+    _test_single_long_string(255, "255 chars (max normal)")
+    _test_single_long_string(256, "256 chars (min VLS)")
+    _test_single_long_string(504, "504 chars (issue boundary)")
+    _test_single_long_string(505, "505 chars (issue boundary)")
+    _test_single_long_string(1000, "1000 chars (multi-segment)")
 
     # Multiple columns mixed
     test_multiple_long_strings()

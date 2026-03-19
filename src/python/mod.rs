@@ -2184,10 +2184,17 @@ fn _write_sav(
     if let Some(py_meta) = metadata {
         let meta = &py_meta.inner;
         for (var_name, specs) in &meta.variable_missing_values {
-            let is_string_var = meta
-                .variable_formats
-                .get(var_name.as_str())
-                .is_some_and(|f| f.starts_with('A'));
+            // Determine if variable is string: check format first, then arrow type.
+            // If neither is available (metadata constructed from scratch), skip
+            // validation — the Rust writer will validate with the Arrow schema.
+            let is_string_var = if let Some(fmt) = meta.variable_formats.get(var_name.as_str()) {
+                fmt.starts_with('A')
+            } else if let Some(dt) = meta.arrow_data_types.get(var_name.as_str()) {
+                dt == "String" || dt == "Utf8View"
+            } else {
+                // Can't determine type from metadata alone — skip validation
+                continue;
+            };
             let has_numeric = specs.iter().any(|s| {
                 matches!(
                     s,
