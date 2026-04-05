@@ -27,8 +27,8 @@ def write_pair(df, meta, basename):
     am.write_sav(df, sav_path, meta=meta)
     am.write_sav(df, zsav_path, meta=meta)
     # Verify both readable by ambers
-    df1, _ = am.read_sav(sav_path)
-    df2, _ = am.read_sav(zsav_path)
+    df1 = am.read_sav(sav_path).data
+    df2 = am.read_sav(zsav_path).data
     assert df1.shape == df2.shape, f"Shape mismatch: {df1.shape} vs {df2.shape}"
     sav_size = os.path.getsize(sav_path)
     zsav_size = os.path.getsize(zsav_path)

@@ -43,7 +43,8 @@ def _test_single_long_string(length, label):
         pyreadstat.write_sav(df_write, path)
 
         # Read with ambers
-        df_ambers, meta_ambers = ambers.read_sav(path)
+        sav = ambers.read_sav(path)
+        df_ambers, meta_ambers = sav.data, sav.meta
 
         # Check column count (should be 1, not split)
         check(
@@ -110,7 +111,8 @@ def test_multiple_long_strings():
         pyreadstat.write_sav(df_write, path)
 
         # Read with ambers
-        df_ambers, meta = ambers.read_sav(path)
+        sav = ambers.read_sav(path)
+        df_ambers, meta = sav.data, sav.meta
 
         # Column count — should be 7 visible columns, not more
         check(
@@ -196,7 +198,8 @@ def test_issue_119_reproduction():
         pyreadstat.write_sav(df_write, path)
 
         # Read with ambers
-        df_ambers, meta = ambers.read_sav(path)
+        sav = ambers.read_sav(path)
+        df_ambers, meta = sav.data, sav.meta
 
         # Should have exactly 2 columns (not 5 as SPSS might show)
         check(
@@ -256,7 +259,8 @@ def test_boundary_504_505():
         pyreadstat.write_sav(df_write, path)
 
         # Read with ambers
-        df_ambers, meta = ambers.read_sav(path)
+        sav = ambers.read_sav(path)
+        df_ambers, meta = sav.data, sav.meta
 
         # Column count should be 15 (not more from splitting)
         check(

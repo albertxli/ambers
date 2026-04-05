@@ -43,7 +43,8 @@ def write_read_ambers(df, meta, name, suffix=".sav", **write_kw):
     """Write with ambers, read back with ambers, keep file for SPSS inspection."""
     path = str(WRITER_ISSUES_DIR / f"{name}{suffix}")
     am.write_sav(df, path, meta=meta, **write_kw)
-    return am.read_sav(path)
+    sav = am.read_sav(path)
+    return sav.data, sav.meta
 
 
 def write_read_pyreadstat(df, meta, name, suffix=".sav", **write_kw):

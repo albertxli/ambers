@@ -59,7 +59,8 @@ def _test_wide_columns(n_cols):
         # Read with ambers
         print(f"  Reading with ambers...")
         t0 = time.perf_counter()
-        df_ambers, meta = ambers.read_sav(path)
+        sav = ambers.read_sav(path)
+        df_ambers, meta = sav.data, sav.meta
         t_read = time.perf_counter() - t0
         print(f"  Read in {t_read:.1f}s")
 

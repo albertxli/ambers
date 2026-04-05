@@ -2119,7 +2119,7 @@ impl PySavBatchReader {
 }
 
 // ---------------------------------------------------------------------------
-// #[pyfunction] read_sav / read_sav_metadata
+// #[pyfunction] read_sav / read_sav_meta
 // ---------------------------------------------------------------------------
 
 /// Read an SPSS .sav/.zsav file. Returns (_ArrowData, SpssMetadata).
@@ -2145,7 +2145,7 @@ fn _read_sav(
 
 /// Read only metadata from an SPSS file (no data).
 #[pyfunction]
-fn _read_sav_metadata(path: &str) -> PyResult<PySpssMetadata> {
+fn _read_sav_meta(path: &str) -> PyResult<PySpssMetadata> {
     let meta = crate::read_sav_metadata(path).map_err(spss_err)?;
     Ok(PySpssMetadata { inner: meta })
 }
@@ -2289,7 +2289,7 @@ fn arrow_from_pycapsule(py: Python<'_>, data: &Bound<'_, PyAny>) -> PyResult<Rec
 #[pymodule]
 fn _ambers(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(_read_sav, m)?)?;
-    m.add_function(wrap_pyfunction!(_read_sav_metadata, m)?)?;
+    m.add_function(wrap_pyfunction!(_read_sav_meta, m)?)?;
     m.add_function(wrap_pyfunction!(_write_sav, m)?)?;
     m.add_class::<PySpssMetadata>()?;
     m.add_class::<PyMetaDiff>()?;

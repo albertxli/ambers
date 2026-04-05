@@ -2,20 +2,51 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Generic, TypeVar, Union
 
 from ambers._ambers import (
     MetaDiff,
     SpssMetadata,
     _SavBatchReader,
     _read_sav,
-    _read_sav_metadata,
+    _read_sav_meta,
     _write_sav,
 )
 
+import polars as pl
+
+T = TypeVar("T", pl.DataFrame, pl.LazyFrame)
+
+
+@dataclass
+class SavFile(Generic[T]):
+    """Result of reading an SPSS .sav/.zsav file.
+
+    Attributes:
+        data: A Polars DataFrame (from ``read_sav``) or LazyFrame
+            (from ``scan_sav``).
+        meta: An ``SpssMetadata`` object with all variable metadata.
+    """
+
+    data: T
+    meta: SpssMetadata
+
+    def __repr__(self) -> str:
+        data_type = type(self.data).__name__
+        if isinstance(self.data, pl.DataFrame):
+            shape = f"{self.data.height} rows x {self.data.width} cols"
+        else:
+            shape = f"{self.data.collect_schema().len()} cols (lazy)"
+        n_vars = len(self.meta.variable_names)
+        return f"SavFile({data_type}, {shape}, {n_vars} variables)"
+
+
 __all__ = [
+    "SavFile",
     "read_sav",
-    "read_sav_metadata",
+    "read_sav_meta",
     "scan_sav",
     "write_sav",
     "SpssMetadata",
@@ -28,8 +59,6 @@ _DTYPE_MAP: dict | None = None
 def _get_dtype_map():
     global _DTYPE_MAP
     if _DTYPE_MAP is None:
-        import polars as pl
-
         _DTYPE_MAP = {
             "Float64": pl.Float64,
             "String": pl.String,
@@ -59,10 +88,8 @@ def read_sav(
     n_rows: int | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
-) -> tuple:
+) -> SavFile[pl.DataFrame]:
     """Read an SPSS .sav or .zsav file.
-
-    Returns a tuple of (Polars DataFrame, SpssMetadata).
 
     Args:
         path: Path to the .sav or .zsav file.
@@ -77,18 +104,21 @@ def read_sav(
             Cannot be negative. Only used if row_index_name is set.
 
     Returns:
-        A tuple (df, meta) where df is a polars.DataFrame and meta is
-        an SpssMetadata object with all variable metadata.
-    """
-    import polars as pl
+        A ``SavFile`` with ``.data`` (polars.DataFrame) and ``.meta``
+        (SpssMetadata).
 
+    Examples:
+        >>> sav = am.read_sav("survey.sav")
+        >>> sav.data.head()
+        >>> sav.meta.variable_labels["Q1"]
+    """
     if row_index_offset < 0:
         raise ValueError("row_index_offset cannot be negative")
 
     # Resolve int indices to column names (requires metadata lookup)
     resolved = columns
     if columns is not None and len(columns) > 0 and isinstance(columns[0], int):
-        meta_tmp = _read_sav_metadata(str(path))
+        meta_tmp = _read_sav_meta(str(path))
         resolved = _resolve_columns(columns, meta_tmp.variable_names)
     elif columns is not None and len(columns) == 0:
         resolved = None
@@ -97,22 +127,27 @@ def read_sav(
     df = pl.from_arrow(stream)
     if row_index_name is not None:
         df = df.with_row_index(row_index_name, offset=row_index_offset)
-    return df, meta
+    return SavFile(data=df, meta=meta)
 
 
-def read_sav_metadata(path: str) -> SpssMetadata:
+def read_sav_meta(path: str) -> SpssMetadata:
     """Read only the metadata from an SPSS file (no data).
 
-    This is much faster than read_sav() when you only need variable
+    This is much faster than ``read_sav()`` when you only need variable
     information, labels, or other metadata.
 
     Args:
         path: Path to the .sav or .zsav file.
 
     Returns:
-        An SpssMetadata object.
+        An ``SpssMetadata`` object.
+
+    Examples:
+        >>> meta = am.read_sav_meta("survey.sav")
+        >>> meta.variable_names
+        >>> meta.label("Q1")
     """
-    return _read_sav_metadata(str(path))
+    return _read_sav_meta(str(path))
 
 
 def scan_sav(
@@ -122,11 +157,12 @@ def scan_sav(
     n_rows: int | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
-) -> tuple:
+) -> SavFile[pl.LazyFrame]:
     """Create a LazyFrame from an SPSS .sav or .zsav file.
 
     Supports projection pushdown (column selection), row limit pushdown,
-    and per-batch predicate filtering. Use .collect() to materialize.
+    and per-batch predicate filtering. Use ``.data.collect()`` to
+    materialize.
 
     Args:
         path: Path to the .sav or .zsav file.
@@ -144,10 +180,13 @@ def scan_sav(
             Cannot be negative. Only used if row_index_name is set.
 
     Returns:
-        A tuple (lf, meta) where lf is a polars.LazyFrame and meta is
-        an SpssMetadata object with all variable metadata.
+        A ``SavFile`` with ``.data`` (polars.LazyFrame) and ``.meta``
+        (SpssMetadata).
+
+    Examples:
+        >>> sav = am.scan_sav("survey.sav")
+        >>> df = sav.data.select(["Q1", "Q2"]).head(1000).collect()
     """
-    import polars as pl
     from polars.io.plugins import register_io_source
 
     if row_index_offset < 0:
@@ -201,7 +240,7 @@ def scan_sav(
     lf = register_io_source(io_source=_source, schema=schema)
     if row_index_name is not None:
         lf = lf.with_row_index(row_index_name, offset=row_index_offset)
-    return lf, meta
+    return SavFile(data=lf, meta=meta)
 
 
 def write_sav(
@@ -218,8 +257,8 @@ def write_sav(
 
     1. **Roundtrip** -- pass the ``meta`` from a prior ``read_sav()``::
 
-        df, meta = am.read_sav("input.sav")
-        am.write_sav(df, "output.sav", meta=meta)
+        sav = am.read_sav("input.sav")
+        am.write_sav(sav.data, "output.sav", meta=sav.meta)
 
     2. **From scratch** -- build metadata with ``SpssMetadata()``::
 

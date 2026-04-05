@@ -1,8 +1,35 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Generic, TypeVar
 
 import polars
+
+T = TypeVar("T", polars.DataFrame, polars.LazyFrame)
+
+@dataclass
+class SavFile(Generic[T]):
+    """Result of reading an SPSS .sav/.zsav file.
+
+    Attributes
+    ----------
+    data
+        A Polars DataFrame (from ``read_sav``) or LazyFrame (from ``scan_sav``).
+    meta
+        An ``SpssMetadata`` object with all variable metadata.
+
+    Examples
+    --------
+    >>> sav = am.read_sav("survey.sav")
+    >>> sav.data.head()
+    >>> sav.meta.variable_labels["Q1"]
+    """
+
+    data: T
+    meta: SpssMetadata
+
+    def __repr__(self) -> str: ...
 
 class SpssMetadata:
     """SPSS metadata container for variable labels, formats, missing values, and other properties.
@@ -567,8 +594,8 @@ def read_sav(
     n_rows: int | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
-) -> tuple[polars.DataFrame, SpssMetadata]:
-    """Read an SPSS .sav/.zsav file into a Polars DataFrame with metadata.
+) -> SavFile[polars.DataFrame]:
+    """Read an SPSS .sav/.zsav file into a SavFile with DataFrame and metadata.
 
     Parameters
     ----------
@@ -585,16 +612,18 @@ def read_sav(
 
     Returns
     -------
-    tuple[polars.DataFrame, SpssMetadata]
+    SavFile[polars.DataFrame]
 
     Examples
     --------
-    >>> df, meta = am.read_sav("survey.sav")
-    >>> df, meta = am.read_sav("survey.sav", columns=["Q1", "Q2"], n_rows=1000)
+    >>> sav = am.read_sav("survey.sav")
+    >>> sav.data.head()
+    >>> sav.meta.variable_labels["Q1"]
+    >>> sav = am.read_sav("survey.sav", columns=["Q1", "Q2"], n_rows=1000)
     """
     ...
 
-def read_sav_metadata(path: str) -> SpssMetadata:
+def read_sav_meta(path: str) -> SpssMetadata:
     """Read only the metadata from an SPSS .sav/.zsav file (fast, skips data).
 
     Parameters
@@ -605,6 +634,12 @@ def read_sav_metadata(path: str) -> SpssMetadata:
     Returns
     -------
     SpssMetadata
+
+    Examples
+    --------
+    >>> meta = am.read_sav_meta("survey.sav")
+    >>> meta.variable_names
+    >>> meta.label("Q1")
     """
     ...
 
@@ -615,11 +650,11 @@ def scan_sav(
     n_rows: int | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
-) -> tuple[polars.LazyFrame, SpssMetadata]:
-    """Lazily scan an SPSS .sav/.zsav file, returning a Polars LazyFrame.
+) -> SavFile[polars.LazyFrame]:
+    """Lazily scan an SPSS .sav/.zsav file, returning a SavFile with LazyFrame.
 
     Supports column projection and row limit pushdown — only reads the data you
-    ask for when you call ``.collect()``.
+    ask for when you call ``.data.collect()``.
 
     Parameters
     ----------
@@ -636,12 +671,12 @@ def scan_sav(
 
     Returns
     -------
-    tuple[polars.LazyFrame, SpssMetadata]
+    SavFile[polars.LazyFrame]
 
     Examples
     --------
-    >>> lf, meta = am.scan_sav("survey.sav")
-    >>> df = lf.select(["Q1", "Q2"]).head(1000).collect()
+    >>> sav = am.scan_sav("survey.sav")
+    >>> df = sav.data.select(["Q1", "Q2"]).head(1000).collect()
     """
     ...
 
@@ -686,7 +721,8 @@ def write_sav(
 
     Examples
     --------
-    >>> am.write_sav(df, "output.sav", meta=meta)                       # bytecode
+    >>> sav = am.read_sav("input.sav")
+    >>> am.write_sav(sav.data, "output.sav", meta=sav.meta)            # roundtrip
     >>> am.write_sav(df, "output.zsav", meta=meta)                      # zlib (level 6)
     >>> am.write_sav(df, "output.zsav", meta=meta, compression_level=1) # fast zlib
     >>> am.write_sav(df, "raw.sav", meta=meta, compression="uncompressed")

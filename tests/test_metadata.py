@@ -77,7 +77,7 @@ _pyreadstat_cache = {}
 @pytest.fixture
 def ambers_meta(sav_file, ambers_mod):
     if sav_file not in _ambers_cache:
-        _, meta = ambers_mod.read_sav(sav_file)
+        meta = ambers_mod.read_sav(sav_file).meta
         _ambers_cache[sav_file] = meta
     return _ambers_cache[sav_file]
 

@@ -66,7 +66,8 @@ def bench_sav(label, path):
     size_str = fmt_size(path)
 
     # Read with ambers
-    df_polars, meta = ambers.read_sav(path)
+    sav = ambers.read_sav(path)
+    df_polars, meta = sav.data, sav.meta
     rows, cols = df_polars.height, df_polars.width
 
     # Pre-convert to pandas for pyreadstat (exclude conversion from timing)
@@ -117,7 +118,8 @@ def bench_zsav(label, path):
     size_str = fmt_size(path)
 
     # Read with ambers
-    df_polars, meta = ambers.read_sav(path)
+    sav = ambers.read_sav(path)
+    df_polars, meta = sav.data, sav.meta
     rows, cols = df_polars.height, df_polars.width
 
     # Pre-convert to pandas for pyreadstat

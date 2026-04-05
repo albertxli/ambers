@@ -235,42 +235,46 @@ class TestSavRoundtripAmbers:
     """Write .sav, read back with ambers, compare DataFrame + metadata."""
 
     def test_sav_dataframe(self, sav_file, ambers_mod):
-        df_orig, meta = ambers_mod.read_sav(sav_file)
+        sav = ambers_mod.read_sav(sav_file)
+        df_orig, meta = sav.data, sav.meta
 
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "out.sav"
             ambers_mod.write_sav(df_orig, out, meta=meta)
-            df_rt, _ = ambers_mod.read_sav(str(out))
+            df_rt = ambers_mod.read_sav(str(out)).data
 
         assert_frame_equal(df_orig, df_rt)
 
     def test_sav_metadata(self, sav_file, ambers_mod):
-        df_orig, meta = ambers_mod.read_sav(sav_file)
+        sav = ambers_mod.read_sav(sav_file)
+        df_orig, meta = sav.data, sav.meta
 
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "out.sav"
             ambers_mod.write_sav(df_orig, out, meta=meta)
-            _, meta_rt = ambers_mod.read_sav(str(out))
+            meta_rt = ambers_mod.read_sav(str(out)).meta
 
         assert_metadata_ambers(meta, meta_rt, label="sav")
 
     def test_zsav_dataframe(self, sav_file, ambers_mod):
-        df_orig, meta = ambers_mod.read_sav(sav_file)
+        sav = ambers_mod.read_sav(sav_file)
+        df_orig, meta = sav.data, sav.meta
 
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "out.zsav"
             ambers_mod.write_sav(df_orig, out, meta=meta)
-            df_rt, _ = ambers_mod.read_sav(str(out))
+            df_rt = ambers_mod.read_sav(str(out)).data
 
         assert_frame_equal(df_orig, df_rt)
 
     def test_zsav_metadata(self, sav_file, ambers_mod):
-        df_orig, meta = ambers_mod.read_sav(sav_file)
+        sav = ambers_mod.read_sav(sav_file)
+        df_orig, meta = sav.data, sav.meta
 
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "out.zsav"
             ambers_mod.write_sav(df_orig, out, meta=meta)
-            _, meta_rt = ambers_mod.read_sav(str(out))
+            meta_rt = ambers_mod.read_sav(str(out)).meta
 
         assert_metadata_ambers(meta, meta_rt, label="zsav")
 
@@ -296,7 +300,8 @@ class TestSavRoundtripPyreadstat:
 
     @pytest.mark.xfail(strict=False, reason="pyreadstat may differ on temporal/string types")
     def test_sav_dataframe(self, sav_file, ambers_mod, pyreadstat_mod):
-        df_orig, meta = ambers_mod.read_sav(sav_file)
+        sav = ambers_mod.read_sav(sav_file)
+        df_orig, meta = sav.data, sav.meta
 
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "out.sav"
@@ -309,7 +314,8 @@ class TestSavRoundtripPyreadstat:
 
     @pytest.mark.xfail(strict=False, reason="pyreadstat may report metadata differently")
     def test_sav_metadata(self, sav_file, ambers_mod, pyreadstat_mod):
-        df_orig, meta = ambers_mod.read_sav(sav_file)
+        sav = ambers_mod.read_sav(sav_file)
+        df_orig, meta = sav.data, sav.meta
 
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "out.sav"
@@ -320,7 +326,8 @@ class TestSavRoundtripPyreadstat:
 
     @pytest.mark.xfail(strict=False, reason="pyreadstat may differ on temporal/string types")
     def test_zsav_dataframe(self, sav_file, ambers_mod, pyreadstat_mod):
-        df_orig, meta = ambers_mod.read_sav(sav_file)
+        sav = ambers_mod.read_sav(sav_file)
+        df_orig, meta = sav.data, sav.meta
 
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "out.zsav"
@@ -333,7 +340,8 @@ class TestSavRoundtripPyreadstat:
 
     @pytest.mark.xfail(strict=False, reason="pyreadstat may report metadata differently")
     def test_zsav_metadata(self, sav_file, ambers_mod, pyreadstat_mod):
-        df_orig, meta = ambers_mod.read_sav(sav_file)
+        sav = ambers_mod.read_sav(sav_file)
+        df_orig, meta = sav.data, sav.meta
 
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "out.zsav"
@@ -389,7 +397,8 @@ class TestVlsWriterCompatibility:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "vls_test.sav"
             ambers_mod.write_sav(df, out, meta=meta)
-            df_rt, meta_rt = ambers_mod.read_sav(str(out))
+            sav_rt = ambers_mod.read_sav(str(out))
+            df_rt, meta_rt = sav_rt.data, sav_rt.meta
 
         assert df_rt.width == 6, f"expected 6 columns, got {df_rt.width}: {df_rt.columns}"
         assert df_rt.height == 5
@@ -419,7 +428,7 @@ class TestVlsWriterCompatibility:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "vls_test.sav"
             ambers_mod.write_sav(df, out, meta=meta)
-            df_rt, _ = ambers_mod.read_sav(str(out))
+            df_rt = ambers_mod.read_sav(str(out)).data
 
         # Check VLS string data for first row
         assert df_rt["vls_500"][0].startswith("A" * 100), "vls_500 data corrupted"
@@ -439,7 +448,7 @@ class TestVlsWriterCompatibility:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "vls_test.zsav"
             ambers_mod.write_sav(df, out, meta=meta)
-            df_rt, _ = ambers_mod.read_sav(str(out))
+            df_rt = ambers_mod.read_sav(str(out)).data
 
         assert df_rt.width == 6, f"zsav: expected 6 columns, got {df_rt.width}"
         assert df_rt.height == 5
@@ -452,7 +461,7 @@ class TestVlsWriterCompatibility:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "vls_test.sav"
             ambers_mod.write_sav(df, out, meta=meta)
-            _, meta_rt = ambers_mod.read_sav(str(out))
+            meta_rt = ambers_mod.read_sav(str(out)).meta
 
         # Format strings must survive
         assert meta_rt.format("vls_500") == "A500"

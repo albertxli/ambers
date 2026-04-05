@@ -245,9 +245,9 @@ class TestMissingValuesValidation:
             path = f.name
         try:
             am.write_sav(df, path, meta=meta)
-            df2, meta2 = am.read_sav(path)
-            assert df2.shape == (3, 1)
-            mv = meta2.variable_missing_values["q8"]
+            sav = am.read_sav(path)
+            assert sav.data.shape == (3, 1)
+            mv = sav.meta.variable_missing_values["q8"]
             assert mv["type"] == "discrete"
             assert set(mv["values"]) == {"N/A", "DK"}
         finally:
@@ -326,7 +326,7 @@ class TestMrSetsValidation:
             path = f.name
         try:
             am.write_sav(df, path, meta=meta)
-            _, meta2 = am.read_sav(path)
+            meta2 = am.read_sav(path).meta
             assert "Q6cat" in meta2.mr_sets
             assert meta2.mr_sets["Q6cat"]["label"] == "Brand selected"
             assert meta2.mr_sets["Q6cat"]["type"] == "category"
@@ -359,7 +359,8 @@ class TestWriteRoundtrip:
             path = f.name
         try:
             am.write_sav(df, path, meta=meta)
-            df2, meta2 = am.read_sav(path)
+            sav = am.read_sav(path)
+            df2, meta2 = sav.data, sav.meta
             assert df2.shape == (4, 3)
             assert meta2.file_label == "Test Survey"
             assert meta2.label("age") == "Age in years"
@@ -383,13 +384,13 @@ class TestWriteRoundtrip:
             path2 = f.name
         try:
             am.write_sav(df, path1, meta=meta_init)
-            df_read, meta_read = am.read_sav(path1)
-            meta_updated = meta_read.update(
+            sav = am.read_sav(path1)
+            meta_updated = sav.meta.update(
                 file_label="Updated file",
                 variable_labels={"age": "Updated Age Label"},
             )
-            am.write_sav(df_read, path2, meta=meta_updated)
-            _, meta3 = am.read_sav(path2)
+            am.write_sav(sav.data, path2, meta=meta_updated)
+            meta3 = am.read_sav(path2).meta
             assert meta3.file_label == "Updated file"
             assert meta3.label("age") == "Updated Age Label"
             assert meta3.label("gender") == "Gender"
@@ -403,9 +404,9 @@ class TestWriteRoundtrip:
             path = f.name
         try:
             am.write_sav(df, path)
-            df2, meta2 = am.read_sav(path)
-            assert df2.shape == (2, 2)
-            assert meta2.format("x") == "F8.2"
+            sav = am.read_sav(path)
+            assert sav.data.shape == (2, 2)
+            assert sav.meta.format("x") == "F8.2"
         finally:
             os.unlink(path)
 
@@ -415,7 +416,7 @@ class TestWriteRoundtrip:
             path = f.name
         try:
             am.write_sav(df, path)
-            _, meta = am.read_sav(path)
+            meta = am.read_sav(path).meta
             assert meta.compression == "zlib"
         finally:
             os.unlink(path)
@@ -426,7 +427,7 @@ class TestWriteRoundtrip:
             path = f.name
         try:
             am.write_sav(df, path, compression="uncompressed")
-            _, meta = am.read_sav(path)
+            meta = am.read_sav(path).meta
             assert meta.compression == "uncompressed"
         finally:
             os.unlink(path)

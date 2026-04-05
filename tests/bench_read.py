@@ -21,7 +21,8 @@ def bench_ambers(file_path, runs):
     rows = cols = None
     for i in range(runs):
         t0 = time.perf_counter()
-        df, meta = ambers.read_sav(file_path)
+        sav = ambers.read_sav(file_path)
+        df = sav.data
         elapsed = time.perf_counter() - t0
         times.append(elapsed)
         rows = df.height
