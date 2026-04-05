@@ -38,22 +38,26 @@ cargo add ambers
 import ambers as am
 import polars as pl
 
-# Eager read — data + metadata
-df, meta = am.read_sav("survey.sav")
+# Eager read — returns SavFile with .data and .meta
+sav = am.read_sav("survey.sav")
+sav.data                                                            # polars.DataFrame
+sav.meta                                                            # SpssMetadata
 
-# Lazy read — returns Polars LazyFrame
-lf, meta = am.scan_sav("survey.sav")
-df = lf.select(["Q1", "Q2", "age"]).head(1000).collect()
+# Lazy read — .data is a Polars LazyFrame
+sav = am.scan_sav("survey.sav")
+df = sav.data.select(["Q1", "Q2", "age"]).head(1000).collect()
 
 # Explore metadata
-meta.summary()
-meta.describe("Q1")
-meta.value("Q1")
+sav.meta.summary()
+sav.meta.describe("Q1")
+sav.meta.value("Q1")
 
 # Read metadata only (fast, skips data)
-meta = am.read_sav_metadata("survey.sav")
+meta = am.read_sav_meta("survey.sav")
 
 # Write back — roundtrip with full metadata
+sav = am.read_sav("input.sav")
+df, meta = sav.data, sav.meta
 df = df.filter(pl.col("age") > 18)
 am.write_sav(df, "filtered.sav", meta=meta)                        # bytecode (default for .sav)
 am.write_sav(df, "compressed.zsav", meta=meta)                     # zlib (default for .zsav)

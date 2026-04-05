@@ -10,9 +10,9 @@ Complete reference for the `SpssMetadata` class — ambers' metadata API for rea
 import ambers as am
 
 # Read metadata from a file
-df, meta = am.read_sav("survey.sav")
-meta.summary()                        # formatted overview
-meta.describe("Q1")                   # single variable deep-dive
+sav = am.read_sav("survey.sav")
+sav.meta.summary()                    # formatted overview
+sav.meta.describe("Q1")              # single variable deep-dive
 
 # Construct metadata from scratch
 meta = am.SpssMetadata(
@@ -122,7 +122,8 @@ meta3 = meta.update(notes=["Wave 2 data"])          # old notes list is replaced
 Metadata is keyed by variable name. If you rename a column in your DataFrame, metadata does **not** automatically carry over — there is no tracking or mapping between old and new names.
 
 ```python
-df, meta = am.read_sav("survey.sav")
+sav = am.read_sav("survey.sav")
+df, meta = sav.data, sav.meta
 
 # Rename Q1 → satisfaction in the DataFrame
 df = df.rename({"Q1": "satisfaction"})
@@ -503,7 +504,8 @@ am.write_sav(df, "survey_q1_2026.sav", meta=meta)
 import ambers as am
 
 # Read existing file
-df, meta = am.read_sav("input.sav")
+sav = am.read_sav("input.sav")
+df, meta = sav.data, sav.meta
 
 # Override specific fields (everything else preserved)
 meta = meta.update(
@@ -540,8 +542,8 @@ am.write_sav(df, "nps.sav", meta=meta)
 After reading a file, `meta.compression` tells you what compression the source file used:
 
 ```python
-df, meta = am.read_sav("data.sav")
-print(meta.compression)  # "uncompressed", "bytecode", or "zlib"
+sav = am.read_sav("data.sav")
+print(sav.meta.compression)  # "uncompressed", "bytecode", or "zlib"
 ```
 
 This is informational only — it cannot be set.
