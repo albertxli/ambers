@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Generic, TypeVar, Union
@@ -20,6 +22,15 @@ import polars as pl
 T = TypeVar("T", pl.DataFrame, pl.LazyFrame)
 
 
+def _format_size(n_bytes: int) -> str:
+    """Format byte count as human-readable string (e.g. ``147.2 MB``)."""
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if abs(n_bytes) < 1024.0 or unit == "TB":
+            return f"{n_bytes:.1f} {unit}" if unit != "B" else f"{n_bytes} B"
+        n_bytes /= 1024.0
+    return f"{n_bytes:.1f} TB"
+
+
 @dataclass
 class SavFile(Generic[T]):
     """Result of reading an SPSS .sav/.zsav file.
@@ -28,19 +39,67 @@ class SavFile(Generic[T]):
         data: A Polars DataFrame (from ``read_sav``) or LazyFrame
             (from ``scan_sav``).
         meta: An ``SpssMetadata`` object with all variable metadata.
+        source: Source file path, or None if constructed from in-memory data.
+        shape: ``(n_rows, n_cols)`` tuple, or None if unknown.
+        file_size: Size of the source file in bytes, or None if not
+            read from a file.
+        read_time: Wall-clock seconds for the read operation, or None if
+            not measured. For ``scan_sav`` this covers metadata/schema
+            reading only (not lazy collection).
     """
 
     data: T
     meta: SpssMetadata
+    source: str | None = None
+    shape: tuple[int, int] | None = None
+    file_size: int | None = None
+    read_time: float | None = None
+
+    @property
+    def compression(self) -> str:
+        """Compression type of the source file: ``"uncompressed"``, ``"bytecode"``, or ``"zlib"``."""
+        return self.meta.compression
 
     def __repr__(self) -> str:
-        data_type = type(self.data).__name__
+        lines: list[tuple[str, str]] = []
+        # Data line
         if isinstance(self.data, pl.DataFrame):
-            shape = f"{self.data.height} rows x {self.data.width} cols"
+            lines.append(("Data", "DataFrame (polars)"))
         else:
-            shape = f"{self.data.collect_schema().len()} cols (lazy)"
-        n_vars = len(self.meta.variable_names)
-        return f"SavFile({data_type}, {shape}, {n_vars} variables)"
+            lines.append(("Data", "LazyFrame (polars)"))
+        # Shape line
+        if self.shape is not None:
+            n_rows, n_cols = self.shape
+            lines.append(("Shape", f"{n_rows:,} rows x {n_cols} cols"))
+        elif not isinstance(self.data, pl.DataFrame):
+            n_cols = self.data.collect_schema().len()
+            lines.append(("Shape", f"{n_cols} cols"))
+        # Source line
+        if self.source is not None:
+            lines.append(("Source", os.path.basename(self.source)))
+        # File size + compression line
+        if self.file_size is not None:
+            size_str = _format_size(self.file_size)
+            lines.append(("File size", f"{size_str}, {self.compression}"))
+        # Read time line
+        if self.read_time is not None:
+            time_str = f"{self.read_time:.3f}s"
+            if not isinstance(self.data, pl.DataFrame):
+                time_str += " (metadata only)"
+            lines.append(("Read time", time_str))
+        # Build box
+        label_w = max(len(label) for label, _ in lines)
+        content_parts = [f"{label:<{label_w}}   {value}" for label, value in lines]
+        inner_w = max(len(p) for p in content_parts)
+        prefix = "\u250c\u2500 SavFile "  # 11 chars
+        box_w = inner_w + 4  # "│ " + content + " │"
+        header = prefix + "\u2500" * (box_w - len(prefix) - 1) + "\u2510"
+        footer = "\u2514" + "\u2500" * (box_w - 2) + "\u2518"
+        rows = [header]
+        for part in content_parts:
+            rows.append(f"\u2502 {part:<{inner_w}} \u2502")
+        rows.append(footer)
+        return "\n".join(rows)
 
 
 __all__ = [
@@ -115,6 +174,9 @@ def read_sav(
     if row_index_offset < 0:
         raise ValueError("row_index_offset cannot be negative")
 
+    file_size = os.path.getsize(path)
+    t0 = time.perf_counter()
+
     # Resolve int indices to column names (requires metadata lookup)
     resolved = columns
     if columns is not None and len(columns) > 0 and isinstance(columns[0], int):
@@ -127,7 +189,14 @@ def read_sav(
     df = pl.from_arrow(stream)
     if row_index_name is not None:
         df = df.with_row_index(row_index_name, offset=row_index_offset)
-    return SavFile(data=df, meta=meta)
+
+    read_time = time.perf_counter() - t0
+
+    return SavFile(
+        data=df, meta=meta, source=str(path),
+        shape=(df.height, df.width),
+        file_size=file_size, read_time=read_time,
+    )
 
 
 def read_sav_meta(path: str) -> SpssMetadata:
@@ -192,6 +261,9 @@ def scan_sav(
     if row_index_offset < 0:
         raise ValueError("row_index_offset cannot be negative")
 
+    file_size = os.path.getsize(path)
+    t0 = time.perf_counter()
+
     dtype_map = _get_dtype_map()
 
     # Read schema eagerly (fast — only parses the dictionary, no data)
@@ -214,6 +286,9 @@ def scan_sav(
                 for name, dtype in raw_schema.items()
             }
         )
+
+    read_time = time.perf_counter() - t0  # metadata/schema time only
+    n_cols = len(schema)
 
     user_columns = resolved
     user_n_rows = n_rows
@@ -240,7 +315,11 @@ def scan_sav(
     lf = register_io_source(io_source=_source, schema=schema)
     if row_index_name is not None:
         lf = lf.with_row_index(row_index_name, offset=row_index_offset)
-    return SavFile(data=lf, meta=meta)
+    shape = (meta.number_rows, n_cols) if meta.number_rows is not None else None
+    return SavFile(
+        data=lf, meta=meta, source=str(path),
+        shape=shape, file_size=file_size, read_time=read_time,
+    )
 
 
 def write_sav(

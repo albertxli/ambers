@@ -33,7 +33,7 @@ dependencies = [
 
 [[package]]
 name = "ambers"
-version = "0.3.4"
+version = "0.3.9"
 dependencies = [
  "arrow",
  "encoding_rs",

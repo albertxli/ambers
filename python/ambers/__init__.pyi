@@ -18,16 +18,36 @@ class SavFile(Generic[T]):
         A Polars DataFrame (from ``read_sav``) or LazyFrame (from ``scan_sav``).
     meta
         An ``SpssMetadata`` object with all variable metadata.
+    source
+        Source file path, or None if constructed from in-memory data.
+    shape
+        ``(n_rows, n_cols)`` tuple, or None if unknown.
+    file_size
+        Size of the source file in bytes, or None if not read from a file.
+    read_time
+        Wall-clock seconds for the read operation, or None if not measured.
+        For ``scan_sav`` this covers metadata/schema reading only.
 
     Examples
     --------
     >>> sav = am.read_sav("survey.sav")
     >>> sav.data.head()
-    >>> sav.meta.variable_labels["Q1"]
+    >>> sav.shape       # (n_rows, n_cols)
+    >>> sav.read_time   # read time in seconds
+    >>> sav.file_size   # file size in bytes
     """
 
     data: T
     meta: SpssMetadata
+    source: str | None = ...
+    shape: tuple[int, int] | None = ...
+    file_size: int | None = ...
+    read_time: float | None = ...
+
+    @property
+    def compression(self) -> str:
+        """Compression type: ``"uncompressed"``, ``"bytecode"``, or ``"zlib"``."""
+        ...
 
     def __repr__(self) -> str: ...
 

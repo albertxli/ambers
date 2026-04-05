@@ -2,6 +2,13 @@
 
 All notable changes to ambers are documented in this file.
 
+## [0.3.9] - 2026-04-05
+
+- Add `source`, `shape`, `file_size`, `read_time`, `compression` fields to `SavFile`
+- Add box-drawing `__repr__` for `SavFile` with file info, timing, and shape
+- Attribute names and repr labels are 1:1 consistent (e.g. `sav.read_time` displays as "Read time")
+- `SavFile` fields default to `None` for forward-compatible in-memory construction
+
 ## [0.3.8] - 2026-04-05
 
 - Add `SavFile` Generic dataclass: `read_sav()` and `scan_sav()` now return `SavFile` with `.data` and `.meta` attributes instead of bare tuples
