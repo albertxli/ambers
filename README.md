@@ -43,9 +43,12 @@ sav = am.read_sav("survey.sav")
 sav.data                                                            # polars.DataFrame
 sav.meta                                                            # SpssMetadata
 
+# Extended use — unpack for convenience
+df, meta = sav.data, sav.meta
+
 # Lazy read — .data is a Polars LazyFrame
 sav = am.scan_sav("survey.sav")
-df = sav.data.select(["Q1", "Q2", "age"]).head(1000).collect()
+lf = sav.data.select(["Q1", "Q2", "age"]).head(1000).collect()
 
 # Explore metadata
 sav.meta.summary()
