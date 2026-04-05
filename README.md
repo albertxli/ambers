@@ -70,6 +70,34 @@ am.write_sav(df, "new.sav")
 
 `.sav` uses bytecode compression by default, `.zsav` uses zlib. Pass `compression=` to override (`"uncompressed"`, `"bytecode"`, `"zlib"`). Pass `meta=` to preserve all metadata from a prior `read_sav()`, or omit it to infer formats from the DataFrame.
 
+### SavFile
+
+`read_sav()` and `scan_sav()` return a `SavFile` object with file-level metadata alongside the data:
+
+```
+>>> sav = am.read_sav("survey_2025.sav")
+>>> sav
+┌─ SavFile ──────────────────────────┐
+│ Data        DataFrame (polars)     │
+│ Shape       22,070 rows x 677 cols │
+│ Source      survey_2025.sav        │
+│ File size   146.5 MB, bytecode     │
+│ Read time   0.286s                 │
+└────────────────────────────────────┘
+```
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `sav.data` | `DataFrame` or `LazyFrame` | The data (eager from `read_sav`, lazy from `scan_sav`) |
+| `sav.meta` | `SpssMetadata` | All variable metadata (labels, formats, value labels, etc.) |
+| `sav.source` | `str \| None` | Source file path |
+| `sav.shape` | `tuple[int, int] \| None` | `(n_rows, n_cols)` |
+| `sav.file_size` | `int \| None` | File size in bytes |
+| `sav.read_time` | `float \| None` | Wall-clock read time in seconds |
+| `sav.compression` | `str` | `"uncompressed"`, `"bytecode"`, or `"zlib"` |
+
+For `scan_sav()`, `read_time` measures metadata/schema reading only (not lazy collection).
+
 ## Rust
 
 ```rust
