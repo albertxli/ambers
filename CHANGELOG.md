@@ -2,6 +2,15 @@
 
 All notable changes to ambers are documented in this file.
 
+## [0.3.8] - 2026-04-05
+
+- Add `SavFile` Generic dataclass: `read_sav()` and `scan_sav()` now return `SavFile` with `.data` and `.meta` attributes instead of bare tuples
+- Rename `read_sav_metadata()` to `read_sav_meta()` for API consistency
+- Add custom `__repr__` for `SavFile` — compact summary in Jupyter/REPL
+- **Breaking:** `df, meta = am.read_sav(...)` tuple unpacking no longer works; use `sav = am.read_sav(...)` then `sav.data` / `sav.meta`
+- Add `uv`-only Python environment rule to project guidelines
+- Add `notebook_test/` to `.gitignore`
+
 ## [0.3.7] - 2025-02-24
 
 - Fix ZSAV writer: 3 bugs causing SPSS to crash on all ambers-written .zsav files
