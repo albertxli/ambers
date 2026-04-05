@@ -40,20 +40,17 @@ import polars as pl
 
 # Eager read — returns SavFile with .data and .meta
 sav = am.read_sav("survey.sav")
-sav.data                                                            # polars.DataFrame
-sav.meta                                                            # SpssMetadata
-
-# Extended use — unpack for convenience
 df, meta = sav.data, sav.meta
 
 # Lazy read — .data is a Polars LazyFrame
 sav = am.scan_sav("survey.sav")
-lf = sav.data.select(["Q1", "Q2", "age"]).head(1000).collect()
+lf, meta = sav.data, sav.meta
+df = lf.select(["Q1", "Q2", "age"]).head(1000).collect()
 
 # Explore metadata
-sav.meta.summary()
-sav.meta.describe("Q1")
-sav.meta.value("Q1")
+meta.summary()
+meta.describe("Q1")
+meta.value("Q1")
 
 # Read metadata only (fast, skips data)
 meta = am.read_sav_meta("survey.sav")

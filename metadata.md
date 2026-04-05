@@ -11,8 +11,9 @@ import ambers as am
 
 # Read metadata from a file
 sav = am.read_sav("survey.sav")
-sav.meta.summary()                    # formatted overview
-sav.meta.describe("Q1")              # single variable deep-dive
+df, meta = sav.data, sav.meta
+meta.summary()                        # formatted overview
+meta.describe("Q1")                  # single variable deep-dive
 
 # Construct metadata from scratch
 meta = am.SpssMetadata(
@@ -543,7 +544,8 @@ After reading a file, `meta.compression` tells you what compression the source f
 
 ```python
 sav = am.read_sav("data.sav")
-print(sav.meta.compression)  # "uncompressed", "bytecode", or "zlib"
+df, meta = sav.data, sav.meta
+print(meta.compression)  # "uncompressed", "bytecode", or "zlib"
 ```
 
 This is informational only — it cannot be set.
