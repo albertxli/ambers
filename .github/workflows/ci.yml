@@ -51,7 +51,13 @@ jobs:
       - name: Build wheel
         run: maturin build --release -o dist
 
-      - name: Install and smoke test
+      - name: Install wheel
+        run: uv pip install --system dist/*.whl
+
+      - name: Smoke test
+        run: python -c "import ambers; print('ambers imported successfully')"
+
+      - name: Run Python tests (small/synthetic data only)
         run: |
-          uv pip install --system dist/*.whl
-          python -c "import ambers; print('ambers imported successfully')"
+          uv pip install --system pytest
+          pytest tests/test_apply_labels.py tests/test_metadata_api.py tests/test_writer_issues.py -v
