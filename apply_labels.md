@@ -35,6 +35,48 @@ Polars `Enum` preserves this definition order. Sort, group_by, and value_counts 
 
 `Enum` is the best of both worlds: ordered and validated for analysis, readable text for export.
 
+## Design philosophy
+
+ambers is a Rust-powered library, and its API reflects a core Rust principle: **"Make illegal states unrepresentable."** In Rust, the compiler refuses to build code with unhandled cases. In ambers, `apply_labels` refuses to produce data with unhandled values.
+
+The three output modes map directly to Rust's error handling patterns:
+
+| `output=` | Rust equivalent | Philosophy |
+|-----------|-----------------|------------|
+| `"enum"` | `unwrap()` | **Fail fast.** Data must be complete — every value needs a label. If not, stop and fix the metadata before analysis. |
+| `"enum_null"` | `Option<T>` | **Acknowledge incompleteness.** Some values may lack labels — express this explicitly as `null` rather than hiding it. |
+| `"string"` | `format!("{:?}")` | **Escape hatch.** Trade type safety for convenience when you just need readable text for export. |
+
+Traditional workflows (pandas + `map()`) silently turn unmapped values into `NaN` — a data quality bug that may go unnoticed for months. ambers defaults to `output="enum"` because catching metadata gaps at load time is always cheaper than debugging silent corruption downstream.
+
+This is **type-safe data engineering**: the same discipline that makes Rust code reliable, applied to survey data pipelines.
+
+### Why labeling is separate from reading
+
+Some libraries (e.g., pyreadstat's `apply_value_formats=True`) apply labels at read time. If something goes wrong — incomplete labels, unmapped codes — you may get silent `NaN` values or an error with no way to inspect or fix the data.
+
+ambers separates reading from labeling into a **read → inspect → fix → label** workflow:
+
+```python
+sav = am.read_sav("survey.sav")
+df, meta = sav.data, sav.meta
+
+# 1. Inspect: see raw data + metadata before any transformation
+meta.describe("S2")
+meta.value("S2")            # {1.0: "Male", 2.0: "Female"} — missing 3, 4?
+df.select(pl.col("S2").unique())  # [1.0, 2.0, 3.0, 4.0]
+
+# 2. Fix: patch metadata with immutable .with_*() methods
+meta2 = meta.with_variable_value_labels({
+    "S2": {3: "Another gender", 4: "Rather not say"}
+})
+
+# 3. Label: apply only when ready
+labeled = am.apply_labels(df, meta2)
+```
+
+Each step can be inspected and corrected independently. You always have access to both the raw data and the metadata — nothing is lost or transformed prematurely.
+
 ## Signature
 
 ```python
