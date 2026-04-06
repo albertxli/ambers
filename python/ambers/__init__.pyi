@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, overload
 
 import polars
 
@@ -746,5 +746,65 @@ def write_sav(
     >>> am.write_sav(df, "output.zsav", meta=meta)                      # zlib (level 6)
     >>> am.write_sav(df, "output.zsav", meta=meta, compression_level=1) # fast zlib
     >>> am.write_sav(df, "raw.sav", meta=meta, compression="uncompressed")
+    """
+    ...
+
+@overload
+def apply_labels(
+    df: polars.DataFrame,
+    meta: SpssMetadata,
+    *,
+    columns: list[str] | None = ...,
+    output: str = ...,
+) -> polars.DataFrame: ...
+@overload
+def apply_labels(
+    df: polars.LazyFrame,
+    meta: SpssMetadata,
+    *,
+    columns: list[str] | None = ...,
+    output: str = ...,
+) -> polars.LazyFrame: ...
+def apply_labels(
+    df: polars.DataFrame | polars.LazyFrame,
+    meta: SpssMetadata,
+    *,
+    columns: list[str] | None = None,
+    output: str = "enum",
+) -> polars.DataFrame | polars.LazyFrame:
+    """Replace numeric/string codes with value labels from SPSS metadata.
+
+    Converts categorical columns from raw codes to their string labels.
+    By default produces ``pl.Enum`` columns preserving SPSS label ordering.
+
+    Parameters
+    ----------
+    df
+        A Polars DataFrame or LazyFrame with raw SPSS codes.
+    meta
+        SpssMetadata with value labels.
+    columns
+        Columns to apply labels to. None applies to all columns with
+        value labels in the metadata.
+    output
+        Output mode for labeled numeric columns.
+
+        - ``"enum"`` (default) — ``pl.Enum`` with ordered categories.
+          Raises if any non-null value has no label.
+        - ``"string"`` — ``pl.String``. Unmapped values become their
+          string representation.
+        - ``"enum_null"`` — ``pl.Enum`` with ordered categories.
+          Unmapped values become null.
+
+    Returns
+    -------
+    polars.DataFrame | polars.LazyFrame
+
+    Examples
+    --------
+    >>> sav = am.read_sav("survey.sav")
+    >>> df, meta = sav.data, sav.meta
+    >>> labeled = am.apply_labels(df, meta)
+    >>> labeled.write_excel("survey.xlsx")
     """
     ...

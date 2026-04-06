@@ -19,6 +19,8 @@ from ambers._ambers import (
 
 import polars as pl
 
+from ambers._transforms import apply_labels
+
 T = TypeVar("T", pl.DataFrame, pl.LazyFrame)
 
 
@@ -104,6 +106,7 @@ class SavFile(Generic[T]):
 
 __all__ = [
     "SavFile",
+    "apply_labels",
     "read_sav",
     "read_sav_meta",
     "scan_sav",

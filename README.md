@@ -66,6 +66,13 @@ am.write_sav(df, "fast.zsav", meta=meta, compression_level=1)      # fast zlib
 
 # From scratch — metadata is optional, inferred from DataFrame schema
 am.write_sav(df, "new.sav")
+
+# Apply value labels — replace codes with labels for export/analysis
+df, meta = sav.data, sav.meta
+labeled = am.apply_labels(df, meta)                          # Enum dtype (ordered, strict)
+labeled.write_excel("survey.xlsx")                            # Enum auto-casts to String
+labeled = am.apply_labels(df, meta, output="string")          # String dtype for export
+labeled = am.apply_labels(df, meta, output="enum_null")       # Enum, unmapped → null
 ```
 
 `.sav` uses bytecode compression by default, `.zsav` uses zlib. Pass `compression=` to override (`"uncompressed"`, `"bytecode"`, `"zlib"`). Pass `meta=` to preserve all metadata from a prior `read_sav()`, or omit it to infer formats from the DataFrame.
@@ -97,6 +104,34 @@ am.write_sav(df, "new.sav")
 | `sav.compression` | `str` | `"uncompressed"`, `"bytecode"`, or `"zlib"` |
 
 For `scan_sav()`, `read_time` measures metadata/schema reading only (not lazy collection).
+
+### apply_labels
+
+Replace numeric/string codes with their SPSS value labels. By default produces Polars `Enum` columns that preserve SPSS definition order — crucial for Likert scales and survey analysis.
+
+```python
+sav = am.read_sav("survey.sav")
+df, meta = sav.data, sav.meta
+
+# Default: Enum output, strict validation
+labeled = am.apply_labels(df, meta)
+labeled.group_by("satisfaction").agg(pl.len())  # sorted by definition order
+labeled.write_excel("survey.xlsx")              # Enum auto-casts to String
+
+# String output for quick export
+labeled = am.apply_labels(df, meta, output="string")
+
+# Enum output with unmapped values as null
+labeled = am.apply_labels(df, meta, output="enum_null")
+```
+
+| `output=` | Dtype | Unmapped values | Best for |
+|-----------|-------|-----------------|----------|
+| `"enum"` (default) | `pl.Enum` (ordered) | Error | Analysis — strict, validated categories |
+| `"string"` | `pl.String` | Stringify (`3.0` → `"3"`) | Export — readable text for Excel/CSV |
+| `"enum_null"` | `pl.Enum` (ordered) | Null | Analysis — exclude unknowns from base |
+
+Numeric columns without value labels are skipped. String columns always pass through unmapped text. See [apply_labels.md](apply_labels.md) for full documentation.
 
 ## Rust
 
