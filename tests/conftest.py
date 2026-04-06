@@ -2,7 +2,10 @@
 
 import pytest
 
-from test_paths import DEFAULT_FILES
+try:
+    from test_paths import DEFAULT_FILES
+except ModuleNotFoundError:
+    DEFAULT_FILES = []
 
 
 def pytest_addoption(parser):
