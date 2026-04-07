@@ -207,10 +207,8 @@ impl PyMetaDiff {
         only_other.sort();
 
         // Per-field diffs on shared variables
-        let label_diffs =
-            diff_string_maps(py, &a.variable_labels, &b.variable_labels, &shared)?;
-        let type_diffs =
-            diff_string_maps(py, &a.variable_formats, &b.variable_formats, &shared)?;
+        let label_diffs = diff_string_maps(py, &a.variable_labels, &b.variable_labels, &shared)?;
+        let type_diffs = diff_string_maps(py, &a.variable_formats, &b.variable_formats, &shared)?;
         let measure_diffs =
             diff_measure_maps(py, &a.variable_measures, &b.variable_measures, &shared)?;
         let display_diffs = diff_u32_maps(
@@ -238,8 +236,7 @@ impl PyMetaDiff {
             &shared,
         )?;
         let mr_diffs = diff_key_sets(py, &a.mr_sets, &b.mr_sets)?;
-        let role_diffs =
-            diff_role_maps(py, &a.variable_roles, &b.variable_roles, &shared)?;
+        let role_diffs = diff_role_maps(py, &a.variable_roles, &b.variable_roles, &shared)?;
         let attr_diffs =
             diff_attr_maps(py, &a.variable_attributes, &b.variable_attributes, &shared)?;
 
