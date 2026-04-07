@@ -2,6 +2,13 @@
 
 All notable changes to ambers are documented in this file.
 
+## [0.4.1] - 2026-04-07
+
+- Add `apply_missing(df, meta)` — nullify SPSS user-defined missing value codes (discrete, range, range+discrete)
+- Add `exclude=` parameter to both `apply_labels` and `apply_missing` — skip specific columns, mutually exclusive with `columns=`
+- 35 new tests: 28 for apply_missing (all SPSS missing value combinations), 7 for exclude parameter
+- Add `test_apply_missing.py` to CI pytest
+
 ## [0.4.0] - 2026-04-07
 
 - **Modularity refactor:** split `src/python/mod.rs` (2,299 LOC) into 5 focused submodules: `conversions.rs`, `metadata.rs`, `diff.rs`, `io.rs`, and thin `mod.rs`
