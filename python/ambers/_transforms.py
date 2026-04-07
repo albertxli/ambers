@@ -17,6 +17,7 @@ def apply_labels(
     meta,
     *,
     columns: list[str] | None = None,
+    exclude: list[str] | None = None,
     output: str = "enum",
 ) -> pl.DataFrame | pl.LazyFrame:
     """Replace numeric/string codes with value labels from SPSS metadata.
@@ -45,7 +46,10 @@ def apply_labels(
         columns: Columns to apply labels to. ``None`` applies to all
             columns that have value labels in the metadata. When specified
             explicitly, raises if columns are missing from data or have
-            no value labels defined.
+            no value labels defined. Mutually exclusive with ``exclude``.
+        exclude: Columns to skip. When set, all columns with value
+            labels are processed except those listed here. Mutually
+            exclusive with ``columns``.
         output: Output mode for labeled numeric columns.
 
             - ``"enum"`` (default) — ``pl.Enum`` with ordered categories.
@@ -89,6 +93,9 @@ def apply_labels(
         )
     as_enum, unmapped = _OUTPUT_MODES[output]
 
+    if columns is not None and exclude is not None:
+        raise ValueError("columns and exclude are mutually exclusive")
+
     # Get schema + determine target columns
     schema = (
         df.collect_schema() if isinstance(df, pl.LazyFrame) else df.schema
@@ -106,6 +113,9 @@ def apply_labels(
         target = columns
     else:
         target = [c for c in all_labels if c in data_cols]
+        if exclude is not None:
+            exclude_set = set(exclude)
+            target = [c for c in target if c not in exclude_set]
 
     if not target:
         return df

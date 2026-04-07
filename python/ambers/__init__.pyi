@@ -755,6 +755,7 @@ def apply_labels(
     meta: SpssMetadata,
     *,
     columns: list[str] | None = ...,
+    exclude: list[str] | None = ...,
     output: str = ...,
 ) -> polars.DataFrame: ...
 @overload
@@ -763,6 +764,7 @@ def apply_labels(
     meta: SpssMetadata,
     *,
     columns: list[str] | None = ...,
+    exclude: list[str] | None = ...,
     output: str = ...,
 ) -> polars.LazyFrame: ...
 def apply_labels(
@@ -770,6 +772,7 @@ def apply_labels(
     meta: SpssMetadata,
     *,
     columns: list[str] | None = None,
+    exclude: list[str] | None = None,
     output: str = "enum",
 ) -> polars.DataFrame | polars.LazyFrame:
     """Replace numeric/string codes with value labels from SPSS metadata.
@@ -785,7 +788,10 @@ def apply_labels(
         SpssMetadata with value labels.
     columns
         Columns to apply labels to. None applies to all columns with
-        value labels in the metadata.
+        value labels in the metadata. Mutually exclusive with ``exclude``.
+    exclude
+        Columns to skip. All columns with value labels are processed
+        except those listed here. Mutually exclusive with ``columns``.
     output
         Output mode for labeled numeric columns.
 
@@ -814,6 +820,7 @@ def apply_missing(
     meta: SpssMetadata,
     *,
     columns: list[str] | None = None,
+    exclude: list[str] | None = None,
 ) -> pl.DataFrame | pl.LazyFrame:
     """Replace SPSS user-defined missing value codes with null.
 
@@ -834,6 +841,11 @@ def apply_missing(
         Columns to apply missing values to. None applies to all
         columns with missing value specs in metadata. Columns not
         found in the DataFrame or without specs are silently skipped.
+        Mutually exclusive with ``exclude``.
+    exclude
+        Columns to skip. All columns with missing value specs are
+        processed except those listed here. Mutually exclusive with
+        ``columns``.
 
     Returns
     -------

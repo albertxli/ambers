@@ -228,6 +228,28 @@ class TestColumnsFilter:
         # Q2 has no spec, so nothing changes
         assert_frame_equal(result, df)
 
+    def test_exclude_skips_column(self):
+        df = pl.DataFrame({"Q1": [1.0, 99.0], "Q2": [98.0, 2.0]})
+        meta = _meta_with_missing({
+            "Q1": {"type": "discrete", "values": [99]},
+            "Q2": {"type": "discrete", "values": [98]},
+        })
+        result = am.apply_missing(df, meta, exclude=["Q2"])
+        assert result["Q1"].to_list() == [1.0, None]
+        assert result["Q2"].to_list() == [98.0, 2.0]  # NOT nullified
+
+    def test_exclude_all_columns(self):
+        df = pl.DataFrame({"Q1": [1.0, 99.0]})
+        meta = _meta_with_missing({"Q1": {"type": "discrete", "values": [99]}})
+        result = am.apply_missing(df, meta, exclude=["Q1"])
+        assert_frame_equal(result, df)
+
+    def test_columns_and_exclude_mutually_exclusive(self):
+        df = pl.DataFrame({"Q1": [1.0]})
+        meta = _meta_with_missing({"Q1": {"type": "discrete", "values": [99]}})
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            am.apply_missing(df, meta, columns=["Q1"], exclude=["Q2"])
+
 
 # ---------------------------------------------------------------------------
 # Type handling

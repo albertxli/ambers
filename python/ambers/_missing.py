@@ -10,6 +10,7 @@ def apply_missing(
     meta,
     *,
     columns: list[str] | None = None,
+    exclude: list[str] | None = None,
 ) -> pl.DataFrame | pl.LazyFrame:
     """Replace SPSS user-defined missing value codes with null.
 
@@ -28,7 +29,10 @@ def apply_missing(
         columns: Columns to apply missing values to. ``None`` applies
             to all columns that have missing value specs in metadata.
             Columns not found in the DataFrame or without specs are
-            silently skipped.
+            silently skipped. Mutually exclusive with ``exclude``.
+        exclude: Columns to skip. When set, all columns with missing
+            value specs are processed except those listed here.
+            Mutually exclusive with ``columns``.
 
     Returns:
         DataFrame or LazyFrame (same type as input) with missing value
@@ -38,6 +42,9 @@ def apply_missing(
         raise TypeError(
             f"df must be a polars DataFrame or LazyFrame, got {type(df).__name__}"
         )
+
+    if columns is not None and exclude is not None:
+        raise ValueError("columns and exclude are mutually exclusive")
 
     missing_specs = meta.variable_missing_values
     if not missing_specs:
@@ -51,6 +58,9 @@ def apply_missing(
         target_cols = [c for c in columns if c in df_columns and c in missing_specs]
     else:
         target_cols = [c for c in missing_specs if c in df_columns]
+        if exclude is not None:
+            exclude_set = set(exclude)
+            target_cols = [c for c in target_cols if c not in exclude_set]
 
     if not target_cols:
         return df

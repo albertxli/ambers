@@ -73,10 +73,12 @@ labeled = am.apply_labels(df, meta)                          # Enum dtype (order
 labeled.write_excel("survey.xlsx")                            # Enum auto-casts to String
 labeled = am.apply_labels(df, meta, output="string")          # String dtype for export
 labeled = am.apply_labels(df, meta, output="enum_null")       # Enum, unmapped → null
+labeled = am.apply_labels(df, meta, exclude=["weight", "id"])  # skip specific columns
 
 # Apply missing values — nullify SPSS user-defined missing codes
 clean = am.apply_missing(df, meta)                             # all columns with specs
 clean = am.apply_missing(df, meta, columns=["Q1", "Q2"])       # specific columns only
+clean = am.apply_missing(df, meta, exclude=["age"])            # skip specific columns
 ```
 
 `.sav` uses bytecode compression by default, `.zsav` uses zlib. Pass `compression=` to override (`"uncompressed"`, `"bytecode"`, `"zlib"`). Pass `meta=` to preserve all metadata from a prior `read_sav()`, or omit it to infer formats from the DataFrame.

@@ -85,6 +85,7 @@ def apply_labels(
     meta: SpssMetadata,
     *,
     columns: list[str] | None = None,
+    exclude: list[str] | None = None,
     output: Literal["enum", "string", "enum_null"] = "enum",
 ) -> DataFrame | LazyFrame
 ```
@@ -108,7 +109,7 @@ An `SpssMetadata` object containing value labels. Get it from `sav.meta`.
 
 ### `columns`
 
-Which columns to apply labels to. Default `None` applies to all columns that have value labels in the metadata AND exist in the data.
+Which columns to apply labels to. Default `None` applies to all columns that have value labels in the metadata AND exist in the data. Mutually exclusive with `exclude`.
 
 ```python
 # All columns with value labels
@@ -121,6 +122,15 @@ am.apply_labels(df, meta, columns=["gender", "satisfaction"])
 When specified explicitly, raises `ValueError` if:
 - A column doesn't exist in the data
 - A column has no value labels (or an empty label dict) in the metadata
+
+### `exclude`
+
+Columns to skip. When set, all columns with value labels are processed except those listed here. Mutually exclusive with `columns`.
+
+```python
+# Apply labels to everything except weight and ID columns
+am.apply_labels(df, meta, exclude=["weight", "respondent_id"])
+```
 
 ### `output`
 

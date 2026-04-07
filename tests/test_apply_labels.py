@@ -329,6 +329,40 @@ class TestErrorMessages:
 
 
 # ---------------------------------------------------------------------------
+# Exclude parameter
+# ---------------------------------------------------------------------------
+
+class TestExclude:
+    def test_exclude_skips_column(self):
+        df = pl.DataFrame({"Q1": [1.0, 2.0], "Q2": [1.0, 2.0]})
+        meta = am.SpssMetadata(variable_value_labels={
+            "Q1": {1: "A", 2: "B"},
+            "Q2": {1: "X", 2: "Y"},
+        })
+        result = am.apply_labels(df, meta, exclude=["Q2"], output="string")
+        assert result["Q1"].to_list() == ["A", "B"]
+        assert result["Q2"].dtype == pl.Float64  # NOT labeled
+
+    def test_exclude_all_columns(self):
+        df = pl.DataFrame({"Q1": [1.0, 2.0]})
+        meta = am.SpssMetadata(variable_value_labels={"Q1": {1: "A", 2: "B"}})
+        result = am.apply_labels(df, meta, exclude=["Q1"], output="string")
+        assert result["Q1"].dtype == pl.Float64
+
+    def test_exclude_nonexistent_column_silent(self):
+        df = pl.DataFrame({"Q1": [1.0, 2.0]})
+        meta = am.SpssMetadata(variable_value_labels={"Q1": {1: "A", 2: "B"}})
+        result = am.apply_labels(df, meta, exclude=["NOPE"], output="string")
+        assert result["Q1"].to_list() == ["A", "B"]
+
+    def test_columns_and_exclude_mutually_exclusive(self):
+        df = pl.DataFrame({"Q1": [1.0]})
+        meta = am.SpssMetadata(variable_value_labels={"Q1": {1: "A"}})
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            am.apply_labels(df, meta, columns=["Q1"], exclude=["Q2"])
+
+
+# ---------------------------------------------------------------------------
 # Real file test
 # ---------------------------------------------------------------------------
 
