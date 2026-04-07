@@ -808,3 +808,42 @@ def apply_labels(
     >>> labeled.write_excel("survey.xlsx")
     """
     ...
+
+def apply_missing(
+    df: pl.DataFrame | pl.LazyFrame,
+    meta: SpssMetadata,
+    *,
+    columns: list[str] | None = None,
+) -> pl.DataFrame | pl.LazyFrame:
+    """Replace SPSS user-defined missing value codes with null.
+
+    Converts values that match the missing value specifications in
+    ``meta.variable_missing_values`` to null. Handles discrete values,
+    ranges, and range-plus-discrete combinations.
+
+    **Scope:** User-defined missing values only. SPSS system missing
+    (SYSMIS) is already read as null by the reader.
+
+    Parameters
+    ----------
+    df
+        A Polars DataFrame or LazyFrame with raw SPSS data.
+    meta
+        SpssMetadata with missing value definitions.
+    columns
+        Columns to apply missing values to. None applies to all
+        columns with missing value specs in metadata. Columns not
+        found in the DataFrame or without specs are silently skipped.
+
+    Returns
+    -------
+    polars.DataFrame | polars.LazyFrame
+
+    Examples
+    --------
+    >>> sav = am.read_sav("survey.sav")
+    >>> df, meta = sav.data, sav.meta
+    >>> clean = am.apply_missing(df, meta)
+    >>> clean.null_count()
+    """
+    ...
