@@ -304,11 +304,11 @@ On the 5.4 GB file, selecting 5 columns and 1000 rows completes in **13ms** — 
 
 ## Roadmap
 
+- `apply_missing_values()` — apply SPSS missing value definitions to DataFrames
+- `meta.validate(df)` — validate metadata against a DataFrame
+- Codebook export — generate variable documentation from metadata
 - Continued I/O performance optimization
-- Expanded SPSS metadata field coverage
-- Rich metadata manipulation — add, update, merge, and remove metadata programmatically
-- Individual metadata field overrides in `write_sav()` — pass `variable_labels=`, `variable_value_labels=`, etc. alongside `meta=` to selectively override fields
-- Currently supports read and write with Polars DataFrames (eager and lazy) — extending to pandas, Narwhals, DuckDB, and others
+- Currently Polars-only — pandas/other DataFrame libraries may be added later
 
 ## License
 

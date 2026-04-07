@@ -2,6 +2,17 @@
 
 All notable changes to ambers are documented in this file.
 
+## [0.4.0] - 2026-04-07
+
+- **Modularity refactor:** split `src/python/mod.rs` (2,299 LOC) into 5 focused submodules: `conversions.rs`, `metadata.rs`, `diff.rs`, `io.rs`, and thin `mod.rs`
+- **Python package cleanup:** slim `__init__.py` (432 → 18 LOC) to thin re-exports; implementation moved to `_containers.py` and `_io.py`
+- Add `apply_labels()` with three output modes: `"enum"` (default), `"string"`, `"enum_null"`
+- Dtype-aware label application: Enum for numeric columns, pass-through for string columns
+- Add 42 tests for `apply_labels`: output modes, dtype-aware behavior, error handling, LazyFrame
+- Add Python pytest step to CI: apply_labels, metadata_api, writer_issues
+- Fix CI: make test_paths import conditional in conftest.py
+- No public API changes, no performance impact
+
 ## [0.3.9] - 2026-04-05
 
 - Add `source`, `shape`, `file_size`, `read_time`, `compression` fields to `SavFile`
