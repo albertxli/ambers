@@ -333,6 +333,8 @@ class TestErrorMessages:
 # ---------------------------------------------------------------------------
 
 class TestRealFile:
+    """Tests that require test_data/test_1_small.sav — excluded from CI with -k 'not RealFile'."""
+
     def test_read_and_apply(self):
         sav = am.read_sav("test_data/test_1_small.sav")
         df, meta = sav.data, sav.meta
