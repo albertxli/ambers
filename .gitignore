@@ -1,6 +1,7 @@
 /target
 __pycache__/
 *.pyd
+*.pdb
 *.so
 *.egg-info/
 dist/
