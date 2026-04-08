@@ -79,6 +79,13 @@ labeled = am.apply_labels(df, meta, exclude=["weight", "id"])  # skip specific c
 clean = am.apply_missing(df, meta)                             # all columns with specs
 clean = am.apply_missing(df, meta, columns=["Q1", "Q2"])       # specific columns only
 clean = am.apply_missing(df, meta, exclude=["age"])            # skip specific columns
+
+# Validate — check value label quality before analysis
+report = am.validate(df, meta)
+print(report)                                                   # box-drawing summary
+report.is_valid                                                 # True if no errors
+report.raise_if_invalid()                                       # raise if errors found
+report.to_frame()                                               # DataFrame for export
 ```
 
 `.sav` uses bytecode compression by default, `.zsav` uses zlib. Pass `compression=` to override (`"uncompressed"`, `"bytecode"`, `"zlib"`). Pass `meta=` to preserve all metadata from a prior `read_sav()`, or omit it to infer formats from the DataFrame.
@@ -138,6 +145,29 @@ labeled = am.apply_labels(df, meta, output="enum_null")
 | `"enum_null"` | `pl.Enum` (ordered) | Null | Analysis — exclude unknowns from base |
 
 Numeric columns without value labels are skipped. String columns always pass through unmapped text. See [apply_labels.md](apply_labels.md) for full documentation.
+
+### validate
+
+Check value label quality before analysis — catch unlabeled values and duplicate labels upfront.
+
+```python
+sav = am.read_sav("survey.sav")
+df, meta = sav.data, sav.meta
+
+report = am.validate(df, meta)
+print(report)           # box-drawing summary
+report.is_valid         # True if no errors (warnings OK)
+report.raise_if_invalid()  # raise ValueError if errors
+
+# Programmatic access
+for error in report.errors:
+    print(f"{error.column}: {error.details['unlabeled_values']}")
+
+# Export as DataFrame
+report.to_frame().write_csv("validation_issues.csv")
+```
+
+See [validate.md](validate.md) for full documentation.
 
 ## Rust
 

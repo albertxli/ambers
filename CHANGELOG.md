@@ -2,6 +2,16 @@
 
 All notable changes to ambers are documented in this file.
 
+## [0.4.2] - 2026-04-07
+
+- Add `validate(df, meta)` — check value label quality: unlabeled values (error) and duplicate labels (warning)
+- `ValidationReport` with `is_valid`, `errors`, `warnings`, `raise_if_invalid()`, `to_frame()`
+- Repr truncation: max 10 issues shown, long messages shortened, box width capped at 80 chars
+- Shared pure helpers between `validate()` and `apply_labels()` (logic/policy separation)
+- `columns` + `exclude` can be combined in `validate()` (lenient), stay mutually exclusive in `apply_labels`/`apply_missing` (strict)
+- Add `validate.md` documentation with full API reference and examples
+- 29 tests covering all checks, filtering, repr truncation, and shared helper consistency
+
 ## [0.4.1] - 2026-04-07
 
 - Add `apply_missing(df, meta)` — nullify SPSS user-defined missing value codes (discrete, range, range+discrete)

@@ -199,9 +199,12 @@ def _validate_labels(
 ) -> None:
     """Pre-check for unmapped values and duplicate labels on numeric columns.
 
+    Uses shared helpers from _validate.py for the actual checks.
     Raises ValueError with a structured diagnostic if issues are found.
     Only called when unmapped="error" or as_enum=True.
     """
+    from ambers._validate import check_duplicate_labels, check_unlabeled_values
+
     unmapped_issues: list[str] = []
     duplicate_issues: list[str] = []
 
@@ -209,19 +212,21 @@ def _validate_labels(
         labels = all_labels[col_name]
         label_keys = set(labels.keys())
 
-        # Check unmapped values
+        # Check unmapped values (using shared helper)
         if unmapped == "error":
-            col_expr = pl.col(col_name).drop_nulls().unique()
             if isinstance(df, pl.LazyFrame):
                 unique_vals = set(
-                    df.select(col_expr).collect()[col_name].to_list()
+                    df.select(pl.col(col_name).drop_nulls().unique())
+                    .collect()[col_name].to_list()
                 )
             else:
-                unique_vals = set(df.select(col_expr)[col_name].to_list())
-            n_unique = len(unique_vals)
-            n_labeled = len(label_keys)
-            missing = sorted(unique_vals - label_keys)
-            if missing:
+                unique_vals = set(
+                    df.select(pl.col(col_name).drop_nulls().unique())
+                    [col_name].to_list()
+                )
+            result = check_unlabeled_values(col_name, unique_vals, label_keys)
+            if result is not None:
+                missing = result["unlabeled_values"]
                 vals_str = ", ".join(str(v) for v in missing[:10])
                 if len(missing) > 10:
                     vals_str += f", ... ({len(missing)} total)"
@@ -229,30 +234,28 @@ def _validate_labels(
                     f"  {col_name}: {len(missing)} unmapped "
                     f"{'value' if len(missing) == 1 else 'values'}: "
                     f"[{vals_str}]  "
-                    f"({n_unique} unique, {n_labeled} labeled)"
+                    f"({result['unique_in_data']} unique, "
+                    f"{len(label_keys)} labeled)"
                 )
 
-        # Check duplicate label values
+        # Check duplicate label values (using shared helper)
         if as_enum:
-            seen: dict[str, list] = {}
-            for k, v in labels.items():
-                seen.setdefault(v, []).append(k)
-            dupes = {v: keys for v, keys in seen.items() if len(keys) > 1}
-            if dupes:
+            result = check_duplicate_labels(col_name, labels)
+            if result is not None:
                 parts = []
-                for label_val, keys in dupes.items():
+                for label_val, keys in result["duplicates"].items():
                     keys_str = ", ".join(str(k) for k in keys)
                     parts.append(f"[{keys_str}] -> {label_val!r}")
                 duplicate_issues.append(
-                    f"  {col_name}: {len(dupes)} duplicate "
-                    f"{'label' if len(dupes) == 1 else 'labels'}: "
+                    f"  {col_name}: {len(result['duplicates'])} duplicate "
+                    f"{'label' if len(result['duplicates']) == 1 else 'labels'}: "
                     + "; ".join(parts)
                 )
 
     if not unmapped_issues and not duplicate_issues:
         return
 
-    # Build structured error message
+    # Build structured error message (preserve existing format)
     msg_parts: list[str] = []
 
     if unmapped_issues:

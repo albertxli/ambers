@@ -859,3 +859,61 @@ def apply_missing(
     >>> clean.null_count()
     """
     ...
+
+class ValidationIssue:
+    severity: str
+    column: str
+    check: str
+    message: str
+    details: dict
+
+class ValidationReport:
+    issues: list[ValidationIssue]
+
+    @property
+    def is_valid(self) -> bool: ...
+    @property
+    def errors(self) -> list[ValidationIssue]: ...
+    @property
+    def warnings(self) -> list[ValidationIssue]: ...
+    def raise_if_invalid(self) -> None: ...
+    def to_frame(self) -> pl.DataFrame: ...
+
+def validate(
+    df: pl.DataFrame | pl.LazyFrame,
+    meta: SpssMetadata,
+    *,
+    columns: list[str] | None = None,
+    exclude: list[str] | None = None,
+) -> ValidationReport:
+    """Validate SPSS value label quality.
+
+    Checks numeric columns with value labels for unlabeled values
+    (error) and duplicate labels (warning). Columns without value
+    labels are skipped.
+
+    Parameters
+    ----------
+    df
+        A Polars DataFrame or LazyFrame.
+    meta
+        SpssMetadata with value labels.
+    columns
+        Columns to check. None checks all numeric columns with value
+        labels. Can be combined with ``exclude``.
+    exclude
+        Columns to skip. Applied after ``columns`` filtering.
+
+    Returns
+    -------
+    ValidationReport
+
+    Examples
+    --------
+    >>> sav = am.read_sav("survey.sav")
+    >>> df, meta = sav.data, sav.meta
+    >>> report = am.validate(df, meta)
+    >>> report.is_valid
+    >>> report.raise_if_invalid()
+    """
+    ...

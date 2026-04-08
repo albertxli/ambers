@@ -60,4 +60,4 @@ jobs:
       - name: Run Python tests (small/synthetic data only)
         run: |
           uv pip install --system pytest
-          pytest tests/test_apply_labels.py tests/test_apply_missing.py tests/test_metadata_api.py tests/test_writer_issues.py -v -k "not RealFile"
+          pytest tests/test_apply_labels.py tests/test_apply_missing.py tests/test_validate.py tests/test_metadata_api.py tests/test_writer_issues.py -v -k "not RealFile"
