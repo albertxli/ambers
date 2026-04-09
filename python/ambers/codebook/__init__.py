@@ -28,7 +28,7 @@ def codebook(
     df: pl.DataFrame | pl.LazyFrame,
     meta,
     *,
-    view: str = "detail",
+    view: str = "summary",
     columns: list[str] | None = None,
     exclude: list[str] | None = None,
     include_meta: bool = False,
@@ -38,8 +38,8 @@ def codebook(
     Args:
         df: A Polars DataFrame or LazyFrame.
         meta: An ``SpssMetadata`` object.
-        view: ``"detail"`` (one row per value) or ``"summary"``
-            (one row per variable).
+        view: ``"summary"`` (default, one row per variable) or
+            ``"detail"`` (one row per value).
         columns: Columns to include. ``None`` includes all.
             Can be combined with ``exclude``.
         exclude: Columns to skip. Applied after ``columns``.
@@ -238,9 +238,9 @@ def _build_summary(detail: pl.DataFrame) -> pl.DataFrame:
 
     # Reorder columns
     return summary.select([
-        "variable", "variable_label", "variable_type",
+        "variable", "variable_label", "variable_type", "values",
         "n_valid", "n_missing", "n_total",
-        "n_unique", "n_labeled", "n_unlabeled", "values",
+        "n_unique", "n_labeled", "n_unlabeled",
     ])
 
 
@@ -264,9 +264,9 @@ def _empty_detail(include_meta: bool = False) -> pl.DataFrame:
 def _empty_summary() -> pl.DataFrame:
     return pl.DataFrame(schema={
         "variable": pl.String, "variable_label": pl.String,
-        "variable_type": pl.String, "n_valid": pl.UInt32,
-        "n_missing": pl.UInt32, "n_total": pl.UInt32,
-        "n_unique": pl.UInt32, "n_labeled": pl.UInt32,
-        "n_unlabeled": pl.UInt32,
+        "variable_type": pl.String,
         "values": pl.List(pl.Struct({"value_code": pl.Int64, "value_label": pl.String})),
+        "n_valid": pl.UInt32, "n_missing": pl.UInt32,
+        "n_total": pl.UInt32, "n_unique": pl.UInt32,
+        "n_labeled": pl.UInt32, "n_unlabeled": pl.UInt32,
     })
