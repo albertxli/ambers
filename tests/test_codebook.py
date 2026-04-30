@@ -28,7 +28,7 @@ class TestDetailComputedColumns:
     def test_n_valid_excludes_missing(self):
         df = pl.DataFrame({"Q1": [1.0, 2.0, None, None]})
         meta = _meta(variable_value_labels={"Q1": {1.0: "A", 2.0: "B"}})
-        cb = am.codebook(df, meta, view="detail")
+        cb = am.codebook(df, meta, view="values")
         non_missing = cb.filter(pl.col("value_label") != MISSING_LABEL)
         assert non_missing["n_valid"][0] == 2
 
@@ -36,7 +36,7 @@ class TestDetailComputedColumns:
         """MISSING row: n_valid = its own value_n (null count)."""
         df = pl.DataFrame({"Q1": [1.0, 2.0, None, None, None]})
         meta = _meta(variable_value_labels={"Q1": {1.0: "A", 2.0: "B"}})
-        cb = am.codebook(df, meta, view="detail")
+        cb = am.codebook(df, meta, view="values")
         missing_row = cb.filter(pl.col("value_label") == MISSING_LABEL)
         assert missing_row["n_valid"][0] == 3
         assert missing_row["value_n"][0] == 3
@@ -44,7 +44,7 @@ class TestDetailComputedColumns:
     def test_pct_valid(self):
         df = pl.DataFrame({"Q1": [1.0, 1.0, 2.0, 2.0, 2.0]})
         meta = _meta(variable_value_labels={"Q1": {1.0: "A", 2.0: "B"}})
-        cb = am.codebook(df, meta, view="detail")
+        cb = am.codebook(df, meta, view="values")
         rows = cb.to_dicts()
         row_a = [r for r in rows if r["value_label"] == "A"][0]
         row_b = [r for r in rows if r["value_label"] == "B"][0]
@@ -54,20 +54,20 @@ class TestDetailComputedColumns:
     def test_pct_valid_null_for_missing_row(self):
         df = pl.DataFrame({"Q1": [1.0, None]})
         meta = _meta(variable_value_labels={"Q1": {1.0: "A"}})
-        cb = am.codebook(df, meta, view="detail")
+        cb = am.codebook(df, meta, view="values")
         missing_row = cb.filter(pl.col("value_label") == MISSING_LABEL)
         assert missing_row["pct_valid"][0] is None
 
     def test_n_total_includes_missing(self):
         df = pl.DataFrame({"Q1": [1.0, 2.0, None]})
         meta = _meta(variable_value_labels={"Q1": {1.0: "A", 2.0: "B"}})
-        cb = am.codebook(df, meta, view="detail")
+        cb = am.codebook(df, meta, view="values")
         assert cb["n_total"].unique().to_list() == [3]
 
     def test_pct_total(self):
         df = pl.DataFrame({"Q1": [1.0, 2.0, None]})
         meta = _meta(variable_value_labels={"Q1": {1.0: "A", 2.0: "B"}})
-        cb = am.codebook(df, meta, view="detail")
+        cb = am.codebook(df, meta, view="values")
         rows = cb.to_dicts()
         row_a = [r for r in rows if r.get("value_label") == "A"][0]
         assert abs(row_a["pct_total"] - 1 / 3) < 0.001
@@ -75,21 +75,21 @@ class TestDetailComputedColumns:
     def test_variable_type_merged_to_categorical(self):
         df = pl.DataFrame({"Q1": [1.0, 2.0]})
         meta = _meta(variable_value_labels={"Q1": {1.0: "A", 2.0: "B"}})
-        cb = am.codebook(df, meta, view="detail")
+        cb = am.codebook(df, meta, view="values")
         assert cb["variable_type"].unique().to_list() == ["categorical"]
 
     def test_no_flag_columns_in_detail(self):
         """Detail view should NOT have missing_data or unlabeled_value columns."""
         df = pl.DataFrame({"Q1": [1.0, 99.0, None]})
         meta = _meta(variable_value_labels={"Q1": {1.0: "A"}})
-        cb = am.codebook(df, meta, view="detail")
+        cb = am.codebook(df, meta, view="values")
         assert "missing_data" not in cb.columns
         assert "unlabeled_value" not in cb.columns
 
     def test_detail_columns_schema(self):
         df = pl.DataFrame({"Q1": [1.0]})
         meta = _meta(variable_value_labels={"Q1": {1.0: "A"}})
-        cb = am.codebook(df, meta, view="detail")
+        cb = am.codebook(df, meta, view="values")
         expected = {
             "variable", "variable_label", "variable_type",
             "value_code", "value_label", "value_n",
@@ -148,7 +148,7 @@ class TestIncludeMeta:
             variable_measures={"Q1": "nominal"},
             variable_formats={"Q1": "F4.0"},
         )
-        cb = am.codebook(df, meta, view="detail", include_meta=True)
+        cb = am.codebook(df, meta, view="values", include_meta=True)
         assert "variable_measure" in cb.columns
         assert cb["variable_measure"][0] == "nominal"
 
@@ -161,7 +161,7 @@ class TestInputTypes:
     def test_lazyframe_input(self):
         lf = pl.DataFrame({"Q1": [1.0, 2.0]}).lazy()
         meta = _meta(variable_value_labels={"Q1": {1.0: "A", 2.0: "B"}})
-        cb = am.codebook(lf, meta, view="detail")
+        cb = am.codebook(lf, meta, view="values")
         assert isinstance(cb, pl.DataFrame)
         assert cb.height == 2
 
@@ -172,7 +172,7 @@ class TestInputTypes:
     def test_empty_df(self):
         df = pl.DataFrame({"Q1": pl.Series([], dtype=pl.Float64)})
         meta = _meta(variable_value_labels={"Q1": {1.0: "A"}})
-        cb = am.codebook(df, meta, view="detail")
+        cb = am.codebook(df, meta, view="values")
         assert cb.height >= 1
 
 
@@ -187,14 +187,14 @@ class TestSummaryView:
             "age": [25.0, 30.0, 35.0],
         })
         meta = _meta(variable_value_labels={"Q1": {1.0: "A", 2.0: "B", 3.0: "C"}})
-        cb = am.codebook(df, meta, view="summary")
+        cb = am.codebook(df, meta, view="variables")
         assert cb.height == 2
         assert set(cb["variable"].to_list()) == {"Q1", "age"}
 
     def test_n_valid_n_missing(self):
         df = pl.DataFrame({"Q1": [1.0, 2.0, None, None]})
         meta = _meta(variable_value_labels={"Q1": {1.0: "A", 2.0: "B"}})
-        cb = am.codebook(df, meta, view="summary")
+        cb = am.codebook(df, meta, view="variables")
         row = cb.to_dicts()[0]
         assert row["n_valid"] == 2
         assert row["n_missing"] == 2
@@ -203,7 +203,7 @@ class TestSummaryView:
         """n_total = n_valid + n_missing."""
         df = pl.DataFrame({"Q1": [1.0, 2.0, None, None]})
         meta = _meta(variable_value_labels={"Q1": {1.0: "A", 2.0: "B"}})
-        cb = am.codebook(df, meta, view="summary")
+        cb = am.codebook(df, meta, view="variables")
         row = cb.to_dicts()[0]
         assert row["n_total"] == 4
         assert row["n_total"] == row["n_valid"] + row["n_missing"]
@@ -211,7 +211,7 @@ class TestSummaryView:
     def test_n_labeled_n_unlabeled(self):
         df = pl.DataFrame({"Q1": [1.0, 2.0, 99.0]})
         meta = _meta(variable_value_labels={"Q1": {1.0: "A", 2.0: "B"}})
-        cb = am.codebook(df, meta, view="summary")
+        cb = am.codebook(df, meta, view="variables")
         row = cb.to_dicts()[0]
         assert row["n_labeled"] == 2
         assert row["n_unlabeled"] == 1
@@ -219,7 +219,7 @@ class TestSummaryView:
     def test_values_is_list_struct(self):
         df = pl.DataFrame({"Q1": [1.0, 2.0]})
         meta = _meta(variable_value_labels={"Q1": {1.0: "Low", 2.0: "High"}})
-        cb = am.codebook(df, meta, view="summary")
+        cb = am.codebook(df, meta, view="variables", values_format="struct")
         # values column should be List[Struct{value_code, value_label}]
         vals = cb["values"][0].to_list()
         assert len(vals) == 2
@@ -233,7 +233,7 @@ class TestSummaryView:
         """values column should be explodable + unnestable."""
         df = pl.DataFrame({"Q1": [1.0, 2.0]})
         meta = _meta(variable_value_labels={"Q1": {1.0: "A", 2.0: "B"}})
-        cb = am.codebook(df, meta, view="summary")
+        cb = am.codebook(df, meta, view="variables", values_format="struct")
         exploded = cb.explode("values").unnest("values")
         assert "value_code" in exploded.columns
         assert "value_label" in exploded.columns
@@ -242,16 +242,73 @@ class TestSummaryView:
     def test_numeric_has_null_label_fields(self):
         df = pl.DataFrame({"age": [25.0, 30.0]})
         meta = _meta()
-        cb = am.codebook(df, meta, view="summary")
+        cb = am.codebook(df, meta, view="variables", values_format="struct")
         row = cb.to_dicts()[0]
         assert row["n_labeled"] is None
         assert row["n_unlabeled"] is None
         assert row["values"] is None or row["values"] == []
 
+    def test_values_default_is_string(self):
+        """Default values_format='string' returns newline-joined String."""
+        df = pl.DataFrame({"Q1": [1.0, 2.0, 3.0]})
+        meta = _meta(variable_value_labels={"Q1": {1.0: "Low", 2.0: "Mid", 3.0: "High"}})
+        cb = am.codebook(df, meta, view="variables")
+        assert cb.schema["values"] == pl.String
+        row = cb.to_dicts()[0]
+        # 1.0 / 2.0 / 3.0 render as integers (trailing .0 stripped); newline-joined
+        assert row["values"] == "1=Low\n2=Mid\n3=High"
+
+    def test_values_string_non_categorical_is_null(self):
+        """Numeric/text/date variables get null values in string mode (not '')."""
+        df = pl.DataFrame({"age": [25.0, 30.0]})
+        meta = _meta()
+        cb = am.codebook(df, meta, view="variables")
+        assert cb.schema["values"] == pl.String
+        assert cb.to_dicts()[0]["values"] is None
+
+    def test_values_format_invalid_raises(self):
+        df = pl.DataFrame({"Q1": [1.0]})
+        meta = _meta(variable_value_labels={"Q1": {1.0: "A"}})
+        with pytest.raises(ValueError, match="values_format"):
+            am.codebook(df, meta, values_format="bogus")
+
+    def test_values_format_struct_with_values_view_raises(self):
+        """values_format='struct' with view='values' is a misuse and raises."""
+        df = pl.DataFrame({"Q1": [1.0]})
+        meta = _meta(variable_value_labels={"Q1": {1.0: "A"}})
+        with pytest.raises(ValueError, match="view='variables'"):
+            am.codebook(df, meta, view="values", values_format="struct")
+
+    def test_values_format_default_with_values_view_ok(self):
+        """Default values_format with view='values' is fine (no-op)."""
+        df = pl.DataFrame({"Q1": [1.0]})
+        meta = _meta(variable_value_labels={"Q1": {1.0: "A"}})
+        cb = am.codebook(df, meta, view="values")
+        assert "value_code" in cb.columns and "value_label" in cb.columns
+
+    def test_view_invalid_raises(self):
+        df = pl.DataFrame({"Q1": [1.0]})
+        meta = _meta(variable_value_labels={"Q1": {1.0: "A"}})
+        with pytest.raises(ValueError, match="view"):
+            am.codebook(df, meta, view="bogus")
+
+    def test_empty_summary_schema_default_string(self):
+        """codebook() on empty target list returns String values dtype."""
+        df = pl.DataFrame({"Q1": [1.0]})
+        meta = _meta(variable_value_labels={"Q1": {1.0: "A"}})
+        cb = am.codebook(df, meta, columns=["nonexistent"])
+        assert cb.schema["values"] == pl.String
+
+    def test_empty_summary_schema_struct(self):
+        df = pl.DataFrame({"Q1": [1.0]})
+        meta = _meta(variable_value_labels={"Q1": {1.0: "A"}})
+        cb = am.codebook(df, meta, columns=["nonexistent"], values_format="struct")
+        assert isinstance(cb.schema["values"], pl.List)
+
     def test_summary_columns(self):
         df = pl.DataFrame({"Q1": [1.0]})
         meta = _meta(variable_value_labels={"Q1": {1.0: "A"}})
-        cb = am.codebook(df, meta, view="summary")
+        cb = am.codebook(df, meta, view="variables")
         expected = {
             "variable", "variable_label", "variable_type", "values",
             "n_valid", "n_missing", "n_total",
@@ -263,17 +320,17 @@ class TestSummaryView:
         """values after variable_type, n_total after n_missing."""
         df = pl.DataFrame({"Q1": [1.0]})
         meta = _meta(variable_value_labels={"Q1": {1.0: "A"}})
-        cb = am.codebook(df, meta, view="summary")
+        cb = am.codebook(df, meta, view="variables")
         cols = cb.columns
         assert cols.index("values") == cols.index("variable_type") + 1
         assert cols.index("n_total") == cols.index("n_missing") + 1
 
-    def test_summary_is_default(self):
-        """codebook() without view= should return summary."""
+    def test_variables_view_is_default(self):
+        """codebook() without view= should return view='variables'."""
         df = pl.DataFrame({"Q1": [1.0, 2.0]})
         meta = _meta(variable_value_labels={"Q1": {1.0: "A", 2.0: "B"}})
         default = am.codebook(df, meta)
-        explicit = am.codebook(df, meta, view="summary")
+        explicit = am.codebook(df, meta, view="variables")
         assert default.columns == explicit.columns
         assert default.height == explicit.height
 
@@ -290,7 +347,7 @@ class TestRealFile:
     def test_detail_all_variables_present(self):
         sav = am.read_sav(_REAL_FILE)
         df, meta = sav.data, sav.meta
-        cb = am.codebook(df, meta, view="detail")
+        cb = am.codebook(df, meta, view="values")
         df_vars = set(df.columns)
         cb_vars = set(cb["variable"].unique().to_list())
         assert df_vars == cb_vars
@@ -298,7 +355,7 @@ class TestRealFile:
     def test_detail_schema(self):
         sav = am.read_sav(_REAL_FILE)
         df, meta = sav.data, sav.meta
-        cb = am.codebook(df, meta, view="detail")
+        cb = am.codebook(df, meta, view="values")
         expected = {
             "variable", "variable_label", "variable_type",
             "value_code", "value_label", "value_n",
@@ -309,13 +366,13 @@ class TestRealFile:
     def test_summary_all_variables_present(self):
         sav = am.read_sav(_REAL_FILE)
         df, meta = sav.data, sav.meta
-        cb = am.codebook(df, meta, view="summary")
+        cb = am.codebook(df, meta, view="variables")
         assert cb.height == len(df.columns)
 
     def test_categorical_has_multiple_rows(self):
         sav = am.read_sav(_REAL_FILE)
         df, meta = sav.data, sav.meta
-        cb = am.codebook(df, meta, view="detail")
+        cb = am.codebook(df, meta, view="values")
         cat_vars = cb.filter(pl.col("variable_type") == "categorical")["variable"].unique()
         for var in cat_vars.to_list():
             var_rows = cb.filter(pl.col("variable") == var)
@@ -324,5 +381,5 @@ class TestRealFile:
     def test_value_n_never_negative(self):
         sav = am.read_sav(_REAL_FILE)
         df, meta = sav.data, sav.meta
-        cb = am.codebook(df, meta, view="detail")
+        cb = am.codebook(df, meta, view="values")
         assert cb["value_n"].min() >= 0

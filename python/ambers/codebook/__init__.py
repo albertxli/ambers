@@ -2,19 +2,25 @@
 
 Produces a Polars DataFrame documenting every variable and its values.
 
-Two views:
+Two views, named after the granularity of each row:
 
-- **Detail** (default): one row per (variable, value) for categorical
-  variables, one summary row for numeric/text/date. Columns:
+- **variables** (default): one row per variable. Columns:
+  ``variable``, ``variable_label``, ``variable_type``, ``values``,
+  ``n_valid``, ``n_missing``, ``n_total``, ``n_unique``,
+  ``n_labeled``, ``n_unlabeled``.
+
+  The ``values`` column has two formats controlled by ``values_format=``:
+
+  - ``"string"`` (default): newline-separated ``"1=Low\\n2=Medium\\n5=High"``,
+    renders cleanly in marimo HTML and Excel.
+  - ``"struct"``: ``List[Struct{value_code, value_label}]``, native dtypes,
+    explodable + unnestable for programmatic work.
+
+- **values**: one row per (variable, value) for categorical variables,
+  one summary row for numeric/text/date. Columns:
   ``variable``, ``variable_label``, ``variable_type``,
   ``value_code``, ``value_label``, ``value_n``,
   ``n_valid``, ``pct_valid``, ``n_total``, ``pct_total``.
-
-- **Summary**: one row per variable. Columns:
-  ``variable``, ``variable_label``, ``variable_type``,
-  ``n_valid``, ``n_missing``, ``n_total``, ``n_unique``,
-  ``n_labeled``, ``n_unlabeled``, ``values``
-  (List[Struct{value_code, value_label}] — explodable + unnestable).
 """
 
 from __future__ import annotations
@@ -28,37 +34,44 @@ def codebook(
     df: pl.DataFrame | pl.LazyFrame,
     meta,
     *,
-    view: str = "summary",
+    view: str = "variables",
     columns: list[str] | None = None,
     exclude: list[str] | None = None,
     include_meta: bool = False,
+    values_format: str = "string",
 ) -> pl.DataFrame:
     """Generate a codebook from data and metadata.
 
     Args:
         df: A Polars DataFrame or LazyFrame.
         meta: An ``SpssMetadata`` object.
-        view: ``"summary"`` (default, one row per variable) or
-            ``"detail"`` (one row per value).
+        view: ``"variables"`` (default, one row per variable) or
+            ``"values"`` (one row per value).
         columns: Columns to include. ``None`` includes all.
             Can be combined with ``exclude``.
         exclude: Columns to skip. Applied after ``columns``.
         include_meta: If True, add ``variable_measure`` and
-            ``variable_format`` columns to detail view.
+            ``variable_format`` columns to the values view.
+        values_format: ``view="variables"`` only — ignored in the values
+            view (and passing a non-default value with ``view="values"``
+            raises ``ValueError`` to flag the misuse). ``"string"``
+            (default) emits ``values`` as newline-separated
+            ``"1=Low\\n2=Medium"``. ``"struct"`` emits
+            ``List[Struct{value_code, value_label}]`` for
+            ``.explode().unnest()`` workflows.
 
     Returns:
         A Polars DataFrame with the codebook.
 
-        **Detail view columns:**
+        **Variables view columns:**
+        ``variable``, ``variable_label``, ``variable_type``, ``values``,
+        ``n_valid``, ``n_missing``, ``n_total``, ``n_unique``,
+        ``n_labeled``, ``n_unlabeled``.
+
+        **Values view columns:**
         ``variable``, ``variable_label``, ``variable_type``,
         ``value_code``, ``value_label``, ``value_n``,
         ``n_valid``, ``pct_valid``, ``n_total``, ``pct_total``.
-
-        **Summary view columns:**
-        ``variable``, ``variable_label``, ``variable_type``,
-        ``n_valid``, ``n_missing``, ``n_total``, ``n_unique``,
-        ``n_labeled``, ``n_unlabeled``, ``values``
-        (List[Struct{value_code, value_label}]).
     """
     from ._engine import build_rows
     from ._types import detect_types
@@ -66,6 +79,22 @@ def codebook(
     if not isinstance(df, (pl.DataFrame, pl.LazyFrame)):
         raise TypeError(
             f"df must be a polars DataFrame or LazyFrame, got {type(df).__name__}"
+        )
+
+    if view not in ("variables", "values"):
+        raise ValueError(
+            f"view must be 'variables' or 'values', got {view!r}"
+        )
+
+    if values_format not in ("string", "struct"):
+        raise ValueError(
+            f"values_format must be 'string' or 'struct', got {values_format!r}"
+        )
+
+    if view == "values" and values_format != "string":
+        raise ValueError(
+            "values_format only applies to view='variables'; "
+            "omit values_format when using view='values'"
         )
 
     # Collect LazyFrame
@@ -79,7 +108,9 @@ def codebook(
         target = [c for c in target if c not in exclude_set]
 
     if not target:
-        return _empty_detail(include_meta) if view == "detail" else _empty_summary()
+        if view == "values":
+            return _empty_detail(include_meta)
+        return _empty_summary(values_format)
 
     # Phase 1: type detection
     type_map = detect_types(df.select(target), meta)
@@ -90,8 +121,8 @@ def codebook(
     # Phase 3: computed columns
     detail = _compute_detail(raw)
 
-    if view == "summary":
-        return _build_summary(detail)
+    if view == "variables":
+        return _build_summary(detail, values_format)
 
     # Select final columns for detail view
     cols = [
@@ -167,13 +198,13 @@ def _compute_detail(raw: pl.DataFrame) -> pl.DataFrame:
     return result
 
 
-def _build_summary(detail: pl.DataFrame) -> pl.DataFrame:
+def _build_summary(detail: pl.DataFrame, values_format: str = "string") -> pl.DataFrame:
     """Aggregate detail view into one row per variable.
 
     Uses single group_by().agg() instead of per-variable Python loop.
     """
     if detail.height == 0:
-        return _empty_summary()
+        return _empty_summary(values_format)
 
     is_missing = pl.col("value_label").eq(MISSING_LABEL).fill_null(False)
     is_unlabeled = pl.col("value_code").is_not_null() & pl.col("value_label").is_null()
@@ -218,13 +249,36 @@ def _build_summary(detail: pl.DataFrame) -> pl.DataFrame:
         (pl.col("n_valid") + pl.col("n_missing")).cast(pl.UInt32).alias("n_total")
     )
 
-    # For non-categorical: set n_labeled, n_unlabeled, value_labels to null
+    # Format the values column for human-readable rendering when requested.
+    # The struct list was filtered to has_code_and_label upstream, so empty
+    # lists here mean "no labeled values" (e.g. non-categorical) — the
+    # ~is_cat masking below converts those to nulls.
+    if values_format == "string":
+        # Cast value_code to string and strip a trailing ".0" so Float64
+        # codes (1.0) render as "1" while genuine fractional codes (1.5) are
+        # preserved.
+        formatted_pair = pl.format(
+            "{}={}",
+            pl.element().struct.field("value_code")
+                .cast(pl.String)
+                .str.replace(r"\.0$", ""),
+            pl.element().struct.field("value_label"),
+        )
+        summary = summary.with_columns(
+            pl.col("values")
+            .list.eval(formatted_pair)
+            .list.join("\n")
+            .alias("values")
+        )
+
+    # For non-categorical: set n_labeled, n_unlabeled, values to null
     # Also fix n_unique for non-categorical (should be value_n from summary row, not 0)
     is_cat = pl.col("variable_type") == "categorical"
+    values_null = pl.lit(None, dtype=pl.String) if values_format == "string" else pl.lit(None)
     summary = summary.with_columns(
         pl.when(~is_cat).then(pl.lit(None, dtype=pl.UInt32)).otherwise(pl.col("n_labeled")).alias("n_labeled"),
         pl.when(~is_cat).then(pl.lit(None, dtype=pl.UInt32)).otherwise(pl.col("n_unlabeled")).alias("n_unlabeled"),
-        pl.when(~is_cat).then(pl.lit(None)).otherwise(pl.col("values")).alias("values"),
+        pl.when(~is_cat).then(values_null).otherwise(pl.col("values")).alias("values"),
         # Non-cat n_unique: should equal n_valid (preserved quirk from original)
         pl.when(~is_cat).then(pl.col("n_valid")).otherwise(pl.col("n_unique")).alias("n_unique"),
     )
@@ -261,11 +315,15 @@ def _empty_detail(include_meta: bool = False) -> pl.DataFrame:
     return pl.DataFrame(schema=schema)
 
 
-def _empty_summary() -> pl.DataFrame:
+def _empty_summary(values_format: str = "string") -> pl.DataFrame:
+    if values_format == "string":
+        values_dtype = pl.String
+    else:
+        values_dtype = pl.List(pl.Struct({"value_code": pl.Int64, "value_label": pl.String}))
     return pl.DataFrame(schema={
         "variable": pl.String, "variable_label": pl.String,
         "variable_type": pl.String,
-        "values": pl.List(pl.Struct({"value_code": pl.Int64, "value_label": pl.String})),
+        "values": values_dtype,
         "n_valid": pl.UInt32, "n_missing": pl.UInt32,
         "n_total": pl.UInt32, "n_unique": pl.UInt32,
         "n_labeled": pl.UInt32, "n_unlabeled": pl.UInt32,
