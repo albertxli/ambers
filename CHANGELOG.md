@@ -2,6 +2,17 @@
 
 All notable changes to ambers are documented in this file.
 
+## [0.4.3] - 2026-04-30
+
+- Add `codebook(df, meta)` — generate a Polars DataFrame data dictionary documenting every variable and its values
+- Two views: `view="variables"` (default, one row per variable) and `view="values"` (one row per value)
+- 5-way variable type detection: single-select, multi-select, numeric, text, date — with full multi-select tiers (MR sets, binary patterns, sibling series, generic binary)
+- `values_format=` controls the variables-view `values` column: `"string"` (default, newline-joined `"1=Low\n2=Medium"`) for clean marimo HTML and Excel rendering; `"struct"` for `List[Struct{value_code, value_label}]` with `.explode().unnest()` workflows
+- `include_meta=True` adds `variable_measure` and `variable_format` columns to the values view
+- `columns=` and `exclude=` filtering combinable
+- Strict validation: rejects unknown `view` values; rejects `values_format` with `view="values"`
+- 40 tests; integration verified on real SPSS files
+
 ## [0.4.2] - 2026-04-07
 
 - Add `validate(df, meta)` — check value label quality: unlabeled values (error) and duplicate labels (warning)
