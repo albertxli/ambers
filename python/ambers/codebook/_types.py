@@ -355,7 +355,7 @@ def detect_types(
     binary_info: dict[str, str] = {}
     if cols_to_check:
         exprs = (
-            [pl.col(c).drop_nulls().is_in([0.0, 1.0]).all().alias(f"{c}::bin")
+            [pl.col(c).drop_nulls().cast(pl.Float64).is_in([0.0, 1.0]).all().alias(f"{c}::bin")
              for c in cols_to_check]
             + [pl.col(c).drop_nulls().n_unique().alias(f"{c}::nu")
                for c in cols_to_check]

@@ -12,6 +12,7 @@ Usage: python -m pytest tests/test_writer_issues.py -v
 
 import os
 import pathlib
+from datetime import date
 
 import polars as pl
 import pytest
@@ -282,7 +283,7 @@ class TestIssue267FormatTypeMismatch:
 
     def test_string_format_on_date_col(self):
         """A50 on a Date32 column should raise."""
-        df = pl.DataFrame({"d": ["2024-01-01", "2024-06-15"]}).cast({"d": pl.Date})
+        df = pl.DataFrame({"d": [date(2024, 1, 1), date(2024, 6, 15)]})
         meta = am.SpssMetadata(variable_formats={"d": "A50"})
         with pytest.raises(Exception, match="cannot be applied to a non-string"):
             am.write_sav(

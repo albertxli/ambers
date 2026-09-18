@@ -65,7 +65,7 @@ def read_sav(
         resolved = None
 
     stream, meta = _read_sav(str(path), columns=resolved, n_rows=n_rows)
-    df = pl.from_arrow(stream)
+    df = pl.DataFrame(stream)
     if row_index_name is not None:
         df = df.with_row_index(row_index_name, offset=row_index_offset)
 
@@ -186,7 +186,7 @@ def scan_sav(
             scanner.limit(min(limits))
 
         while (batch := scanner.next_batch()) is not None:
-            df = pl.from_arrow(batch)
+            df = pl.DataFrame(batch)
             if predicate is not None:
                 df = df.filter(predicate)
             yield df
