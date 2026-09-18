@@ -2,6 +2,12 @@
 
 All notable changes to ambers are documented in this file.
 
+## [0.4.4] - 2026-09-18
+
+- Fix `FutureWarning: from_arrow(<ArrowStreamExportable>) will return a Series` emitted by `read_sav()` and `scan_sav()` on Polars >= 1.44 — Arrow streams are now converted with `pl.DataFrame()` (available since Polars 1.3, which remains the minimum)
+- Polars 2.0 compatibility: `read_sav()`/`scan_sav()` no longer break when `pl.from_arrow()` returns a Series; `codebook()` type detection casts before `is_in()` to satisfy 2.0's strict coercion. Full Python test suite passes on Polars 1.40, 1.44.2 and 2.0.0rc1
+- Add `tests/test_polars_compat.py` (eager, lazy, and multi-batch conversion with FutureWarning treated as error); added to CI
+
 ## [0.4.3] - 2026-04-30
 
 - Add `codebook(df, meta)` — generate a Polars DataFrame data dictionary documenting every variable and its values
