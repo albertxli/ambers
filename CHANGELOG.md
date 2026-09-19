@@ -2,6 +2,12 @@
 
 All notable changes to ambers are documented in this file.
 
+## [Unreleased]
+
+- Fix GitHub issue #1: row width is now derived from the dictionary's type 2 records instead of the header's `nominal_case_size`. A file whose header disagrees with its dictionary is rejected with `invalid dictionary: header declares N slots per case but the dictionary defines M` (SPSS and pyreadstat reject such files too). Previously the mismatch caused an out-of-bounds read and returned garbage columns. A header value of 0 or -1 is tolerated, as some writers store that. No change for valid files (verified byte-identical output on all local test files)
+- Add `SpssError::InvalidDictionary`
+- Add `tests/test_malformed.rs` and `tests/test_malformed.py` (synthetic header/dictionary mismatch fixtures); Python test added to CI
+
 ## [0.4.4] - 2026-09-18
 
 - Fix `FutureWarning: from_arrow(<ArrowStreamExportable>) will return a Series` emitted by `read_sav()` and `scan_sav()` on Polars >= 1.44 — Arrow streams are now converted with `pl.DataFrame()` (available since Polars 1.3, which remains the minimum)

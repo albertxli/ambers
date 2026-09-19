@@ -39,6 +39,9 @@ pub enum SpssError {
     #[error("invalid value label record: {0}")]
     InvalidValueLabel(String),
 
+    #[error("invalid dictionary: {0}")]
+    InvalidDictionary(String),
+
     #[error("unsupported feature: {0}")]
     Unsupported(String),
 

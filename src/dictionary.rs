@@ -19,6 +19,9 @@ use crate::{document, value_labels as vl};
 /// All parsed dictionary data before resolution.
 #[allow(dead_code)]
 pub struct RawDictionary {
+    /// File header. After `parse_dictionary`, `header.nominal_case_size` is
+    /// guaranteed positive and equal to the number of type 2 records (the
+    /// authoritative row width in 8-byte slots).
     pub header: FileHeader,
     pub variables: Vec<VariableRecord>,
     pub value_label_sets: Vec<ValueLabelSet>,
@@ -37,6 +40,8 @@ pub struct RawDictionary {
 
 /// The resolved dictionary ready for data reading.
 pub struct ResolvedDictionary {
+    /// File header with `nominal_case_size` validated against the dictionary
+    /// (see `parse_dictionary`); safe to use as the row width.
     pub header: FileHeader,
     /// Only non-ghost variables, in order.
     pub variables: Vec<VariableRecord>,
@@ -134,8 +139,33 @@ pub fn parse_dictionary<R: Read>(
         }
     }
 
+    // Row width comes from the dictionary, not the header. Every type 2 record
+    // (including string continuation records) is exactly one 8-byte data slot,
+    // so `slot_index` is the true number of slots per case. The header's
+    // `nominal_case_size` is only a cross-check: SPSS rejects files where it
+    // disagrees with the dictionary, and PSPP documents that some writers store
+    // -1 or 0 there, so a non-positive value is ignored rather than trusted.
+    // Trusting a header value larger than the dictionary would read past the
+    // end of every row (GitHub issue #1). The validated count is written back
+    // into the header copy so the scanner keeps reading one field, unchanged.
+    let slots_per_row = slot_index;
+    if slots_per_row == 0 {
+        return Err(SpssError::InvalidDictionary(
+            "dictionary defines no variables".to_string(),
+        ));
+    }
+    if header.nominal_case_size > 0 && header.nominal_case_size as usize != slots_per_row {
+        return Err(SpssError::InvalidDictionary(format!(
+            "header declares {} slots per case but the dictionary defines {}",
+            header.nominal_case_size, slots_per_row
+        )));
+    }
+
+    let mut header = header.clone();
+    header.nominal_case_size = slots_per_row as i32;
+
     Ok(RawDictionary {
-        header: header.clone(),
+        header,
         variables,
         value_label_sets,
         document_lines,
