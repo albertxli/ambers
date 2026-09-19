@@ -42,6 +42,9 @@ pub enum SpssError {
     #[error("invalid dictionary: {0}")]
     InvalidDictionary(String),
 
+    #[error("internal error: {0}")]
+    Internal(String),
+
     #[error("unsupported feature: {0}")]
     Unsupported(String),
 

@@ -15,6 +15,8 @@ import ambers as am
 
 # magic (4) + product name (60) + layout_code (4) -> nominal_case_size i32 (little-endian)
 CASE_SIZE_OFFSET = 68
+# ... + case size (4) + compression (4) + weight index (4) -> ncases i32
+CASE_COUNT_OFFSET = 80
 
 
 @pytest.fixture
@@ -37,10 +39,10 @@ def good_path(tmp_path, source_df):
     return p
 
 
-def _patched(tmp_path, good_path, value: int, name: str):
+def _patched(tmp_path, good_path, value: int, name: str, offset: int = CASE_SIZE_OFFSET):
     data = bytearray(good_path.read_bytes())
-    declared = struct.unpack_from("<i", data, CASE_SIZE_OFFSET)[0]
-    struct.pack_into("<i", data, CASE_SIZE_OFFSET, value)
+    declared = struct.unpack_from("<i", data, offset)[0]
+    struct.pack_into("<i", data, offset, value)
     p = tmp_path / name
     p.write_bytes(data)
     return str(p), declared
@@ -77,3 +79,37 @@ class TestSlotCountMismatch:
         df = am.read_sav(str(good_path)).data
         expected = source_df.with_columns(pl.col("name").fill_null(""))
         assert_frame_equal(df, expected)
+
+
+class TestZeroCaseCount:
+    """GitHub issue #2: a header declaring 0 cases with data behind it used to make the
+    reader write past a zero-length buffer and kill the process. The header count is a
+    hint; the rows in the file are read, as SPSS does."""
+
+    @pytest.mark.parametrize("bogus", [0, -1])
+    def test_sav_reads_all_rows(self, tmp_path, good_path, bogus):
+        expected = am.read_sav(str(good_path)).data
+        path, declared = _patched(tmp_path, good_path, bogus, f"ncases_{bogus}.sav", CASE_COUNT_OFFSET)
+        assert declared == 5
+        sav = am.read_sav(path)
+        assert sav.shape == (5, 3)
+        assert_frame_equal(sav.data, expected)
+        assert_frame_equal(am.scan_sav(path).data.collect(), expected)
+        # Header value is reported as-is; a negative count reads as None (unknown).
+        assert am.read_sav_meta(path).number_rows == (bogus if bogus >= 0 else None)
+
+    def test_zsav_reads_all_rows(self, tmp_path, source_df):
+        good = tmp_path / "good.zsav"
+        am.write_sav(source_df, str(good), meta=am.SpssMetadata(variable_formats={"name": "A12"}))
+        expected = am.read_sav(str(good)).data
+        path, declared = _patched(tmp_path, good, 0, "ncases_0.zsav", CASE_COUNT_OFFSET)
+        assert declared == 5
+        assert_frame_equal(am.read_sav(path).data, expected)
+        assert_frame_equal(am.scan_sav(path).data.collect(), expected)
+
+    def test_truly_empty_file(self, tmp_path, source_df):
+        path = tmp_path / "empty.sav"
+        am.write_sav(source_df.clear(), str(path), meta=am.SpssMetadata(variable_formats={"name": "A12"}))
+        sav = am.read_sav(str(path))
+        assert sav.shape == (0, 3)
+        assert am.scan_sav(str(path)).data.collect().shape == (0, 3)

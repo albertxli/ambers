@@ -233,13 +233,19 @@ impl<R: Read + Seek> SavScanner<R> {
     }
 
     /// Reasonable capacity hint, avoiding usize::MAX overflow.
+    ///
+    /// The header's `ncases` is only a hint: the data section is read to its
+    /// end regardless (SPSS does the same). The result is floored at one row so
+    /// the per-batch row buffers are never zero-length while the row loop can
+    /// still run; a header declaring 0 cases with data behind it used to
+    /// produce an empty buffer and an out-of-bounds write (GitHub issue #2).
     fn capacity_hint(&self, n: usize) -> usize {
         let ncases = if self.dict.header.ncases >= 0 {
             self.dict.header.ncases as usize
         } else {
             1000
         };
-        n.min(ncases).min(1_000_000)
+        n.min(ncases).clamp(1, 1_000_000)
     }
 
     /// Read up to `n` rows directly into a columnar Arrow RecordBatch.

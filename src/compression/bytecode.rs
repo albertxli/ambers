@@ -187,15 +187,14 @@ impl BytecodeDecompressor {
             return Ok(false);
         }
 
-        // Validate output buffer can hold the full row. All unsafe writes below
-        // depend on this invariant (checked only in debug builds for zero overhead).
-        debug_assert!(
-            out_offset + slots_per_row * 8 <= output.len(),
-            "output buffer too small: need {} bytes at offset {}, have {}",
-            slots_per_row * 8,
-            out_offset,
-            output.len()
-        );
+        // The unsafe writes below require the whole row to fit in `output`.
+        // This is a real check, not a debug_assert!: a release build must never
+        // write past the buffer, whatever the caller passed (GitHub issue #2).
+        // One comparison per row, outside the per-slot loop.
+        let row_bytes = slots_per_row * 8;
+        if out_offset + row_bytes > output.len() {
+            return Err(output_too_small(out_offset, row_bytes, output.len()));
+        }
 
         let mut slot = 0;
         while slot < slots_per_row {
@@ -218,8 +217,9 @@ impl BytecodeDecompressor {
                 // Hot path first: codes 1..=251 are small numeric values.
                 // Uses pre-computed LUT — single memcpy, no int→float or subtraction.
                 1..=251 => {
-                    // SAFETY: dest_offset + 8 <= output.len() guaranteed by caller
-                    // (output is slots_per_row * 8 bytes per row, slot < slots_per_row).
+                    // SAFETY: the bounds check at the top of this function
+                    // guarantees out_offset + slots_per_row * 8 <= output.len(),
+                    // and slot < slots_per_row, so dest_offset + 8 <= output.len().
                     unsafe {
                         std::ptr::copy_nonoverlapping(
                             self.bias_lut[code as usize].as_ptr(),
@@ -236,7 +236,8 @@ impl BytecodeDecompressor {
                     if self.pos + 8 > input.len() {
                         return Err(truncated_err(self.pos + 8, input.len()));
                     }
-                    // SAFETY: same as above for dest; input bounds checked above.
+                    // SAFETY: dest as above (row bounds check at function entry);
+                    // input bounds checked just above.
                     unsafe {
                         std::ptr::copy_nonoverlapping(
                             input.as_ptr().add(self.pos),
@@ -248,7 +249,7 @@ impl BytecodeDecompressor {
                     slot += 1;
                 }
                 COMPRESS_EIGHT_SPACES => {
-                    // SAFETY: same as above for dest.
+                    // SAFETY: dest covered by the row bounds check at function entry.
                     unsafe {
                         std::ptr::copy_nonoverlapping(
                             SPACES_RAW.as_ptr(),
@@ -259,7 +260,7 @@ impl BytecodeDecompressor {
                     slot += 1;
                 }
                 COMPRESS_SYSMIS => {
-                    // SAFETY: same as above for dest.
+                    // SAFETY: dest covered by the row bounds check at function entry.
                     unsafe {
                         std::ptr::copy_nonoverlapping(
                             SYSMIS_RAW.as_ptr(),
@@ -284,6 +285,17 @@ impl BytecodeDecompressor {
 #[cold]
 fn truncated_err(expected: usize, actual: usize) -> SpssError {
     SpssError::TruncatedFile { expected, actual }
+}
+
+/// Cold error path for an output buffer that cannot hold a full row.
+///
+/// Deliberately not `TruncatedFile`: the zlib scanner treats that variant as
+/// "load the next block and retry", which must not happen for a caller bug.
+#[cold]
+fn output_too_small(out_offset: usize, row_bytes: usize, available: usize) -> SpssError {
+    SpssError::Internal(format!(
+        "output buffer too small: need {row_bytes} bytes at offset {out_offset}, have {available}"
+    ))
 }
 
 #[cfg(test)]
@@ -369,5 +381,63 @@ mod tests {
             SlotValue::Numeric(v) => assert!((v - 4.0).abs() < f64::EPSILON),
             _ => panic!("expected 4.0"),
         }
+    }
+}
+
+#[cfg(test)]
+mod bounds_tests {
+    use super::*;
+
+    /// Control block: two small numeric codes (101, 102) then padding -> 2 slots.
+    const TWO_SLOTS: [u8; 8] = [101, 102, 0, 0, 0, 0, 0, 0];
+
+    #[test]
+    fn output_too_small_returns_err_not_write() {
+        let mut dec = BytecodeDecompressor::new(100.0);
+        let mut output = vec![0u8; 8]; // room for one slot, row needs two
+        let err = dec
+            .decompress_row_raw(&TWO_SLOTS, 2, &mut output, 0)
+            .expect_err("buffer too small must be an error");
+        assert!(
+            matches!(err, SpssError::Internal(ref m) if m.contains("need 16 bytes at offset 0, have 8")),
+            "unexpected error: {err:?}"
+        );
+        assert_eq!(
+            output,
+            vec![0u8; 8],
+            "nothing may be written on the error path"
+        );
+    }
+
+    #[test]
+    fn zero_length_output_returns_err() {
+        let mut dec = BytecodeDecompressor::new(100.0);
+        let mut output: Vec<u8> = Vec::new();
+        assert!(matches!(
+            dec.decompress_row_raw(&TWO_SLOTS, 2, &mut output, 0),
+            Err(SpssError::Internal(_))
+        ));
+    }
+
+    #[test]
+    fn offset_past_end_returns_err() {
+        let mut dec = BytecodeDecompressor::new(100.0);
+        let mut output = vec![0u8; 16];
+        assert!(matches!(
+            dec.decompress_row_raw(&TWO_SLOTS, 2, &mut output, 8),
+            Err(SpssError::Internal(_))
+        ));
+    }
+
+    #[test]
+    fn exactly_sized_output_is_ok() {
+        let mut dec = BytecodeDecompressor::new(100.0);
+        let mut output = vec![0u8; 16];
+        assert!(
+            dec.decompress_row_raw(&TWO_SLOTS, 2, &mut output, 0)
+                .unwrap()
+        );
+        assert_eq!(f64::from_le_bytes(output[0..8].try_into().unwrap()), 1.0);
+        assert_eq!(f64::from_le_bytes(output[8..16].try_into().unwrap()), 2.0);
     }
 }
