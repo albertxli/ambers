@@ -23,6 +23,8 @@ pub struct RawDictionary {
     /// guaranteed positive and equal to the number of type 2 records (the
     /// authoritative row width in 8-byte slots).
     pub header: FileHeader,
+    /// Anomalies noticed while parsing (carried into `SpssMetadata::warnings`).
+    pub warnings: Vec<String>,
     pub variables: Vec<VariableRecord>,
     pub value_label_sets: Vec<ValueLabelSet>,
     pub document_lines: Vec<Vec<u8>>,
@@ -161,11 +163,20 @@ pub fn parse_dictionary<R: Read>(
         )));
     }
 
+    let mut warnings = Vec::new();
+    if header.nominal_case_size <= 0 {
+        warnings.push(format!(
+            "header does not declare the number of values per row (case size {}); used the {} defined by the variable list",
+            header.nominal_case_size, slots_per_row
+        ));
+    }
+
     let mut header = header.clone();
     header.nominal_case_size = slots_per_row as i32;
 
     Ok(RawDictionary {
         header,
+        warnings,
         variables,
         value_label_sets,
         document_lines,
@@ -282,6 +293,19 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
             .collect(),
         ..Default::default()
     };
+
+    // Carry parse-time anomalies, then check the compression bias. SPSS always
+    // writes 100; compressed integer codes decode as `code - bias`, so any other
+    // value shifts every compressed integer. We read the file literally and
+    // tell the caller instead of silently assuming 100 as SPSS does.
+    meta.warnings = raw.warnings;
+    if raw.header.compression != Compression::None && raw.header.bias != 100.0 {
+        meta.warnings.push(format!(
+            "compression bias in the header is {} instead of the standard 100; compressed integer values may be shifted by {} (SPSS reads such a file assuming 100)",
+            fmt_bias(raw.header.bias),
+            fmt_bias(100.0 - raw.header.bias)
+        ));
+    }
 
     // Build per-variable metadata
     let visible_vars: Vec<&VariableRecord> = variables.iter().filter(|v| !v.is_ghost).collect();
@@ -586,6 +610,17 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
         file_encoding,
         metadata: meta,
     })
+}
+
+/// Format a bias-like f64 for a user-facing message: plain for ordinary
+/// magnitudes, scientific for garbage such as 9.6e-308 (which `{}` would print
+/// as 300 digits).
+fn fmt_bias(v: f64) -> String {
+    if v == 0.0 || (v.abs() >= 1e-3 && v.abs() < 1e9) {
+        format!("{v}")
+    } else {
+        format!("{v:e}")
+    }
 }
 
 /// Determine the character encoding from available info records.

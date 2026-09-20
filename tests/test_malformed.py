@@ -48,6 +48,7 @@ def _patched(tmp_path, good_path, value: int, name: str, offset: int = CASE_SIZE
     return str(p), declared
 
 
+@pytest.mark.filterwarnings("ignore::ambers.CorruptFileWarning")
 class TestSlotCountMismatch:
     def test_header_larger_than_dictionary_raises(self, tmp_path, good_path):
         path, declared = _patched(tmp_path, good_path, 7, "larger.sav")
@@ -81,6 +82,7 @@ class TestSlotCountMismatch:
         assert_frame_equal(df, expected)
 
 
+@pytest.mark.filterwarnings("ignore::ambers.CorruptFileWarning")
 class TestZeroCaseCount:
     """GitHub issue #2: a header declaring 0 cases with data behind it used to make the
     reader write past a zero-length buffer and kill the process. The header count is a

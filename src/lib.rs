@@ -61,16 +61,18 @@ pub use crate::writer::{write_sav, write_sav_to_writer};
 /// column projection, use `scan_sav()` instead.
 pub fn read_sav(path: impl AsRef<Path>) -> Result<(RecordBatch, SpssMetadata)> {
     let mut scanner = scan_sav(path)?;
-    let metadata = scanner.metadata().clone();
     let batch = scanner.collect_single()?;
+    // Cloned after the read so `metadata.warnings` includes data-time findings
+    // (e.g. header case count vs rows actually read).
+    let metadata = scanner.metadata().clone();
     Ok((batch, metadata))
 }
 
 /// Read an SPSS file from any reader that supports Read + Seek.
 pub fn read_sav_from_reader<R: Read + Seek>(reader: R) -> Result<(RecordBatch, SpssMetadata)> {
     let mut scanner = scan_sav_from_reader(reader, usize::MAX)?;
-    let metadata = scanner.metadata().clone();
     let batch = scanner.collect_single()?;
+    let metadata = scanner.metadata().clone();
     Ok((batch, metadata))
 }
 

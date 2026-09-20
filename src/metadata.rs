@@ -180,6 +180,11 @@ pub struct SpssMetadata {
     pub compression: Compression,
     pub creation_time: String,
     pub notes: Vec<String>,
+    /// File-structure anomalies found while reading (header values that
+    /// disagree with the file contents). Empty for a healthy file. Never
+    /// written back by the writer. The data is always read exactly as stored;
+    /// these messages tell the caller the file may be damaged.
+    pub warnings: Vec<String>,
     pub number_rows: Option<i64>,
     pub number_columns: usize,
     pub file_format: String,
@@ -328,6 +333,7 @@ impl Default for SpssMetadata {
             compression: Compression::None,
             creation_time: String::new(),
             notes: Vec::new(),
+            warnings: Vec::new(),
             number_rows: None,
             number_columns: 0,
             file_format: "sav".to_string(),

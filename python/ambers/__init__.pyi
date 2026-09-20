@@ -8,6 +8,15 @@ import polars
 
 T = TypeVar("T", polars.DataFrame, polars.LazyFrame)
 
+class CorruptFileWarning(UserWarning):
+    """The .sav file appears damaged or corrupted: its header disagrees with its contents.
+
+    Emitted by ``read_sav``, ``scan_sav`` and ``read_sav_meta``. The data is read exactly as
+    stored; the findings are listed in ``SavFile.warnings`` / ``SpssMetadata.warnings``.
+    Silence with ``warnings.filterwarnings("ignore", category=ambers.CorruptFileWarning)``.
+    """
+    ...
+
 @dataclass
 class SavFile(Generic[T]):
     """Result of reading an SPSS .sav/.zsav file.
@@ -27,6 +36,8 @@ class SavFile(Generic[T]):
     read_time
         Wall-clock seconds for the read operation, or None if not measured.
         For ``scan_sav`` this covers metadata/schema reading only.
+    warnings
+        File-damage findings (empty for a healthy file); see ``CorruptFileWarning``.
 
     Examples
     --------
@@ -43,6 +54,7 @@ class SavFile(Generic[T]):
     shape: tuple[int, int] | None = ...
     file_size: int | None = ...
     read_time: float | None = ...
+    warnings: list[str] = ...
 
     @property
     def compression(self) -> str:
@@ -336,6 +348,15 @@ class SpssMetadata:
         """Document record notes (list of strings)."""
         ...
     @property
+    def warnings(self) -> list[str]:
+        """File-damage findings recorded while reading (empty for a healthy file).
+
+        Each entry describes a way the header disagrees with the file contents, e.g.
+        ``"header declares 0 rows but 5 rows were read"`` or a non-standard compression
+        bias. Read-only; never written back to a file.
+        """
+        ...
+    @property
     def number_rows(self) -> int | None:
         """Row count from the file header, or None if not recorded."""
         ...
@@ -405,10 +426,10 @@ class SpssMetadata:
         ...
     @property
     def schema(self) -> dict:
-        """Full metadata as a nested Python dict (22 fields).
+        """Full metadata as a nested Python dict (23 fields).
 
         Field order: file_label, file_format, file_encoding, creation_time,
-        compression, number_columns, number_rows, weight_variable, notes,
+        compression, number_columns, number_rows, weight_variable, notes, warnings,
         variable_names, variable_labels, variable_value_labels,
         variable_formats, variable_measures, variable_alignments,
         variable_storage_widths, variable_display_widths, variable_roles,

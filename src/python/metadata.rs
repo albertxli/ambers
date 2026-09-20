@@ -306,6 +306,12 @@ impl PySpssMetadata {
         self.inner.notes.clone()
     }
 
+    /// File-structure anomalies found while reading (empty for a healthy file).
+    #[getter]
+    fn warnings(&self) -> Vec<String> {
+        self.inner.warnings.clone()
+    }
+
     #[getter]
     fn number_rows(&self) -> Option<i64> {
         self.inner.number_rows
@@ -561,6 +567,7 @@ impl PySpssMetadata {
         d.set_item("number_rows", m.number_rows)?;
         d.set_item("weight_variable", m.weight_variable.as_deref())?;
         d.set_item("notes", &m.notes)?;
+        d.set_item("warnings", &m.warnings)?;
 
         // Variable names
         d.set_item("variable_names", &m.variable_names)?;
@@ -633,6 +640,15 @@ impl PySpssMetadata {
                 m.notes.len(),
                 preview
             );
+        }
+        if !m.warnings.is_empty() {
+            println!(
+                "  Warnings:     {} \u{2502} file may be damaged or corrupted",
+                m.warnings.len()
+            );
+            for w in &m.warnings {
+                println!("                - {w}");
+            }
         }
 
         // Variables section

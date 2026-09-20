@@ -62,7 +62,7 @@ impl<R: Read + Seek> SavScanner<R> {
         } else {
             None
         };
-        let dict = dictionary::resolve_dictionary(raw_dict)?;
+        let mut dict = dictionary::resolve_dictionary(raw_dict)?;
 
         // Set up compression-specific state
         let state = match compression {
@@ -79,6 +79,14 @@ impl<R: Read + Seek> SavScanner<R> {
             Compression::Zlib => {
                 let zheader = zlib::read_zheader(&mut sav_reader)?;
                 let ztrailer = zlib::read_ztrailer(&mut sav_reader, &zheader)?;
+                // Writers disagree on the sign here (SPSS/ambers write -100, some
+                // tools +100); decoding uses the main header's bias anyway.
+                if ztrailer.bias.abs() != 100 {
+                    dict.metadata.warnings.push(format!(
+                        "zsav trailer declares a compression bias of {} instead of the standard 100",
+                        ztrailer.bias
+                    ));
+                }
 
                 // Stream: decompress only the first block on demand instead of all blocks.
                 let first_block = if !ztrailer.entries.is_empty() {
@@ -172,17 +180,36 @@ impl<R: Read + Seek> SavScanner<R> {
                 let num_rows = b.num_rows();
                 if num_rows == 0 {
                     self.eof = true;
+                    self.note_row_count_mismatch();
                     return Ok(None);
                 }
                 self.rows_read += num_rows;
             }
             None => {
                 self.eof = true;
+                self.note_row_count_mismatch();
                 return Ok(None);
             }
         }
 
         Ok(batch)
+    }
+
+    /// Called once when the data section is exhausted: record a warning in the
+    /// metadata if the header's case count disagrees with the rows actually
+    /// read. The header value is only a hint, so this is a warning, not an
+    /// error. Skipped when a row limit was set (a mismatch is then expected).
+    fn note_row_count_mismatch(&mut self) {
+        if self.row_limit.is_some() {
+            return;
+        }
+        let ncases = self.dict.header.ncases;
+        if ncases >= 0 && ncases as usize != self.rows_read {
+            self.dict.metadata.warnings.push(format!(
+                "header declares {ncases} rows but {} rows were read",
+                self.rows_read
+            ));
+        }
     }
 
     /// Read all remaining data as a single RecordBatch.
@@ -197,10 +224,12 @@ impl<R: Read + Seek> SavScanner<R> {
             Some(batch) => {
                 self.rows_read += batch.num_rows();
                 self.eof = true;
+                self.note_row_count_mismatch();
                 Ok(batch)
             }
             None => {
                 self.eof = true;
+                self.note_row_count_mismatch();
                 let schema = if let Some(ref proj) = self.projection {
                     let fields: Vec<Field> = proj
                         .iter()

@@ -147,7 +147,6 @@ pub(super) fn _read_sav(
     n_rows: Option<usize>,
 ) -> PyResult<(PyArrowData, PySpssMetadata)> {
     let mut scanner = crate::scan_sav(path).map_err(spss_err)?;
-    let metadata = scanner.metadata().clone();
     if let Some(ref cols) = columns {
         let col_refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();
         scanner.select(&col_refs).map_err(spss_err)?;
@@ -156,6 +155,8 @@ pub(super) fn _read_sav(
         scanner.limit(n);
     }
     let batch = scanner.collect_single().map_err(spss_err)?;
+    // Cloned after the read so `warnings` includes data-time findings.
+    let metadata = scanner.metadata().clone();
     Ok((
         PyArrowData::from_batch(batch),
         PySpssMetadata::from_inner(metadata),

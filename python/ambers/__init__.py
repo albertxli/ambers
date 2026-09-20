@@ -6,6 +6,7 @@ from ambers._io import read_sav, read_sav_meta, scan_sav, write_sav
 from ambers._missing import apply_missing
 from ambers._transforms import apply_labels
 from ambers._validate import ValidationIssue, ValidationReport, validate
+from ambers._warnings import CorruptFileWarning
 from ambers.codebook import codebook
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "write_sav",
     "SpssMetadata",
     "MetaDiff",
+    "CorruptFileWarning",
 ]

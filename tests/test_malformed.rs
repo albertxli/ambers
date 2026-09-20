@@ -23,6 +23,10 @@ const CASE_SIZE_OFFSET: usize = 68;
 /// Byte offset of the header's `ncases`: CASE_SIZE_OFFSET + case size (4) +
 /// compression (4) + weight index (4).
 const CASE_COUNT_OFFSET: usize = 80;
+/// Byte offset of the header's compression bias (f64): CASE_COUNT_OFFSET + 4.
+const BIAS_OFFSET: usize = 84;
+/// Bias value found in the reporter's fuzzer files.
+const GARBAGE_BIAS: f64 = 9.597803938502254e-308;
 
 fn sample_batch() -> RecordBatch {
     let schema = Arc::new(Schema::new(vec![
@@ -87,6 +91,30 @@ fn with_case_count(mut bytes: Vec<u8>, value: i32) -> Vec<u8> {
 
 const ALL_COMPRESSIONS: [Compression; 3] =
     [Compression::None, Compression::Bytecode, Compression::Zlib];
+
+fn with_bias(mut bytes: Vec<u8>, value: f64) -> Vec<u8> {
+    bytes[BIAS_OFFSET..BIAS_OFFSET + 8].copy_from_slice(&value.to_le_bytes());
+    bytes
+}
+
+fn age_column(batch: &RecordBatch) -> Vec<Option<f64>> {
+    use arrow::array::{Array, Float64Array};
+    let col = batch
+        .column_by_name("age")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<Float64Array>()
+        .unwrap();
+    (0..col.len())
+        .map(|i| {
+            if col.is_null(i) {
+                None
+            } else {
+                Some(col.value(i))
+            }
+        })
+        .collect()
+}
 
 fn assert_invalid_dictionary(result: Result<RecordBatch, SpssError>, expect_in_msg: &[&str]) {
     match result {
@@ -259,4 +287,122 @@ fn issue2_repro_file_does_not_crash() {
         }
         Err(e) => panic!("expected a clean read (SPSS opens this file), got {e}"),
     }
+}
+
+// ---------------------------------------------------------------------------
+// File-damage warnings: read literally, but record what disagrees with the header.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn healthy_file_has_no_warnings() {
+    for compression in ALL_COMPRESSIONS {
+        let (bytes, _) = sample_sav(compression);
+        let (_, meta) = read_sav_from_reader(Cursor::new(bytes.clone())).unwrap();
+        assert!(
+            meta.warnings.is_empty(),
+            "{compression:?}: {:?}",
+            meta.warnings
+        );
+        let scanner = scan_sav_from_reader(Cursor::new(bytes), 2).unwrap();
+        assert!(scanner.metadata().warnings.is_empty());
+    }
+}
+
+#[test]
+fn zero_case_count_warns_after_read() {
+    for compression in ALL_COMPRESSIONS {
+        let (bytes, _) = sample_sav(compression);
+        let patched = with_case_count(bytes, 0);
+
+        // Eager: metadata returned after the read carries the finding.
+        let (batch, meta) = read_sav_from_reader(Cursor::new(patched.clone())).unwrap();
+        assert_eq!(batch.num_rows(), 5);
+        assert_eq!(
+            meta.warnings.len(),
+            1,
+            "{compression:?}: {:?}",
+            meta.warnings
+        );
+        assert!(meta.warnings[0].contains("declares 0 rows but 5 rows were read"));
+
+        // Streaming: nothing before the data is read, the finding once exhausted.
+        let mut scanner = scan_sav_from_reader(Cursor::new(patched.clone()), 2).unwrap();
+        assert!(scanner.metadata().warnings.is_empty());
+        while scanner.next_batch().unwrap().is_some() {}
+        assert_eq!(scanner.metadata().warnings.len(), 1);
+
+        // A row limit makes a mismatch expected: no warning.
+        let mut limited = scan_sav_from_reader(Cursor::new(patched), 100).unwrap();
+        limited.limit(2);
+        let b = limited.collect_single().unwrap();
+        assert_eq!(b.num_rows(), 2);
+        assert!(limited.metadata().warnings.is_empty());
+    }
+}
+
+#[test]
+fn non_standard_bias_warns_and_values_are_read_literally() {
+    let (clean, _) = sample_sav(Compression::Bytecode);
+    let (clean_batch, _) = read_sav_from_reader(Cursor::new(clean)).unwrap();
+    assert_eq!(
+        age_column(&clean_batch),
+        vec![Some(20.0), Some(21.0), Some(22.0), Some(23.0), Some(24.0)]
+    );
+
+    for compression in [Compression::Bytecode, Compression::Zlib] {
+        for (bias, shift) in [(GARBAGE_BIAS, 100.0 - GARBAGE_BIAS), (50.0, 50.0)] {
+            let (bytes, _) = sample_sav(compression);
+            let (batch, meta) = read_sav_from_reader(Cursor::new(with_bias(bytes, bias))).unwrap();
+            assert_eq!(
+                meta.warnings.len(),
+                1,
+                "{compression:?} bias={bias}: {:?}",
+                meta.warnings
+            );
+            assert!(meta.warnings[0].contains("bias") && meta.warnings[0].contains("assuming 100"));
+            // Small integers were stored as code = value + 100; decoding with the
+            // patched bias yields value + 100 - bias. We report, we do not correct.
+            let ages = age_column(&batch);
+            assert_eq!(ages[0], Some(20.0 + shift), "{compression:?} bias={bias}");
+            assert_eq!(ages[4], Some(24.0 + shift), "{compression:?} bias={bias}");
+        }
+    }
+
+    // Uncompressed data never consults the bias: no warning, values unchanged.
+    let (bytes, _) = sample_sav(Compression::None);
+    let (batch, meta) = read_sav_from_reader(Cursor::new(with_bias(bytes, GARBAGE_BIAS))).unwrap();
+    assert!(meta.warnings.is_empty());
+    assert_eq!(age_column(&batch)[0], Some(20.0));
+}
+
+#[test]
+fn case_size_zero_header_warns_but_reads() {
+    let (bytes, _) = sample_sav(Compression::Bytecode);
+    let (expected, _) = read_sav_from_reader(Cursor::new(bytes.clone())).unwrap();
+    let (batch, meta) = read_sav_from_reader(Cursor::new(with_case_size(bytes, 0))).unwrap();
+    assert_eq!(batch, expected);
+    assert_eq!(meta.warnings.len(), 1);
+    assert!(
+        meta.warnings[0].contains("values per row"),
+        "{:?}",
+        meta.warnings
+    );
+}
+
+#[test]
+fn issue2_repro_file_reports_two_warnings() {
+    let path = "test_data/github_issues/issue2_oob-write.sav";
+    if !std::path::Path::new(path).exists() {
+        eprintln!("Skipping: {path} not present (reporter-supplied fuzzer file)");
+        return;
+    }
+    let (batch, meta) = read_sav(path).unwrap();
+    assert_eq!(batch.num_rows(), 5);
+    assert_eq!(meta.warnings.len(), 2, "{:?}", meta.warnings);
+    assert!(
+        meta.warnings
+            .iter()
+            .any(|w| w.contains("declares 0 rows but 5 rows"))
+    );
+    assert!(meta.warnings.iter().any(|w| w.contains("compression bias")));
 }

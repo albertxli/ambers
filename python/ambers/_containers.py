@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Generic, TypeVar
 
 import polars as pl
@@ -37,6 +37,10 @@ class SavFile(Generic[T]):
         read_time: Wall-clock seconds for the read operation, or None if
             not measured. For ``scan_sav`` this covers metadata/schema
             reading only (not lazy collection).
+        warnings: File-damage findings (empty for a healthy file). Each entry
+            describes a way the file's header disagrees with its contents.
+            A ``CorruptFileWarning`` was emitted when this is non-empty. The
+            data is always read exactly as stored.
     """
 
     data: T
@@ -45,6 +49,7 @@ class SavFile(Generic[T]):
     shape: tuple[int, int] | None = None
     file_size: int | None = None
     read_time: float | None = None
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def compression(self) -> str:
@@ -78,6 +83,11 @@ class SavFile(Generic[T]):
             if not isinstance(self.data, pl.DataFrame):
                 time_str += " (metadata only)"
             lines.append(("Read time", time_str))
+        # Warnings line (only when the file looks damaged)
+        if self.warnings:
+            n = len(self.warnings)
+            noun = "finding" if n == 1 else "findings"
+            lines.append(("Warnings", f"{n} {noun} - file may be damaged, see .warnings"))
         # Build box
         label_w = max(len(label) for label, _ in lines)
         content_parts = [f"{label:<{label_w}}   {value}" for label, value in lines]

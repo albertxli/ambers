@@ -115,8 +115,16 @@ report.to_frame()                                               # DataFrame for 
 | `sav.file_size` | `int \| None` | File size in bytes |
 | `sav.read_time` | `float \| None` | Wall-clock read time in seconds |
 | `sav.compression` | `str` | `"uncompressed"`, `"bytecode"`, or `"zlib"` |
+| `sav.warnings` | `list[str]` | File-damage findings; empty for a healthy file |
 
 For `scan_sav()`, `read_time` measures metadata/schema reading only (not lazy collection).
+
+**Damaged files.** ambers reads a file exactly as stored and never silently "corrects" values.
+If the header disagrees with the contents (declared row count vs rows read, a non-standard
+compression bias, a missing row width), it raises a `CorruptFileWarning` naming the findings
+and lists them in `sav.warnings` / `meta.warnings`. Treat such a file with suspicion and
+re-export it from the source. Silence the warning with
+`warnings.filterwarnings("ignore", category=ambers.CorruptFileWarning)`.
 
 ### apply_labels
 
@@ -217,6 +225,7 @@ All fields returned by the reader. Fields marked **Write** are preserved when pa
 | `number_rows` | yes | — | `int \| None` |
 | `weight_variable` | yes | yes | `str \| None` |
 | `notes` | yes | yes | `list[str]` |
+| `warnings` | yes | — | `list[str]` |
 | `variable_names` | yes | — | `list[str]` |
 | `variable_labels` | yes | yes | `dict[str, str]` |
 | `variable_value_labels` | yes | yes | `dict[str, dict[float\|str, str]]` |

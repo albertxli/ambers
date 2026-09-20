@@ -17,6 +17,7 @@ from ambers._ambers import (
 )
 
 from ambers._containers import SavFile, _get_dtype_map, _resolve_columns
+from ambers._warnings import warn_if_damaged
 
 
 def read_sav(
@@ -70,11 +71,13 @@ def read_sav(
         df = df.with_row_index(row_index_name, offset=row_index_offset)
 
     read_time = time.perf_counter() - t0
+    file_warnings = warn_if_damaged(meta, path)
 
     return SavFile(
         data=df, meta=meta, source=str(path),
         shape=(df.height, df.width),
         file_size=file_size, read_time=read_time,
+        warnings=file_warnings,
     )
 
 
@@ -95,7 +98,9 @@ def read_sav_meta(path: str) -> SpssMetadata:
         >>> meta.variable_names
         >>> meta.label("Q1")
     """
-    return _read_sav_meta(str(path))
+    meta = _read_sav_meta(str(path))
+    warn_if_damaged(meta, path)
+    return meta
 
 
 def scan_sav(
@@ -149,6 +154,8 @@ def scan_sav(
     reader = _SavBatchReader(str(path))
     meta = reader.metadata()
     raw_schema = reader.schema()
+    # Header-level findings only: the row count is not known until collected.
+    file_warnings = warn_if_damaged(meta, path)
 
     # Resolve int indices to column names
     resolved = _resolve_columns(columns, meta.variable_names)
@@ -198,6 +205,7 @@ def scan_sav(
     return SavFile(
         data=lf, meta=meta, source=str(path),
         shape=shape, file_size=file_size, read_time=read_time,
+        warnings=file_warnings,
     )
 
 
