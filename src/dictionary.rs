@@ -10,7 +10,7 @@ use crate::encoding;
 use crate::error::{Result, SpssError};
 use crate::header::FileHeader;
 use crate::info_records::{self, InfoRecord, InfoRecordHeader};
-use crate::io_utils::SavReader;
+use crate::io_utils::{RawText, SavReader};
 use crate::metadata::{self, MissingSpec, SpssMetadata, Value};
 use crate::value_labels::{self, RawValue, ValueLabelSet};
 use crate::variable::VariableRecord;
@@ -31,8 +31,8 @@ pub struct RawDictionary {
     pub integer_info: Option<crate::info_records::integer_info::IntegerInfo>,
     pub float_info: Option<crate::info_records::float_info::FloatInfo>,
     pub var_display: Vec<crate::info_records::var_display::VarDisplayEntry>,
-    pub long_names: Vec<(String, String)>,
-    pub very_long_strings: Vec<(String, usize)>,
+    pub long_names: Vec<(RawText, RawText)>,
+    pub very_long_strings: Vec<(RawText, usize)>,
     pub encoding_name: Option<String>,
     pub long_string_labels: Vec<crate::info_records::long_string_labels::LongStringLabelSet>,
     pub long_string_missing: Vec<crate::info_records::long_string_missing::LongStringMissingEntry>,
@@ -201,15 +201,18 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
     let mut variables = raw.variables;
     let mut warnings = raw.warnings;
 
-    // 1. Determine character encoding
+    // 1. Determine character encoding. Everything textual below is decoded
+    //    with it, once, here: the record parsers only hand us bytes.
     let file_encoding = determine_encoding(&raw.encoding_name, &raw.integer_info);
+    let dec = |b: &[u8]| -> String { encoding::decode_str_lossy(b, file_encoding).into_owned() };
 
-    // 2. Apply long variable names (subtype 13)
-    let long_name_map: HashMap<String, String> = raw.long_names.into_iter().collect();
+    // 2. Apply long variable names (subtype 13); otherwise the short name is the name.
+    let long_name_map: HashMap<RawText, RawText> = raw.long_names.into_iter().collect();
     for var in &mut variables {
-        if let Some(long_name) = long_name_map.get(&var.short_name) {
-            var.long_name = long_name.clone();
-        }
+        let long_bytes = long_name_map
+            .get(&var.short_name)
+            .unwrap_or(&var.short_name);
+        var.long_name = dec(long_bytes);
     }
 
     // 3. Resolve very long strings (subtype 14)
@@ -219,10 +222,10 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
     // (except the last which may be shorter), followed by type=-1 continuation
     // records. The type=-1 records are already marked as ghosts, but the named
     // segment records (segments 2+) need to be marked as ghosts too.
-    let vls_map: HashMap<String, usize> = raw.very_long_strings.into_iter().collect();
+    let vls_map: HashMap<RawText, usize> = raw.very_long_strings.into_iter().collect();
     for i in 0..variables.len() {
-        let lookup_name = variables[i].short_name.clone();
-        if let Some(&true_width) = vls_map.get(&lookup_name) {
+        let lookup_name = dec(&variables[i].short_name);
+        if let Some(&true_width) = vls_map.get(&variables[i].short_name) {
             // Subtype 14 may only declare widths 256..=32767; anything else is
             // corrupt and would make every row walk width/252 segments.
             if !(256..=32767).contains(&true_width) {
@@ -288,7 +291,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
 
     // 5. Build metadata
     let mut meta = SpssMetadata {
-        file_label: raw.header.file_label.clone(),
+        file_label: dec(&raw.header.file_label),
         file_encoding: file_encoding.name().to_string(),
         compression: raw.header.compression,
         creation_time: crate::metadata::format_spss_datetime(
@@ -408,7 +411,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
             .insert(name.clone(), storage_width);
 
         // Missing values
-        let specs = metadata::missing_to_specs(&var.missing_values);
+        let specs = metadata::missing_to_specs(&var.missing_values, file_encoding);
         if !specs.is_empty() {
             meta.variable_missing_values.insert(name.clone(), specs);
         }
@@ -488,7 +491,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
 
     // 7. Resolve long string value labels (subtype 21)
     for ls_set in &raw.long_string_labels {
-        let var_name = &ls_set.var_name;
+        let var_name = dec(&ls_set.var_name);
         let labels: IndexMap<Value, String> = ls_set
             .labels
             .iter()
@@ -514,7 +517,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
 
     // 8. Resolve long string missing values (subtype 22)
     // Subtype 22 uses SHORT names — map to long names for consistent metadata.
-    let short_to_long_missing: HashMap<String, String> = variables
+    let short_to_long_missing: HashMap<RawText, String> = variables
         .iter()
         .filter(|v| !v.is_ghost)
         .map(|v| (v.short_name.clone(), v.long_name.clone()))
@@ -538,7 +541,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
             let long_name = short_to_long_missing
                 .get(&ls_missing.var_name)
                 .cloned()
-                .unwrap_or_else(|| ls_missing.var_name.clone());
+                .unwrap_or_else(|| dec(&ls_missing.var_name));
             meta.variable_missing_values.insert(long_name, specs);
         }
     }
@@ -558,7 +561,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
     // 9. Resolve multiple response sets (subtype 7 and 19)
     // Subtype 7: variable names are SHORT → need mapping to long names
     // Subtype 19: variable names are already LONG → validate directly
-    let short_to_long: HashMap<String, String> = variables
+    let short_to_long: HashMap<RawText, String> = variables
         .iter()
         .filter(|v| !v.is_ghost)
         .map(|v| (v.short_name.clone(), v.long_name.clone()))
@@ -572,33 +575,36 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
         let resolved_vars: Vec<String> = raw_mr
             .var_names
             .iter()
-            .filter_map(|name| {
+            .filter_map(|name_bytes| {
                 if raw_mr.uses_long_names {
                     // Subtype 19: names are already long names
-                    if long_name_set.contains(name) {
-                        Some(name.clone())
+                    let name = dec(name_bytes);
+                    if long_name_set.contains(&name) {
+                        Some(name)
                     } else {
                         // Try case-insensitive match
                         long_name_set
                             .iter()
-                            .find(|ln| ln.eq_ignore_ascii_case(name))
+                            .find(|ln| ln.eq_ignore_ascii_case(&name))
                             .cloned()
                     }
                 } else {
                     // Subtype 7: names are short names, need mapping
-                    let key = name.to_uppercase();
+                    let mut key = name_bytes.clone();
+                    key.make_ascii_uppercase();
                     short_to_long.get(&key).cloned()
                 }
             })
             .collect();
         if !resolved_vars.is_empty() {
+            let name = dec(&raw_mr.name);
             meta.mr_sets.insert(
-                raw_mr.name.clone(),
+                name.clone(),
                 metadata::MrSet {
-                    name: raw_mr.name.clone(),
-                    label: raw_mr.label.clone(),
+                    name,
+                    label: dec(&raw_mr.label),
                     mr_type: raw_mr.mr_type.clone(),
-                    counted_value: raw_mr.counted_value.clone(),
+                    counted_value: raw_mr.counted_value.as_deref().map(dec),
                     variables: resolved_vars,
                 },
             );
@@ -612,12 +618,16 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
             .get(&var_attr_set.var_name)
             .or_else(|| {
                 // Try uppercase lookup (short names are uppercase)
-                short_to_long.get(&var_attr_set.var_name.to_uppercase())
+                let mut upper = var_attr_set.var_name.clone();
+                upper.make_ascii_uppercase();
+                short_to_long.get(&upper)
             })
             .cloned()
-            .unwrap_or_else(|| var_attr_set.var_name.clone());
+            .unwrap_or_else(|| dec(&var_attr_set.var_name));
 
-        for (attr_name, values) in &var_attr_set.attributes {
+        for (attr_name_bytes, value_bytes) in &var_attr_set.attributes {
+            let attr_name = dec(attr_name_bytes);
+            let values: Vec<String> = value_bytes.iter().map(|v| dec(v)).collect();
             if attr_name == "$@Role" && !values.is_empty() {
                 if let Some(role) = Role::from_code(&values[0]) {
                     meta.variable_roles.insert(var_name.clone(), role);
@@ -626,7 +636,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
                 meta.variable_attributes
                     .entry(var_name.clone())
                     .or_default()
-                    .insert(attr_name.clone(), values.clone());
+                    .insert(attr_name, values);
             }
         }
     }

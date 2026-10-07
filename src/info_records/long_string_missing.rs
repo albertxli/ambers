@@ -1,11 +1,12 @@
 use crate::error::{Result, SpssError};
+use crate::io_utils::{self, RawText};
 
 /// Missing value specification for a long string variable.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct LongStringMissingEntry {
-    /// Variable name.
-    pub var_name: String,
+    /// Variable name bytes, undecoded (decoded in `resolve_dictionary`).
+    pub var_name: RawText,
     /// Number of missing values.
     pub n_values: u8,
     /// Missing value byte arrays.
@@ -32,9 +33,7 @@ pub fn parse_long_string_missing(data: &[u8]) -> Result<Vec<LongStringMissingEnt
         if pos + name_len > data.len() {
             break;
         }
-        let var_name = String::from_utf8_lossy(&data[pos..pos + name_len])
-            .trim()
-            .to_string();
+        let var_name = io_utils::trim_ascii_nul(&data[pos..pos + name_len]).to_vec();
         pos += name_len;
 
         // Number of missing values

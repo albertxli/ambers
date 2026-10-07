@@ -142,6 +142,20 @@ impl<R: Read> SavReader<R> {
     }
 }
 
+/// Undecoded dictionary text as stored in the file. Names, labels and other
+/// text records are carried as bytes until `resolve_dictionary` knows the
+/// file's encoding (subtype 20 / code page), then decoded once with it.
+/// Decoding earlier as UTF-8 garbled code-page files (GitHub issue #5).
+pub type RawText = Vec<u8>;
+
+/// Trim ASCII whitespace and NUL bytes from both ends of a byte slice.
+pub fn trim_ascii_nul(buf: &[u8]) -> &[u8] {
+    let is_pad = |b: &u8| b.is_ascii_whitespace() || *b == 0;
+    let start = buf.iter().take_while(|b| is_pad(b)).count();
+    let end = buf.len() - buf[start..].iter().rev().take_while(|b| is_pad(b)).count();
+    &buf[start..end]
+}
+
 /// Trim trailing spaces (0x20) and NUL bytes (0x00) from a byte slice.
 /// Uses reverse scan to find last non-padding byte.
 pub fn trim_trailing_padding(buf: &[u8]) -> &[u8] {

@@ -2,7 +2,7 @@ use std::io::Read;
 
 use crate::constants::{Alignment, Measure, SpssFormat, VarType};
 use crate::error::{Result, SpssError};
-use crate::io_utils::{self, SavReader};
+use crate::io_utils::{self, RawText, SavReader};
 
 /// Missing value specification for a variable.
 #[derive(Debug, Clone)]
@@ -33,9 +33,11 @@ pub struct VariableRecord {
     pub slot_index: usize,
     /// SPSS variable type: 0 = numeric, -1 = ghost (continuation), >0 = string width.
     pub raw_type: i32,
-    /// Short variable name (up to 8 characters).
-    pub short_name: String,
-    /// Long variable name (set later from subtype 13; initially same as short_name).
+    /// Short variable name bytes (up to 8), trailing padding removed and ASCII
+    /// letters upper-cased. Undecoded: the file encoding is not known yet.
+    pub short_name: RawText,
+    /// Long variable name, decoded with the file encoding in
+    /// `resolve_dictionary` (from subtype 13, else from `short_name`).
     pub long_name: String,
     /// Variable label text (if present).
     pub label: Option<Vec<u8>>,
@@ -72,10 +74,11 @@ impl VariableRecord {
         let print_packed = reader.read_i32()?;
         let write_packed = reader.read_i32()?;
 
-        // Short name: 8 bytes
+        // Short name: 8 bytes, kept as bytes (encoding unknown at this point).
         let name_bytes = reader.read_bytes(8)?;
-        let short_name =
-            io_utils::bytes_to_string_lossy(io_utils::trim_trailing_padding(&name_bytes));
+        let mut short_name: RawText = io_utils::trim_trailing_padding(&name_bytes).to_vec();
+        short_name.make_ascii_uppercase();
+        let name_for_msg = String::from_utf8_lossy(&short_name).into_owned();
 
         // Determine variable type. The format allows exactly three kinds of
         // value here; anything else is corruption. A huge "string width" is not
@@ -88,13 +91,13 @@ impl VariableRecord {
                 // SPSS opens files with such records (observed: -257), so treat
                 // them as continuation slots and report, rather than refuse.
                 warnings.push(format!(
-                    "variable record {slot_index} ({short_name:?}) declares type {t}; treated as a continuation slot"
+                    "variable record {slot_index} ({name_for_msg:?}) declares type {t}; treated as a continuation slot"
                 ));
                 (VarType::Numeric, true)
             }
             t => {
                 return Err(SpssError::InvalidVariable(format!(
-                    "variable {short_name:?} declares type {t}; valid values are 0 (numeric), 1-255 (string width) or -1 (continuation)"
+                    "variable {name_for_msg:?} declares type {t}; valid values are 0 (numeric), 1-255 (string width) or -1 (continuation)"
                 )));
             }
         };
@@ -122,8 +125,8 @@ impl VariableRecord {
         Ok(VariableRecord {
             slot_index,
             raw_type,
-            short_name: short_name.to_uppercase(),
-            long_name: short_name.to_uppercase(), // will be overridden by subtype 13
+            short_name,
+            long_name: String::new(), // set in resolve_dictionary
             label,
             print_format,
             write_format,
@@ -244,7 +247,7 @@ mod tests {
         let mut reader = SavReader::new(&data[..]);
         let var = VariableRecord::parse(&mut reader, 0, &mut Vec::new()).unwrap();
 
-        assert_eq!(var.short_name, "AGE");
+        assert_eq!(var.short_name, b"AGE");
         assert_eq!(var.var_type, VarType::Numeric);
         assert!(!var.is_ghost);
         assert!(var.label.is_none());
@@ -257,7 +260,7 @@ mod tests {
         let mut reader = SavReader::new(&data[..]);
         let var = VariableRecord::parse(&mut reader, 0, &mut Vec::new()).unwrap();
 
-        assert_eq!(var.short_name, "NAME");
+        assert_eq!(var.short_name, b"NAME");
         assert_eq!(var.var_type, VarType::String(20));
         assert!(!var.is_ghost);
     }

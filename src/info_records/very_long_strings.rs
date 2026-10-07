@@ -1,24 +1,28 @@
-use crate::io_utils;
+use crate::io_utils::{self, RawText};
 
 /// Parse subtype 14: very long string widths.
 ///
 /// Format: `VARNAME=WIDTH\0\tVARNAME2=WIDTH2\0\t...`
 ///
-/// Returns a vector of (variable_name, true_width) pairs.
-pub fn parse_very_long_strings(data: &[u8]) -> Vec<(String, usize)> {
-    let text = io_utils::bytes_to_string_lossy(data);
+/// Returns (variable_name_bytes, true_width) pairs. The name is kept
+/// undecoded (ASCII-uppercased) so it matches variable records byte for byte
+/// regardless of the file encoding.
+pub fn parse_very_long_strings(data: &[u8]) -> Vec<(RawText, usize)> {
     let mut result = Vec::new();
 
     // Split by \0 or \t
-    for entry in text.split(['\0', '\t']) {
-        let entry = entry.trim();
+    for entry in data.split(|&b| b == 0 || b == b'\t') {
+        let entry = io_utils::trim_ascii_nul(entry);
         if entry.is_empty() {
             continue;
         }
-        if let Some((name, width_str)) = entry.split_once('=')
+        if let Some(eq) = entry.iter().position(|&b| b == b'=')
+            && let Ok(width_str) = std::str::from_utf8(&entry[eq + 1..])
             && let Ok(width) = width_str.trim().parse::<usize>()
         {
-            result.push((name.trim().to_uppercase(), width));
+            let mut name = io_utils::trim_ascii_nul(&entry[..eq]).to_vec();
+            name.make_ascii_uppercase();
+            result.push((name, width));
         }
     }
 
@@ -35,7 +39,7 @@ mod tests {
         let entries = parse_very_long_strings(data);
 
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0], ("LONGVAR1".to_string(), 500));
-        assert_eq!(entries[1], ("LONGVAR2".to_string(), 1000));
+        assert_eq!(entries[0], (b"LONGVAR1".to_vec(), 500));
+        assert_eq!(entries[1], (b"LONGVAR2".to_vec(), 1000));
     }
 }

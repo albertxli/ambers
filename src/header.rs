@@ -28,8 +28,9 @@ pub struct FileHeader {
     pub creation_date: String,
     /// Creation time string (e.g., "14:30:00").
     pub creation_time: String,
-    /// File label (up to 64 chars).
-    pub file_label: String,
+    /// File label bytes (up to 64), undecoded; decoded with the file encoding
+    /// in `resolve_dictionary`.
+    pub file_label: io_utils::RawText,
     /// Whether byte-swapping is needed for this file.
     pub bswap: bool,
 }
@@ -86,8 +87,7 @@ impl FileHeader {
 
         // File label: 64 bytes
         let label_bytes = reader.read_bytes(64)?;
-        let file_label =
-            io_utils::bytes_to_string_lossy(io_utils::trim_trailing_padding(&label_bytes));
+        let file_label = io_utils::trim_trailing_padding(&label_bytes).to_vec();
 
         // Padding: 3 bytes
         reader.skip(3)?;
@@ -164,7 +164,7 @@ mod tests {
         assert!((header.bias - 100.0).abs() < f64::EPSILON);
         assert_eq!(header.creation_date, "01 Jan 24");
         assert_eq!(header.creation_time, "14:30:00");
-        assert_eq!(header.file_label, "Test file");
+        assert_eq!(header.file_label, b"Test file");
         assert!(!header.bswap);
     }
 

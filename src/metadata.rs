@@ -1,4 +1,5 @@
 use arrow::datatypes::{DataType, Schema, TimeUnit};
+use encoding_rs::Encoding;
 use indexmap::IndexMap;
 
 use crate::constants::{Alignment, Compression, Measure, Role};
@@ -127,7 +128,7 @@ pub fn specs_to_missing(specs: &[MissingSpec]) -> MissingValues {
 }
 
 /// Convert internal MissingValues to public MissingSpec list.
-pub fn missing_to_specs(mv: &MissingValues) -> Vec<MissingSpec> {
+pub fn missing_to_specs(mv: &MissingValues, file_encoding: &'static Encoding) -> Vec<MissingSpec> {
     match mv {
         MissingValues::None => vec![],
         MissingValues::DiscreteNumeric(vals) => {
@@ -150,7 +151,15 @@ pub fn missing_to_specs(mv: &MissingValues) -> Vec<MissingSpec> {
         }
         MissingValues::DiscreteString(vals) => vals
             .iter()
-            .map(|v| MissingSpec::StringValue(String::from_utf8_lossy(v).trim_end().to_string()))
+            .map(|v| {
+                MissingSpec::StringValue(
+                    crate::encoding::decode_str_lossy(
+                        crate::io_utils::trim_trailing_padding(v),
+                        file_encoding,
+                    )
+                    .into_owned(),
+                )
+            })
             .collect(),
     }
 }

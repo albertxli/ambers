@@ -1,10 +1,11 @@
 use crate::error::{Result, SpssError};
+use crate::io_utils::{self, RawText};
 
 /// A set of value labels for a long string variable.
 #[derive(Debug, Clone)]
 pub struct LongStringLabelSet {
-    /// Variable name.
-    pub var_name: String,
+    /// Variable name bytes, undecoded (decoded in `resolve_dictionary`).
+    pub var_name: RawText,
     /// (value, label) pairs.
     pub labels: Vec<(Vec<u8>, Vec<u8>)>,
 }
@@ -32,9 +33,7 @@ pub fn parse_long_string_labels(data: &[u8]) -> Result<Vec<LongStringLabelSet>> 
         if pos + name_len > data.len() {
             break;
         }
-        let var_name = String::from_utf8_lossy(&data[pos..pos + name_len])
-            .trim()
-            .to_string();
+        let var_name = io_utils::trim_ascii_nul(&data[pos..pos + name_len]).to_vec();
         pos += name_len;
 
         // Variable width (skip — used for value padding)

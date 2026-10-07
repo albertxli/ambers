@@ -2,6 +2,10 @@
 
 All notable changes to ambers are documented in this file.
 
+## [Unreleased]
+
+- Fix GitHub issue #5: on code-page encoded files (windows-1250 and every other mapped code page) variable names, long names, MR-set names/labels/counted values, variable attributes, long-string record names and the file label were decoded as UTF-8 before the file's encoding was known, turning accented characters into U+FFFD and truncating or panicking in the MR-set parser. All dictionary text now stays raw bytes until `resolve_dictionary` decodes it once with the file encoding. Fixes a related false "duplicate variable name" error for names differing only by an accented letter. UTF-8 files and data columns are unchanged
+
 ## [0.4.5] - 2026-10-07
 
 - Add `warnings_and_errors.md`, a catalogue of every reader warning finding and error message with meaning and remedy, and a "Warnings and Errors" section at the end of the README
