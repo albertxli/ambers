@@ -2,7 +2,7 @@
 
 All notable changes to ambers are documented in this file.
 
-## [Unreleased]
+## [0.4.5] - 2026-10-07
 
 - Add `warnings_and_errors.md`, a catalogue of every reader warning finding and error message with meaning and remedy, and a "Warnings and Errors" section at the end of the README
 
