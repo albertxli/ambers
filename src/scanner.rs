@@ -1,4 +1,4 @@
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, SeekFrom};
 
 use arrow::datatypes::{Field, Schema};
 use arrow::record_batch::RecordBatch;
@@ -45,6 +45,14 @@ pub struct SavScanner<R: Read + Seek> {
     rows_read: usize,
     state: ScanState,
     eof: bool,
+    /// Bytes of row data actually present (uncompressed: raw bytes after the
+    /// dictionary; bytecode: compressed bytes; zsav: sum of block sizes). Used
+    /// to cap buffer sizes so a header can never make us allocate more than
+    /// the file could possibly contain.
+    data_len: usize,
+    /// Date/time values outside the representable range that were set to null
+    /// (reported once as a finding when the data is exhausted).
+    temporal_out_of_range: usize,
 }
 
 impl<R: Read + Seek> SavScanner<R> {
@@ -52,24 +60,31 @@ impl<R: Read + Seek> SavScanner<R> {
     pub fn open(reader: R, batch_size: usize) -> Result<Self> {
         let mut sav_reader = SavReader::new(reader);
 
+        // Learn the file length once so that no declared size can make the
+        // parser allocate more than the file holds (GitHub issue #3).
+        let file_len = {
+            let inner = sav_reader.inner_mut();
+            let len = inner.seek(SeekFrom::End(0))?;
+            inner.seek(SeekFrom::Start(0))?;
+            len
+        };
+        sav_reader.set_file_len(file_len);
+
         let file_header = header::FileHeader::parse(&mut sav_reader)?;
         let raw_dict = dictionary::parse_dictionary(&mut sav_reader, &file_header)?;
         let compression = raw_dict.header.compression;
         let bias = raw_dict.header.bias;
-        let slots_per_row = raw_dict.header.nominal_case_size as usize;
-        let ncases = if raw_dict.header.ncases >= 0 {
-            Some(raw_dict.header.ncases as usize)
-        } else {
-            None
-        };
         let mut dict = dictionary::resolve_dictionary(raw_dict)?;
+
+        let dict_end = sav_reader.inner_mut().stream_position()?;
+        let remaining = file_len.saturating_sub(dict_end) as usize;
+        let mut data_len = remaining;
 
         // Set up compression-specific state
         let state = match compression {
             Compression::None => ScanState::Uncompressed,
             Compression::Bytecode => {
-                let estimated_size = ncases.unwrap_or(1000) * slots_per_row * 8;
-                let mut compressed_data = Vec::with_capacity(estimated_size);
+                let mut compressed_data = Vec::with_capacity(remaining);
                 sav_reader.inner_mut().read_to_end(&mut compressed_data)?;
                 ScanState::Bytecode {
                     data: compressed_data,
@@ -79,6 +94,11 @@ impl<R: Read + Seek> SavScanner<R> {
             Compression::Zlib => {
                 let zheader = zlib::read_zheader(&mut sav_reader)?;
                 let ztrailer = zlib::read_ztrailer(&mut sav_reader, &zheader)?;
+                data_len = ztrailer
+                    .entries
+                    .iter()
+                    .map(|e| e.uncompressed_size.max(0) as usize)
+                    .sum();
                 // Writers disagree on the sign here (SPSS/ambers write -100, some
                 // tools +100); decoding uses the main header's bias anyway.
                 if ztrailer.bias.abs() != 100 {
@@ -113,6 +133,8 @@ impl<R: Read + Seek> SavScanner<R> {
             rows_read: 0,
             state,
             eof: false,
+            data_len,
+            temporal_out_of_range: 0,
         })
     }
 
@@ -180,14 +202,14 @@ impl<R: Read + Seek> SavScanner<R> {
                 let num_rows = b.num_rows();
                 if num_rows == 0 {
                     self.eof = true;
-                    self.note_row_count_mismatch();
+                    self.note_end_of_data_findings();
                     return Ok(None);
                 }
                 self.rows_read += num_rows;
             }
             None => {
                 self.eof = true;
-                self.note_row_count_mismatch();
+                self.note_end_of_data_findings();
                 return Ok(None);
             }
         }
@@ -195,11 +217,18 @@ impl<R: Read + Seek> SavScanner<R> {
         Ok(batch)
     }
 
-    /// Called once when the data section is exhausted: record a warning in the
-    /// metadata if the header's case count disagrees with the rows actually
-    /// read. The header value is only a hint, so this is a warning, not an
+    /// Called once when the data section is exhausted: record findings in the
+    /// metadata (out-of-range date/time values set to null; header case count
+    /// that disagrees with the rows actually read). The header value is only a hint, so this is a warning, not an
     /// error. Skipped when a row limit was set (a mismatch is then expected).
-    fn note_row_count_mismatch(&mut self) {
+    fn note_end_of_data_findings(&mut self) {
+        if self.temporal_out_of_range > 0 {
+            self.dict.metadata.warnings.push(format!(
+                "{} date/time values were outside the representable range (years 1-9999) and were set to null",
+                self.temporal_out_of_range
+            ));
+            self.temporal_out_of_range = 0;
+        }
         if self.row_limit.is_some() {
             return;
         }
@@ -224,12 +253,12 @@ impl<R: Read + Seek> SavScanner<R> {
             Some(batch) => {
                 self.rows_read += batch.num_rows();
                 self.eof = true;
-                self.note_row_count_mismatch();
+                self.note_end_of_data_findings();
                 Ok(batch)
             }
             None => {
                 self.eof = true;
-                self.note_row_count_mismatch();
+                self.note_end_of_data_findings();
                 let schema = if let Some(ref proj) = self.projection {
                     let fields: Vec<Field> = proj
                         .iter()
@@ -274,7 +303,15 @@ impl<R: Read + Seek> SavScanner<R> {
         } else {
             1000
         };
-        n.min(ncases).clamp(1, 1_000_000)
+        // Rows cannot exceed what the data section can hold: one row of raw
+        // bytes for uncompressed data, at least one byte per row for bytecode
+        // (each slot needs a control byte, 8 per block).
+        let row_bytes = (self.dict.header.nominal_case_size as usize * 8).max(1);
+        let by_data = match self.state {
+            ScanState::Uncompressed => self.data_len / row_bytes,
+            _ => self.data_len,
+        };
+        n.min(ncases).min(by_data).clamp(1, 1_000_000)
     }
 
     /// Read up to `n` rows directly into a columnar Arrow RecordBatch.
@@ -474,7 +511,9 @@ impl<R: Read + Seek> SavScanner<R> {
         }
 
         if builder.len() > 0 {
-            Ok(Some(builder.finish()?))
+            let (batch, nulled) = builder.finish_with_stats()?;
+            self.temporal_out_of_range += nulled;
+            Ok(Some(batch))
         } else {
             Ok(None)
         }

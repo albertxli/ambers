@@ -18,6 +18,35 @@ import ambers as am
 
 CASE_COUNT_OFFSET = 80  # header ncases (i32 LE)
 BIAS_OFFSET = 84        # header compression bias (f64 LE)
+
+
+def _layout(data: bytes):
+    """Walk the dictionary: returns (type2 records as [(offset, short_name)], data_start)."""
+    i32 = lambda o: struct.unpack_from("<i", data, o)[0]
+    pos, type2 = 176, []
+    while True:
+        rt = i32(pos)
+        if rt == 2:
+            has_label, nmiss = i32(pos + 8), i32(pos + 12)
+            type2.append((pos, data[pos + 24:pos + 32].decode("latin1").rstrip()))
+            pos += 32
+            if has_label == 1:
+                ll = i32(pos); pos += 4 + (ll + 3) // 4 * 4
+            pos += 8 * abs(nmiss)
+        elif rt == 3:
+            n = i32(pos + 4); pos += 8
+            for _ in range(n):
+                pos += 8; ll = data[pos]; pos += (ll + 1 + 7) // 8 * 8
+        elif rt == 4:
+            pos += 8 + 4 * i32(pos + 4)
+        elif rt == 6:
+            pos += 8 + 80 * i32(pos + 4)
+        elif rt == 7:
+            pos += 16 + i32(pos + 8) * i32(pos + 12)
+        elif rt == 999:
+            return type2, pos + 8
+        else:
+            raise AssertionError(f"unexpected record type {rt} at {pos}")
 GARBAGE_BIAS = 9.597803938502254e-308  # value found in the fuzzer files
 META = am.SpssMetadata(variable_formats={"name": "A12"})
 
@@ -147,3 +176,52 @@ class TestReporterFile:
         assert sorted(w.split(" ")[0] for w in sav.warnings) == ["compression", "header"]
         # Read literally, as Q does; SPSS would show 1/2 because it assumes bias 100.
         assert sav.data["mylabl"].to_list() == [101.0, 102.0, 101.0, 102.0, 101.0]
+
+
+class TestImpossibleStructures:
+    """Corruptions that cannot be read at all fail fast with a clear OSError."""
+
+    def test_invalid_string_width_fails_fast(self, tmp_path, source_df):
+        good = _write(tmp_path, source_df, "good.sav")
+        data = bytearray(good.read_bytes())
+        type2, _ = _layout(data)
+        off = next(o for o, n in type2 if n.upper() == "NAME")
+        struct.pack_into("<i", data, off + 4, 905_969_664)
+        p = tmp_path / "wide.sav"; p.write_bytes(data)
+        import time
+        t0 = time.perf_counter()
+        with pytest.raises(OSError, match="declares type 905969664"):
+            am.read_sav(str(p))
+        assert time.perf_counter() - t0 < 1.0
+
+    def test_duplicate_variable_names_fail(self, tmp_path, source_df):
+        good = _write(tmp_path, source_df, "good.sav")
+        data = bytearray(good.read_bytes())
+        type2, _ = _layout(data)
+        first = next(o for o, n in type2 if n.upper() == "AGE")
+        second = next(o for o, n in type2 if n.upper() == "D")
+        data[second + 24:second + 32] = data[first + 24:first + 32]
+        p = tmp_path / "dupe.sav"; p.write_bytes(data)
+        with pytest.raises(OSError, match="duplicate variable name"):
+            am.read_sav(str(p))
+
+
+class TestTemporalRange:
+    def test_out_of_range_dates_become_null_with_finding(self, tmp_path):
+        df = pl.DataFrame({"d": [date(2024, 1, 1) for _ in range(5)], "x": [1.0, 2.0, 3.0, 4.0, 5.0]})
+        p = tmp_path / "dates.sav"
+        am.write_sav(df, str(p), compression="uncompressed")
+        data = bytearray(p.read_bytes())
+        _, start = _layout(data)
+        row_bytes = 16  # two 8-byte slots; "d" is slot 0
+        struct.pack_into("<d", data, start + 1 * row_bytes, 1e300)
+        struct.pack_into("<d", data, start + 3 * row_bytes, float("nan"))
+        bad = tmp_path / "dates_bad.sav"; bad.write_bytes(data)
+        with pytest.warns(am.CorruptFileWarning, match="2 date/time values were outside the representable range") as rec:
+            sav = am.read_sav(str(bad))
+        assert len(rec) == 1
+        assert sav.data["d"].null_count() == 2
+        assert sav.data["d"].is_null().to_list() == [False, True, False, True, False]
+        assert sav.data["x"].to_list() == [1.0, 2.0, 3.0, 4.0, 5.0]
+        # Polars can display and summarise the frame (the old saturated values made it panic).
+        assert sav.data.describe().height > 0

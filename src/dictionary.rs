@@ -76,13 +76,14 @@ pub fn parse_dictionary<R: Read>(
     let mut var_attributes = Vec::new();
 
     let mut slot_index = 0;
+    let mut warnings: Vec<String> = Vec::new();
 
     loop {
         let record_type = reader.read_i32()?;
 
         match record_type {
             RECORD_TYPE_VARIABLE => {
-                let var = VariableRecord::parse(reader, slot_index)?;
+                let var = VariableRecord::parse(reader, slot_index, &mut warnings)?;
                 slot_index += 1;
                 variables.push(var);
             }
@@ -156,14 +157,16 @@ pub fn parse_dictionary<R: Read>(
             "dictionary defines no variables".to_string(),
         ));
     }
-    if header.nominal_case_size > 0 && header.nominal_case_size as usize != slots_per_row {
-        return Err(SpssError::InvalidDictionary(format!(
-            "header declares {} slots per case but the dictionary defines {}",
-            header.nominal_case_size, slots_per_row
-        )));
-    }
 
-    let mut warnings = Vec::new();
+    // The header's case size is unreliable (PSPP documents writers that store
+    // -1/0, and SPSS itself ignores it: it opens files whose value is absurd).
+    // The variable list is authoritative; a disagreement is reported, not fatal.
+    if header.nominal_case_size > 0 && header.nominal_case_size as usize != slots_per_row {
+        warnings.push(format!(
+            "header declares {} values per row but the variable list defines {}; used {}",
+            header.nominal_case_size, slots_per_row, slots_per_row
+        ));
+    }
     if header.nominal_case_size <= 0 {
         warnings.push(format!(
             "header does not declare the number of values per row (case size {}); used the {} defined by the variable list",
@@ -196,6 +199,7 @@ pub fn parse_dictionary<R: Read>(
 /// Resolve the raw dictionary into a fully processed dictionary with metadata.
 pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
     let mut variables = raw.variables;
+    let mut warnings = raw.warnings;
 
     // 1. Determine character encoding
     let file_encoding = determine_encoding(&raw.encoding_name, &raw.integer_info);
@@ -219,8 +223,23 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
     for i in 0..variables.len() {
         let lookup_name = variables[i].short_name.clone();
         if let Some(&true_width) = vls_map.get(&lookup_name) {
-            variables[i].var_type = VarType::String(true_width);
+            // Subtype 14 may only declare widths 256..=32767; anything else is
+            // corrupt and would make every row walk width/252 segments.
+            if !(256..=32767).contains(&true_width) {
+                warnings.push(format!(
+                    "very long string record declares width {true_width} for {lookup_name:?}; ignored (valid range 256-32767)"
+                ));
+                continue;
+            }
             let n_segments = true_width.div_ceil(252);
+            let available = variables[i..].iter().filter(|v| !v.is_ghost).count();
+            if n_segments > available {
+                warnings.push(format!(
+                    "very long string record declares width {true_width} for {lookup_name:?} needing {n_segments} segments but only {available} variables remain; ignored"
+                ));
+                continue;
+            }
+            variables[i].var_type = VarType::String(true_width);
             variables[i].n_segments = n_segments;
 
             // Mark subsequent named segment variables as ghosts
@@ -298,7 +317,7 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
     // writes 100; compressed integer codes decode as `code - bias`, so any other
     // value shifts every compressed integer. We read the file literally and
     // tell the caller instead of silently assuming 100 as SPSS does.
-    meta.warnings = raw.warnings;
+    meta.warnings = warnings;
     if raw.header.compression != Compression::None && raw.header.bias != 100.0 {
         meta.warnings.push(format!(
             "compression bias in the header is {} instead of the standard 100; compressed integer values may be shifted by {} (SPSS reads such a file assuming 100)",
@@ -310,6 +329,18 @@ pub fn resolve_dictionary(raw: RawDictionary) -> Result<ResolvedDictionary> {
     // Build per-variable metadata
     let visible_vars: Vec<&VariableRecord> = variables.iter().filter(|v| !v.is_ghost).collect();
     meta.number_columns = visible_vars.len();
+
+    {
+        let mut seen = std::collections::HashSet::with_capacity(visible_vars.len());
+        for var in &visible_vars {
+            if !seen.insert(var.long_name.as_str()) {
+                return Err(SpssError::InvalidDictionary(format!(
+                    "duplicate variable name {:?}; SPSS also rejects this file",
+                    var.long_name
+                )));
+            }
+        }
+    }
 
     for var in &visible_vars {
         let name = var.long_name.clone();

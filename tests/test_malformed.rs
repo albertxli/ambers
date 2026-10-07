@@ -97,6 +97,84 @@ fn with_bias(mut bytes: Vec<u8>, value: f64) -> Vec<u8> {
     bytes
 }
 
+/// Offsets of interest in a file written by ambers, found by walking the
+/// dictionary records (same structure the reader parses).
+struct Layout {
+    /// (record offset, short name) for every type 2 record, in order.
+    type2: Vec<(usize, String)>,
+    /// (record offset, subtype) for every type 7 (info) record, in order.
+    info: Vec<(usize, i32)>,
+    /// First byte of the data section (after the type 999 record).
+    data_start: usize,
+}
+
+fn layout(bytes: &[u8]) -> Layout {
+    let i32_at = |o: usize| i32::from_le_bytes(bytes[o..o + 4].try_into().unwrap());
+    let mut pos = 176;
+    let mut type2 = Vec::new();
+    let mut info = Vec::new();
+    loop {
+        match i32_at(pos) {
+            2 => {
+                let has_label = i32_at(pos + 8);
+                let nmiss = i32_at(pos + 12);
+                let name = String::from_utf8_lossy(&bytes[pos + 24..pos + 32])
+                    .trim_end()
+                    .to_string();
+                type2.push((pos, name));
+                pos += 32;
+                if has_label == 1 {
+                    let ll = i32_at(pos) as usize;
+                    pos += 4 + ll.div_ceil(4) * 4;
+                }
+                pos += 8 * nmiss.unsigned_abs() as usize;
+            }
+            3 => {
+                let n = i32_at(pos + 4) as usize;
+                pos += 8;
+                for _ in 0..n {
+                    pos += 8;
+                    let ll = bytes[pos] as usize;
+                    pos += (ll + 1).div_ceil(8) * 8;
+                }
+            }
+            4 => pos += 8 + 4 * i32_at(pos + 4) as usize,
+            6 => pos += 8 + 80 * i32_at(pos + 4) as usize,
+            7 => {
+                info.push((pos, i32_at(pos + 4)));
+                let sz = i32_at(pos + 8) as usize;
+                let cnt = i32_at(pos + 12) as usize;
+                pos += 16 + sz * cnt;
+            }
+            999 => {
+                return Layout {
+                    type2,
+                    info,
+                    data_start: pos + 8,
+                };
+            }
+            other => panic!("unexpected record type {other} at {pos}"),
+        }
+    }
+}
+
+fn type2_offset(bytes: &[u8], short_name: &str) -> usize {
+    layout(bytes)
+        .type2
+        .into_iter()
+        .find(|(_, n)| n.eq_ignore_ascii_case(short_name))
+        .map(|(o, _)| o)
+        .unwrap_or_else(|| panic!("no type 2 record named {short_name}"))
+}
+
+fn put_i32(bytes: &mut [u8], offset: usize, value: i32) {
+    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn put_f64(bytes: &mut [u8], offset: usize, value: f64) {
+    bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+}
+
 fn age_column(batch: &RecordBatch) -> Vec<Option<f64>> {
     use arrow::array::{Array, Float64Array};
     let col = batch
@@ -142,28 +220,6 @@ fn unpatched_roundtrip_unchanged() {
 }
 
 #[test]
-fn header_slot_count_larger_than_dictionary_is_rejected() {
-    let (bytes, declared) = sample_sav(Compression::Bytecode);
-    let patched = with_case_size(bytes, declared + 3);
-    let result = read_sav_from_reader(Cursor::new(patched.clone())).map(|(b, _)| b);
-    assert_invalid_dictionary(result, &["7 slots per case", "defines 4"]);
-    // The metadata-only path must reject the file too.
-    assert!(scan_sav_from_reader(Cursor::new(patched), 100).is_err());
-}
-
-#[test]
-fn header_slot_count_smaller_than_dictionary_is_rejected() {
-    // This is the GitHub issue #1 shape: header says fewer slots than the
-    // dictionary defines, so the last columns would be read past the row end.
-    for compression in [Compression::None, Compression::Bytecode] {
-        let (bytes, declared) = sample_sav(compression);
-        let patched = with_case_size(bytes, declared - 1);
-        let result = read_sav_from_reader(Cursor::new(patched)).map(|(b, _)| b);
-        assert_invalid_dictionary(result, &["3 slots per case", "defines 4"]);
-    }
-}
-
-#[test]
 fn non_positive_header_slot_count_is_tolerated() {
     // PSPP documents that some writers store -1 or 0 here. The dictionary is
     // authoritative, so such files must read exactly like the correct file.
@@ -177,36 +233,6 @@ fn non_positive_header_slot_count_is_tolerated() {
             assert_eq!(batch, expected, "case size {bogus}");
             assert_eq!(meta.variable_names, vec!["age", "score", "name"]);
         }
-    }
-}
-
-#[test]
-fn issue1_repro_file_is_rejected() {
-    let path = "test_data/github_issues/issue1_buffer_overflow.sav";
-    if !std::path::Path::new(path).exists() {
-        eprintln!("Skipping: {path} not present (reporter-supplied fuzzer file)");
-        return;
-    }
-    let result = read_sav(path).map(|(b, _)| b);
-    assert_invalid_dictionary(result, &["7 slots per case", "defines 10"]);
-}
-
-#[test]
-fn issue3_slot_count_files_are_rejected() {
-    // Two of the issue #3 fuzzer files also carry a header/dictionary slot
-    // mismatch. They may fail earlier for other reasons; only require an Err.
-    for path in [
-        "test_data/github_issues/issue3_case-size.sav",
-        "test_data/github_issues/issue3_missing-count.sav",
-    ] {
-        if !std::path::Path::new(path).exists() {
-            eprintln!("Skipping: {path} not present");
-            continue;
-        }
-        assert!(
-            read_sav(path).is_err(),
-            "{path} should not read successfully"
-        );
     }
 }
 
@@ -405,4 +431,228 @@ fn issue2_repro_file_reports_two_warnings() {
             .any(|w| w.contains("declares 0 rows but 5 rows"))
     );
     assert!(meta.warnings.iter().any(|w| w.contains("compression bias")));
+}
+
+// ---------------------------------------------------------------------------
+// Issue #1 revisited: a header/dictionary width mismatch is a finding, not an
+// error (SPSS ignores the header field). Duplicate variable names are the error.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn header_slot_count_mismatch_warns_and_reads() {
+    for compression in [Compression::None, Compression::Bytecode] {
+        let (bytes, declared) = sample_sav(compression);
+        let (expected, _) = read_sav_from_reader(Cursor::new(bytes.clone())).unwrap();
+        for bogus in [declared + 3, declared - 1, 1_895_825_415] {
+            let patched = with_case_size(bytes.clone(), bogus);
+            let (batch, meta) = read_sav_from_reader(Cursor::new(patched.clone()))
+                .unwrap_or_else(|e| panic!("{compression:?} case size {bogus}: {e}"));
+            assert_eq!(batch, expected, "{compression:?} case size {bogus}");
+            assert_eq!(meta.warnings.len(), 1, "{:?}", meta.warnings);
+            assert!(meta.warnings[0].contains(&format!("header declares {bogus} values per row")));
+            // Header-level: visible from the metadata-only path too.
+            let scanner = scan_sav_from_reader(Cursor::new(patched), 100).unwrap();
+            assert_eq!(scanner.metadata().warnings.len(), 1);
+        }
+    }
+}
+
+#[test]
+fn duplicate_variable_names_are_rejected() {
+    let (mut bytes, _) = sample_sav(Compression::None);
+    // Give the second variable the first one's short name; the long-name
+    // record then maps both to "age".
+    let first = type2_offset(&bytes, "AGE");
+    let second = type2_offset(&bytes, "SCORE");
+    let name: [u8; 8] = bytes[first + 24..first + 32].try_into().unwrap();
+    bytes[second + 24..second + 32].copy_from_slice(&name);
+    let result = read_sav_from_reader(Cursor::new(bytes)).map(|(b, _)| b);
+    assert_invalid_dictionary(result, &["duplicate variable name", "age"]);
+}
+
+#[test]
+fn issue1_repro_file_is_rejected_for_duplicate_names() {
+    let path = "test_data/github_issues/issue1_buffer_overflow.sav";
+    if !std::path::Path::new(path).exists() {
+        eprintln!("Skipping: {path} not present (reporter-supplied fuzzer file)");
+        return;
+    }
+    let result = read_sav(path).map(|(b, _)| b);
+    assert_invalid_dictionary(result, &["duplicate variable name"]);
+}
+
+// ---------------------------------------------------------------------------
+// Issues #3 and #4: impossible structures are rejected before they can cost
+// memory or time; everything else is read with findings.
+// ---------------------------------------------------------------------------
+
+fn assert_invalid_variable(result: Result<RecordBatch, SpssError>, expect_in_msg: &[&str]) {
+    match result {
+        Err(SpssError::InvalidVariable(msg)) => {
+            for needle in expect_in_msg {
+                assert!(msg.contains(needle), "message {msg:?} lacks {needle:?}");
+            }
+        }
+        Err(other) => panic!("expected InvalidVariable, got {other:?}"),
+        Ok(batch) => panic!("expected an error, read {} rows", batch.num_rows()),
+    }
+}
+
+#[test]
+fn invalid_type_field_is_rejected_quickly() {
+    let (bytes, _) = sample_sav(Compression::Bytecode);
+    let off = type2_offset(&bytes, "NAME");
+    // A negative value other than -1 is tolerated as a continuation slot with a
+    // finding (SPSS opens such files); the string column simply disappears.
+    {
+        let mut patched = bytes.clone();
+        put_i32(&mut patched, off + 4, -5);
+        let (batch, meta) = read_sav_from_reader(Cursor::new(patched)).unwrap();
+        assert_eq!(batch.num_columns(), 2);
+        assert!(
+            meta.warnings.iter().any(|w| w.contains("declares type -5")),
+            "{:?}",
+            meta.warnings
+        );
+    }
+    for bogus in [256, 905_969_664, 272_302_081] {
+        let mut patched = bytes.clone();
+        put_i32(&mut patched, off + 4, bogus);
+        let t0 = std::time::Instant::now();
+        let result = read_sav_from_reader(Cursor::new(patched)).map(|(b, _)| b);
+        assert_invalid_variable(result, &[&format!("declares type {bogus}"), "1-255"]);
+        assert!(
+            t0.elapsed().as_secs_f64() < 1.0,
+            "type {bogus} took {:?}",
+            t0.elapsed()
+        );
+    }
+}
+
+#[test]
+fn too_many_missing_values_is_rejected_before_allocation() {
+    let (bytes, _) = sample_sav(Compression::Bytecode);
+    let off = type2_offset(&bytes, "AGE");
+    for bogus in [4, -4, 675_295_820] {
+        let mut patched = bytes.clone();
+        put_i32(&mut patched, off + 12, bogus);
+        let t0 = std::time::Instant::now();
+        let result = read_sav_from_reader(Cursor::new(patched)).map(|(b, _)| b);
+        assert_invalid_variable(result, &[&format!("declares {bogus} missing values")]);
+        assert!(t0.elapsed().as_secs_f64() < 1.0);
+    }
+}
+
+#[test]
+fn oversized_info_record_is_rejected_before_allocation() {
+    let (mut bytes, _) = sample_sav(Compression::Bytecode);
+    // Subtype 13 (long variable names) is read with one bulk allocation of
+    // size * count bytes; fixed-layout subtypes such as 3 ignore the count.
+    let off = layout(&bytes)
+        .info
+        .into_iter()
+        .find(|&(_, sub)| sub == 13)
+        .map(|(o, _)| o)
+        .expect("long names record");
+    put_i32(&mut bytes, off + 8, 1); // size
+    put_i32(&mut bytes, off + 12, 1_300_000_000); // count -> 1.3 GB declared
+    let t0 = std::time::Instant::now();
+    let err = read_sav_from_reader(Cursor::new(bytes))
+        .err()
+        .expect("must fail");
+    assert!(
+        matches!(err, SpssError::TruncatedFile { .. }),
+        "got {err:?}"
+    );
+    assert!(t0.elapsed().as_secs_f64() < 1.0, "took {:?}", t0.elapsed());
+}
+
+#[test]
+fn huge_declared_case_count_reads_quickly() {
+    let (bytes, _) = sample_sav(Compression::Bytecode);
+    let (expected, _) = read_sav_from_reader(Cursor::new(bytes.clone())).unwrap();
+    let t0 = std::time::Instant::now();
+    let (batch, meta) =
+        read_sav_from_reader(Cursor::new(with_case_count(bytes, 6_881_281))).unwrap();
+    assert!(t0.elapsed().as_secs_f64() < 1.0, "took {:?}", t0.elapsed());
+    assert_eq!(batch, expected);
+    assert!(
+        meta.warnings
+            .iter()
+            .any(|w| w.contains("declares 6881281 rows but 5 rows were read"))
+    );
+}
+
+#[test]
+fn temporal_out_of_range_becomes_null_with_finding() {
+    use arrow::array::{Date32Builder, Float64Builder};
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("d", DataType::Date32, true),
+        Field::new("x", DataType::Float64, true),
+    ]));
+    let mut d = Date32Builder::new();
+    let mut x = Float64Builder::new();
+    for i in 0..5 {
+        d.append_value(19_723 + i); // 2024-01-01 ..
+        x.append_value(i as f64);
+    }
+    let batch =
+        RecordBatch::try_new(schema, vec![Arc::new(d.finish()), Arc::new(x.finish())]).unwrap();
+    let meta = SpssMetadata::from_arrow_schema(batch.schema().as_ref());
+    let mut cursor = Cursor::new(Vec::new());
+    write_sav_to_writer(&mut cursor, &batch, &meta, Compression::None, None).unwrap();
+    let mut bytes = cursor.into_inner();
+
+    let (clean, clean_meta) = read_sav_from_reader(Cursor::new(bytes.clone())).unwrap();
+    assert!(clean_meta.warnings.is_empty());
+    assert_eq!(clean.column(0).null_count(), 0);
+
+    // Column "d" is slot 0; rows are 2 slots wide (uncompressed).
+    let start = layout(&bytes).data_start;
+    put_f64(&mut bytes, start + 16, 1e300); // row 1: absurd seconds
+    put_f64(&mut bytes, start + 3 * 16, f64::NAN); // row 3: not a number
+    let (batch, meta) = read_sav_from_reader(Cursor::new(bytes)).unwrap();
+    let d = batch.column(0);
+    assert_eq!(d.null_count(), 2);
+    assert!(d.is_null(1) && d.is_null(3));
+    assert_eq!(d.slice(0, 1).as_ref(), clean.column(0).slice(0, 1).as_ref());
+    assert_eq!(meta.warnings.len(), 1, "{:?}", meta.warnings);
+    assert!(
+        meta.warnings[0].starts_with("2 date/time values were outside the representable range")
+    );
+}
+
+#[test]
+fn issue3_and_issue4_files_read_or_fail_fast() {
+    use std::time::Instant;
+    let cases: [(&str, &str); 6] = [
+        ("issue3_case-size", "reads"),
+        ("issue3_case-count", "reads"),
+        ("issue3_extension", "errors"),
+        ("issue3_missing-count", "errors"),
+        ("issue4_slow-bytecode", "errors"),
+        ("issue4_slow-uncompressed", "errors"),
+    ];
+    for (name, expect) in cases {
+        let path = format!("test_data/github_issues/{name}.sav");
+        if !std::path::Path::new(&path).exists() {
+            eprintln!("Skipping: {path} not present");
+            continue;
+        }
+        let t0 = Instant::now();
+        let result = read_sav(&path);
+        let took = t0.elapsed().as_secs_f64();
+        assert!(took < 1.0, "{name} took {took:.2}s");
+        match (expect, result) {
+            ("reads", Ok((batch, meta))) => {
+                assert!(batch.num_rows() >= 1, "{name}");
+                assert!(!meta.warnings.is_empty(), "{name} should carry findings");
+            }
+            ("errors", Err(_)) => {}
+            (e, r) => panic!(
+                "{name}: expected {e}, got {:?}",
+                r.map(|(b, _)| b.num_rows())
+            ),
+        }
+    }
 }

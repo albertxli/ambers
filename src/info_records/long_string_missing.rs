@@ -51,7 +51,7 @@ pub fn parse_long_string_missing(data: &[u8]) -> Result<Vec<LongStringMissingEnt
         let value_len = read_i32_le(data, pos)? as usize;
         pos += 4;
 
-        let mut values = Vec::with_capacity(n_values as usize);
+        let mut values = Vec::with_capacity((n_values as usize).min(4096));
         for _ in 0..n_values {
             if pos + value_len > data.len() {
                 break;

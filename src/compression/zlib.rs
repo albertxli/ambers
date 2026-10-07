@@ -61,7 +61,7 @@ pub fn read_ztrailer<R: Read + Seek>(
     let block_size = reader.read_i32()?;
     let n_blocks = reader.read_i32()?;
 
-    let mut entries = Vec::with_capacity(n_blocks as usize);
+    let mut entries = Vec::with_capacity((n_blocks.max(0) as usize).min(4096));
     for _ in 0..n_blocks {
         entries.push(ZTrailerEntry {
             uncompressed_offset: reader.read_i64()?,

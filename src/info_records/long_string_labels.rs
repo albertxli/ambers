@@ -51,7 +51,7 @@ pub fn parse_long_string_labels(data: &[u8]) -> Result<Vec<LongStringLabelSet>> 
         let label_count = read_i32_le(data, pos)? as usize;
         pos += 4;
 
-        let mut labels = Vec::with_capacity(label_count);
+        let mut labels = Vec::with_capacity(label_count.min(4096));
         for _ in 0..label_count {
             // Value length + value
             if pos + 4 > data.len() {

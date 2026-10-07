@@ -25,7 +25,7 @@ pub fn parse_var_display<R: Read>(
     let has_width = count.is_multiple_of(3);
 
     let n_vars = if has_width { count / 3 } else { count / 2 };
-    let mut entries = Vec::with_capacity(n_vars);
+    let mut entries = Vec::with_capacity(n_vars.min(4096));
 
     for _ in 0..n_vars {
         let measure = Measure::from_i32(reader.read_i32()?);

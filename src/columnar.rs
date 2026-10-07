@@ -14,6 +14,7 @@ use arrow::array::{
     Array, ArrayRef, Date32Array, DurationMicrosecondArray, Float64Array, Float64Builder,
     StringViewBuilder, TimestampMicrosecondArray,
 };
+use arrow::buffer::{BooleanBuffer, NullBuffer};
 use arrow::datatypes::{Field, Schema};
 use arrow::record_batch::RecordBatch;
 use encoding_rs::Encoding;
@@ -346,7 +347,10 @@ impl ColumnarBatchBuilder {
     ///
     /// Temporal columns are converted from Float64 to their proper Arrow types
     /// here, outside the hot path. This keeps the read loops fast for all columns.
-    pub fn finish(self) -> Result<RecordBatch> {
+    /// Finish the batch. Also returns how many date/time values were outside
+    /// the representable range and were therefore set to null.
+    pub fn finish_with_stats(self) -> Result<(RecordBatch, usize)> {
+        let mut out_of_range = 0usize;
         let mut columns: Vec<ArrayRef> = self
             .builders
             .into_iter()
@@ -365,11 +369,13 @@ impl ColumnarBatchBuilder {
                 .as_any()
                 .downcast_ref::<Float64Array>()
                 .expect("temporal column should be Float64Array");
-            columns[col_idx] = convert_float64_to_temporal(float_arr, kind);
+            let (converted, nulled) = convert_float64_to_temporal(float_arr, kind);
+            columns[col_idx] = converted;
+            out_of_range += nulled;
         }
 
         let batch = RecordBatch::try_new(self.schema, columns)?;
-        Ok(batch)
+        Ok((batch, out_of_range))
     }
 
     /// Number of rows appended so far.
@@ -456,36 +462,92 @@ fn process_string_rows(
 // Temporal post-processing (runs in finish(), NOT in hot path)
 // ---------------------------------------------------------------------------
 
-/// Convert a Float64Array of SPSS numeric values to the appropriate Arrow
-/// temporal type. Reuses the null bitmap from the source array directly.
-#[inline(never)]
-fn convert_float64_to_temporal(arr: &Float64Array, kind: TemporalKind) -> ArrayRef {
-    let nulls = arr.nulls().cloned();
-    let values = arr.values();
+/// Representable range for dates and timestamps: years 1..=9999. SPSS cannot
+/// store dates outside it, and Polars (chrono), pandas and Excel all fail on
+/// values far beyond it. Anything outside, and any non-finite value, becomes
+/// null and is counted so the caller can report it; nothing is silently kept
+/// as a saturated garbage value.
+const DATE_MIN_DAYS: f64 = -719_162.0; // 0001-01-01 relative to 1970-01-01
+const DATE_MAX_DAYS: f64 = 2_932_896.0; // 9999-12-31
+const TS_MIN_US: f64 = -62_135_596_800_000_000.0; // 0001-01-01T00:00:00
+const TS_MAX_US: f64 = 253_402_300_799_999_999.0; // 9999-12-31T23:59:59.999999
+const DURATION_MAX_US: f64 = 9.0e18; // well inside i64; never saturates
 
-    match kind {
+/// Convert a Float64Array of SPSS numeric values to the appropriate Arrow
+/// temporal type. Returns the array and the number of source-valid values
+/// that were outside the representable range and set to null. When nothing is
+/// out of range the source null bitmap is reused as is.
+#[inline(never)]
+fn convert_float64_to_temporal(arr: &Float64Array, kind: TemporalKind) -> (ArrayRef, usize) {
+    let src_nulls = arr.nulls().cloned();
+    let values = arr.values();
+    let n = values.len();
+    let mut valid = vec![true; n];
+    let mut out_of_range = 0usize;
+    let src_is_valid = |i: usize| src_nulls.as_ref().is_none_or(|nb| nb.is_valid(i));
+
+    macro_rules! convert {
+        ($t:ty, $lo:expr, $hi:expr, $f:expr) => {{
+            let mut out: Vec<$t> = Vec::with_capacity(n);
+            for (i, &v) in values.iter().enumerate() {
+                let x: f64 = $f(v);
+                if x.is_finite() && ($lo..=$hi).contains(&x) {
+                    out.push(x as $t);
+                } else {
+                    out.push(0);
+                    valid[i] = false;
+                    if src_is_valid(i) {
+                        out_of_range += 1;
+                    }
+                }
+            }
+            out
+        }};
+    }
+
+    let (array, _): (ArrayRef, ()) = match kind {
         TemporalKind::Date => {
-            let converted: Vec<i32> = values
-                .iter()
-                .map(|&v| (v / SECONDS_PER_DAY - SPSS_EPOCH_OFFSET_DAYS as f64) as i32)
-                .collect();
-            Arc::new(Date32Array::new(converted.into(), nulls))
+            let out = convert!(i32, DATE_MIN_DAYS, DATE_MAX_DAYS, |v: f64| v
+                / SECONDS_PER_DAY
+                - SPSS_EPOCH_OFFSET_DAYS as f64);
+            let nulls = merge_nulls(src_nulls, valid, out_of_range);
+            (Arc::new(Date32Array::new(out.into(), nulls)), ())
         }
         TemporalKind::Timestamp => {
-            let converted: Vec<i64> = values
-                .iter()
-                .map(|&v| ((v - SPSS_EPOCH_OFFSET_SECONDS) * MICROS_PER_SECOND) as i64)
-                .collect();
-            Arc::new(TimestampMicrosecondArray::new(converted.into(), nulls))
+            let out = convert!(i64, TS_MIN_US, TS_MAX_US, |v: f64| (v
+                - SPSS_EPOCH_OFFSET_SECONDS)
+                * MICROS_PER_SECOND);
+            let nulls = merge_nulls(src_nulls, valid, out_of_range);
+            (
+                Arc::new(TimestampMicrosecondArray::new(out.into(), nulls)),
+                (),
+            )
         }
         TemporalKind::Duration => {
-            let converted: Vec<i64> = values
-                .iter()
-                .map(|&v| (v * MICROS_PER_SECOND) as i64)
-                .collect();
-            Arc::new(DurationMicrosecondArray::new(converted.into(), nulls))
+            let out = convert!(i64, -DURATION_MAX_US, DURATION_MAX_US, |v: f64| v
+                * MICROS_PER_SECOND);
+            let nulls = merge_nulls(src_nulls, valid, out_of_range);
+            (
+                Arc::new(DurationMicrosecondArray::new(out.into(), nulls)),
+                (),
+            )
         }
+    };
+    (array, out_of_range)
+}
+
+/// Source nulls unioned with the out-of-range mask; the source bitmap is
+/// reused untouched when no value was out of range (the common case).
+fn merge_nulls(
+    src: Option<NullBuffer>,
+    valid: Vec<bool>,
+    out_of_range: usize,
+) -> Option<NullBuffer> {
+    if out_of_range == 0 {
+        return src;
     }
+    let mask = NullBuffer::new(BooleanBuffer::from(valid));
+    NullBuffer::union(src.as_ref(), Some(&mask))
 }
 
 // ---------------------------------------------------------------------------

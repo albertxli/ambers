@@ -8,7 +8,7 @@ use crate::io_utils::{self, SavReader};
 /// Returns a vector of document lines (each originally 80 chars, trimmed).
 pub fn parse_document<R: Read>(reader: &mut SavReader<R>) -> Result<Vec<Vec<u8>>> {
     let n_lines = reader.read_i32()? as usize;
-    let mut lines = Vec::with_capacity(n_lines);
+    let mut lines = Vec::with_capacity(n_lines.min(4096));
 
     for _ in 0..n_lines {
         let line_bytes = reader.read_bytes(80)?;

@@ -120,11 +120,13 @@ report.to_frame()                                               # DataFrame for 
 For `scan_sav()`, `read_time` measures metadata/schema reading only (not lazy collection).
 
 **Damaged files.** ambers reads a file exactly as stored and never silently "corrects" values.
-If the header disagrees with the contents (declared row count vs rows read, a non-standard
-compression bias, a missing row width), it raises a `CorruptFileWarning` naming the findings
-and lists them in `sav.warnings` / `meta.warnings`. Treat such a file with suspicion and
-re-export it from the source. Silence the warning with
-`warnings.filterwarnings("ignore", category=ambers.CorruptFileWarning)`.
+If the header disagrees with the contents (declared row count or row width vs what the file
+holds, a non-standard compression bias, date/time values outside years 1-9999 which become
+null), it raises a `CorruptFileWarning` naming the findings and lists them in
+`sav.warnings` / `meta.warnings`. Treat such a file with suspicion and re-export it from the
+source. Structures that cannot be read at all (duplicate variable names, an impossible
+variable type, a record larger than the file) raise an `OSError` immediately. Silence the
+warning with `warnings.filterwarnings("ignore", category=ambers.CorruptFileWarning)`.
 
 ### apply_labels
 

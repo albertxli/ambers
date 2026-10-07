@@ -50,21 +50,22 @@ def _patched(tmp_path, good_path, value: int, name: str, offset: int = CASE_SIZE
 
 @pytest.mark.filterwarnings("ignore::ambers.CorruptFileWarning")
 class TestSlotCountMismatch:
-    def test_header_larger_than_dictionary_raises(self, tmp_path, good_path):
-        path, declared = _patched(tmp_path, good_path, 7, "larger.sav")
-        assert declared == 4  # age(1) + d(1) + name A12 (2)
-        with pytest.raises(OSError, match="7 slots per case but the dictionary defines 4"):
-            am.read_sav(path)
-        with pytest.raises(OSError, match="slots per case"):
-            am.read_sav_meta(path)
-        with pytest.raises(OSError, match="slots per case"):
-            am.scan_sav(path)
+    """The header's row width is unreliable (SPSS ignores it): a mismatch is a finding,
+    the variable list is used, and the data reads correctly."""
 
-    def test_header_smaller_than_dictionary_raises(self, tmp_path, good_path):
-        # GitHub issue #1 shape: columns beyond the header row width.
-        path, _ = _patched(tmp_path, good_path, 3, "smaller.sav")
-        with pytest.raises(OSError, match="3 slots per case but the dictionary defines 4"):
-            am.read_sav(path)
+    @pytest.mark.parametrize("bogus", [7, 3, 1_895_825_415])
+    def test_header_mismatch_warns_and_reads(self, tmp_path, good_path, bogus):
+        expected = am.read_sav(str(good_path)).data
+        path, declared = _patched(tmp_path, good_path, bogus, f"case_size_{bogus}.sav")
+        assert declared == 4  # age(1) + d(1) + name A12 (2)
+        with pytest.warns(am.CorruptFileWarning, match=f"header declares {bogus} values per row"):
+            sav = am.read_sav(path)
+        assert_frame_equal(sav.data, expected)
+        assert len(sav.warnings) == 1
+        with pytest.warns(am.CorruptFileWarning, match="values per row"):
+            am.read_sav_meta(path)
+        with pytest.warns(am.CorruptFileWarning, match="values per row"):
+            am.scan_sav(path)
 
     @pytest.mark.parametrize("bogus", [0, -1])
     def test_non_positive_header_is_tolerated(self, tmp_path, good_path, bogus):

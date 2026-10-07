@@ -9,6 +9,10 @@ use crate::error::{Result, SpssError};
 pub struct SavReader<R: Read> {
     inner: R,
     bswap: bool,
+    /// Total length of the underlying file when known. `read_bytes` refuses a
+    /// request larger than this before allocating, so a corrupt record length
+    /// cannot trigger a multi-GB allocation (GitHub issue #3).
+    file_len: Option<u64>,
 }
 
 impl<R: Read> SavReader<R> {
@@ -17,7 +21,13 @@ impl<R: Read> SavReader<R> {
         SavReader {
             inner,
             bswap: false,
+            file_len: None,
         }
+    }
+
+    /// Record the total file length (enables the allocation guard in `read_bytes`).
+    pub fn set_file_len(&mut self, len: u64) {
+        self.file_len = Some(len);
     }
 
     /// Enable or disable byte swapping.
@@ -36,7 +46,15 @@ impl<R: Read> SavReader<R> {
     }
 
     /// Read exactly `n` bytes into a new Vec.
+    ///
+    /// Checked against the file length (when known) before allocating.
     pub fn read_bytes(&mut self, n: usize) -> Result<Vec<u8>> {
+        if let Some(len) = self.file_len.filter(|&len| n as u64 > len) {
+            return Err(SpssError::TruncatedFile {
+                expected: n,
+                actual: len as usize,
+            });
+        }
         let mut buf = vec![0u8; n];
         self.inner.read_exact(&mut buf)?;
         Ok(buf)

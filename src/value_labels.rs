@@ -26,7 +26,7 @@ pub struct ValueLabelSet {
 /// following type 4 record to get the variable indices.
 pub fn parse_value_labels<R: Read>(reader: &mut SavReader<R>) -> Result<Vec<(RawValue, Vec<u8>)>> {
     let count = reader.read_i32()? as usize;
-    let mut labels = Vec::with_capacity(count);
+    let mut labels = Vec::with_capacity(count.min(4096));
 
     for _ in 0..count {
         // Value: 8 bytes (could be numeric f64 or string bytes)
@@ -66,7 +66,7 @@ pub fn parse_value_label_variables<R: Read>(reader: &mut SavReader<R>) -> Result
         ));
     }
 
-    let mut indices = Vec::with_capacity(count);
+    let mut indices = Vec::with_capacity(count.min(4096));
     for _ in 0..count {
         let index = reader.read_i32()?;
         // Convert from 1-based to 0-based

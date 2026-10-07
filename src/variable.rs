@@ -1,7 +1,7 @@
 use std::io::Read;
 
 use crate::constants::{Alignment, Measure, SpssFormat, VarType};
-use crate::error::Result;
+use crate::error::{Result, SpssError};
 use crate::io_utils::{self, SavReader};
 
 /// Missing value specification for a variable.
@@ -61,7 +61,11 @@ pub struct VariableRecord {
 
 impl VariableRecord {
     /// Parse a type 2 (variable) record. The record type i32 has already been read.
-    pub fn parse<R: Read>(reader: &mut SavReader<R>, slot_index: usize) -> Result<VariableRecord> {
+    pub fn parse<R: Read>(
+        reader: &mut SavReader<R>,
+        slot_index: usize,
+        warnings: &mut Vec<String>,
+    ) -> Result<VariableRecord> {
         let raw_type = reader.read_i32()?;
         let has_var_label = reader.read_i32()?;
         let n_missing_values = reader.read_i32()?;
@@ -73,12 +77,26 @@ impl VariableRecord {
         let short_name =
             io_utils::bytes_to_string_lossy(io_utils::trim_trailing_padding(&name_bytes));
 
-        // Determine variable type
+        // Determine variable type. The format allows exactly three kinds of
+        // value here; anything else is corruption. A huge "string width" is not
+        // merely wrong, it makes every row walk width/252 segments (issue #4).
         let (var_type, is_ghost) = match raw_type {
             0 => (VarType::Numeric, false),
-            t if t > 0 => (VarType::String(t as usize), false),
-            -1 => (VarType::Numeric, true), // ghost/continuation record
-            _ => (VarType::Numeric, true),  // treat other negatives as ghost
+            1..=255 => (VarType::String(raw_type as usize), false),
+            -1 => (VarType::Numeric, true), // continuation slot of a wide string
+            t if t < -1 => {
+                // SPSS opens files with such records (observed: -257), so treat
+                // them as continuation slots and report, rather than refuse.
+                warnings.push(format!(
+                    "variable record {slot_index} ({short_name:?}) declares type {t}; treated as a continuation slot"
+                ));
+                (VarType::Numeric, true)
+            }
+            t => {
+                return Err(SpssError::InvalidVariable(format!(
+                    "variable {short_name:?} declares type {t}; valid values are 0 (numeric), 1-255 (string width) or -1 (continuation)"
+                )));
+            }
         };
 
         // Variable label
@@ -140,6 +158,13 @@ fn parse_missing_values<R: Read>(
 ) -> Result<MissingValues> {
     if n_missing == 0 {
         return Ok(MissingValues::None);
+    }
+    // The format allows -3..=3 (negative = range). Checked before any
+    // allocation: a fuzzer file declared 675 million values (issue #3).
+    if !(-3..=3).contains(&n_missing) {
+        return Err(SpssError::InvalidVariable(format!(
+            "variable record declares {n_missing} missing values (format allows at most 3)"
+        )));
     }
 
     let abs_n = n_missing.unsigned_abs() as usize;
@@ -217,7 +242,7 @@ mod tests {
     fn test_parse_numeric_variable() {
         let data = make_variable_bytes(0, b"AGE     ", false);
         let mut reader = SavReader::new(&data[..]);
-        let var = VariableRecord::parse(&mut reader, 0).unwrap();
+        let var = VariableRecord::parse(&mut reader, 0, &mut Vec::new()).unwrap();
 
         assert_eq!(var.short_name, "AGE");
         assert_eq!(var.var_type, VarType::Numeric);
@@ -230,7 +255,7 @@ mod tests {
     fn test_parse_string_variable() {
         let data = make_variable_bytes(20, b"NAME    ", false);
         let mut reader = SavReader::new(&data[..]);
-        let var = VariableRecord::parse(&mut reader, 0).unwrap();
+        let var = VariableRecord::parse(&mut reader, 0, &mut Vec::new()).unwrap();
 
         assert_eq!(var.short_name, "NAME");
         assert_eq!(var.var_type, VarType::String(20));
@@ -241,7 +266,7 @@ mod tests {
     fn test_parse_variable_with_label() {
         let data = make_variable_bytes(0, b"SCORE   ", true);
         let mut reader = SavReader::new(&data[..]);
-        let var = VariableRecord::parse(&mut reader, 0).unwrap();
+        let var = VariableRecord::parse(&mut reader, 0, &mut Vec::new()).unwrap();
 
         assert!(var.label.is_some());
         assert_eq!(var.label.as_ref().unwrap(), b"Test label");
@@ -251,7 +276,7 @@ mod tests {
     fn test_ghost_variable() {
         let data = make_variable_bytes(-1, b"        ", false);
         let mut reader = SavReader::new(&data[..]);
-        let var = VariableRecord::parse(&mut reader, 5).unwrap();
+        let var = VariableRecord::parse(&mut reader, 5, &mut Vec::new()).unwrap();
 
         assert!(var.is_ghost);
     }
