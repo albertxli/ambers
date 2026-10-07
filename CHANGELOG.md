@@ -4,6 +4,8 @@ All notable changes to ambers are documented in this file.
 
 ## [Unreleased]
 
+- Add `warnings_and_errors.md`, a catalogue of every reader warning finding and error message with meaning and remedy, and a "Warnings and Errors" section at the end of the README
+
 - Fix GitHub issue #4: a variable record whose type field is not 0, 1-255 or -1 is rejected (`InvalidVariable`); a garbage width of hundreds of millions made every row walk millions of string segments (seconds for a 4 KB file, now milliseconds). Negative values other than -1 are tolerated as continuation slots with a finding, since SPSS opens such files
 - Fix GitHub issue #3: sizes declared by the file are checked before allocating. `read_bytes` refuses requests larger than the file, a variable may declare at most 3 missing values, buffer capacities are capped by the bytes actually present, and cold reservations are capped. Fuzzer files that requested 1-7 GB now fail or read in milliseconds without touching memory
 - Date/time values outside years 1-9999 (or non-finite) are set to null and reported as a finding instead of being stored as saturated values that made Polars panic on display

@@ -357,6 +357,28 @@ On the 5.4 GB file, selecting 5 columns and 1000 rows completes in **13ms** — 
 - Continued I/O performance optimization
 - Currently Polars-only — pandas/other DataFrame libraries may be added later
 
+## Warnings and Errors
+
+ambers never silently "corrects" a damaged file. It either reads the data and tells you what
+was wrong, or stops when the file cannot be read at all.
+
+- **Warning, data returned** — the file contradicts itself but a more reliable part of it says
+  what the bytes mean. You get a `CorruptFileWarning` listing the findings, also available as
+  `sav.warnings` / `meta.warnings`. Examples: header row count or row width that disagrees with
+  the file, a non-standard compression bias (values may be shifted; SPSS assumes 100),
+  date/time values outside years 1-9999 (set to null), impossible very-long-string
+  declarations (ignored).
+- **Error, nothing returned** — the structure needed to navigate the file is broken and no
+  guess would be safe. You get an `OSError` naming the cause. Examples: duplicate variable
+  names, an impossible variable type, a record larger than the file, a truncated file, a file
+  that is not SPSS at all.
+- **Silence or escalate** — `warnings.filterwarnings("ignore", category=ambers.CorruptFileWarning)`
+  hides the warning (findings stay in `sav.warnings`); `warnings.simplefilter("error",
+  ambers.CorruptFileWarning)` makes any damaged file fatal in a pipeline.
+
+See [warnings_and_errors.md](warnings_and_errors.md) for every message, what it means, what
+ambers did, and what to do.
+
 ## License
 
 [MIT](LICENSE)
