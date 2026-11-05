@@ -2,6 +2,10 @@
 
 All notable changes to ambers are documented in this file.
 
+## [Unreleased]
+
+- Docs: `apply_labels.md` describes read-time labeling in other libraries generically, without naming a specific library
+
 ## [0.4.7] - 2026-11-05
 
 - Fix GitHub issue #6: PyPI wheels crashed on import with SIGILL ("illegal hardware instruction") on Linux and 0xC000001D on Windows on CPUs without AVX-512. The repo's `.cargo/config.toml` set `target-cpu=native`, so each wheel was compiled for whatever CPU its GitHub runner had; which Python versions crashed was luck (0.4.6: Linux py3.12/3.14, Windows py3.12/3.13). Wheels now target `x86-64-v2` (any x86-64 CPU since ~2009) and `apple-m1`; `target-cpu=native` is no longer in the repo. Reads benchmark identical to native builds; writes ~4-5% slower

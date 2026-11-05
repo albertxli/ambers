@@ -53,7 +53,7 @@ This is **type-safe data engineering**: the same discipline that makes Rust code
 
 ### Why labeling is separate from reading
 
-Some libraries (e.g., pyreadstat's `apply_value_formats=True`) apply labels at read time. If something goes wrong — incomplete labels, unmapped codes — you may get silent `NaN` values or an error with no way to inspect or fix the data.
+Other libraries may apply value labels at read time. If something goes wrong — incomplete labels, unmapped codes — you may get silent `NaN` values or an error with no way to inspect or fix the data.
 
 ambers separates reading from labeling into a **read → inspect → fix → label** workflow:
 
