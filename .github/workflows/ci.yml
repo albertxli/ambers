@@ -34,8 +34,21 @@ jobs:
         run: cargo test --lib --tests
 
   python-smoke:
-    name: Python smoke test
-    runs-on: ubuntu-latest
+    name: Python wheel / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Same CPU baselines as release.yml (GitHub issue #6).
+          - os: ubuntu-latest
+            rustflags: "-C target-cpu=x86-64-v2"
+          - os: windows-latest
+            rustflags: "-C target-cpu=x86-64-v2"
+          - os: macos-latest
+            rustflags: "-C target-cpu=apple-m1"
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: ${{ matrix.rustflags }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,18 +59,42 @@ jobs:
       - uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: uv pip install --system maturin polars
+        run: uv pip install --system maturin polars pytest
 
       - name: Build wheel
         run: maturin build --release -o dist
 
       - name: Install wheel
-        run: uv pip install --system dist/*.whl
+        shell: bash
+        run: uv pip install --system --no-deps dist/*.whl
 
       - name: Smoke test
-        run: python -c "import ambers; print('ambers imported successfully')"
+        run: python tests/smoke_wheel.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-wheel-${{ matrix.os }}
+          path: dist/*.whl
 
       - name: Run Python tests (small/synthetic data only)
         run: |
-          uv pip install --system pytest
           pytest tests/test_apply_labels.py tests/test_apply_missing.py tests/test_validate.py tests/test_metadata_api.py tests/test_writer_issues.py tests/test_polars_compat.py tests/test_malformed.py tests/test_warnings.py tests/test_encoding.py -v -k "not RealFile"
+
+  wheel-isa:
+    name: Wheel CPU instructions
+    needs: python-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ci-wheel-*
+          merge-multiple: true
+          path: dist
+
+      - name: Install disassemblers
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq binutils llvm
+
+      - name: Check wheels against the portable baseline
+        run: python3 scripts/check_wheel_isa.py --x86-baseline x86-64-v2 dist/

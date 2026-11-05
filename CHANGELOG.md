@@ -2,6 +2,13 @@
 
 All notable changes to ambers are documented in this file.
 
+## [0.4.7] - Unreleased
+
+- Fix GitHub issue #6: PyPI wheels crashed on import with SIGILL ("illegal hardware instruction") on Linux and 0xC000001D on Windows on CPUs without AVX-512. The repo's `.cargo/config.toml` set `target-cpu=native`, so each wheel was compiled for whatever CPU its GitHub runner had; which Python versions crashed was luck (0.4.6: Linux py3.12/3.14, Windows py3.12/3.13). Wheels now target `x86-64-v2` (any x86-64 CPU since ~2009) and `apple-m1`; `target-cpu=native` is no longer in the repo. Reads benchmark identical to native builds; writes ~4-5% slower
+- Linux wheels are now `manylinux_2_17` (glibc 2.17+) instead of `manylinux_2_34`, so Ubuntu 20.04, RHEL 8 and Debian 11 get a prebuilt wheel instead of a source build
+- Release gate: `release.yml` now runs preflight (tag = Cargo.toml = pyproject.toml version, CHANGELOG heading) → build → verify → publish. Verify checks every wheel's instructions against the CPU baseline (`scripts/check_wheel_isa.py`), runs the Linux wheel on an emulated Nehalem CPU (Intel SDE), and installs and runs each built wheel (`tests/smoke_wheel.py` + synthetic tests) on Linux, Windows and macOS (Apple Silicon) × Python 3.12-3.14 plus Debian 11. Publishing only happens for tags and only if all checks pass; a manual run is a dry run
+- CI builds wheels on all three OSes with the release CPU flags and runs the smoke test and instruction check on every push
+
 ## [0.4.6] - 2026-10-07
 
 - Fix GitHub issue #5: on code-page encoded files (windows-1250 and every other mapped code page) variable names, long names, MR-set names/labels/counted values, variable attributes, long-string record names and the file label were decoded as UTF-8 before the file's encoding was known, turning accented characters into U+FFFD and truncating or panicking in the MR-set parser. All dictionary text now stays raw bytes until `resolve_dictionary` decodes it once with the file encoding. Fixes a related false "duplicate variable name" error for names differing only by an accented letter. UTF-8 files and data columns are unchanged

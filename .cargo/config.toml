@@ -1,5 +1,0 @@
-# Enable native CPU instructions (AVX2, SSE4.2, etc.) for local builds.
-# This improves autovectorization in Arrow builders and zlib decompression.
-# Note: PyPI wheels should NOT use this — they need generic target for portability.
-[build]
-rustflags = ["-C", "target-cpu=native"]

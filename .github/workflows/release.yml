@@ -1,5 +1,10 @@
 name: Build & Publish
 
+# build -> verify -> publish.
+# Publishing only runs for a pushed v* tag, and only if every verify job passed.
+# A manual "Run workflow" (workflow_dispatch) is a full dry run: same builds and checks,
+# nothing is published. Do one before tagging a release.
+
 on:
   push:
     tags: ["v*"]
@@ -10,16 +15,50 @@ permissions:
 
 jobs:
   # ---------------------------------------------------------------
+  # Release sanity: tag == Cargo.toml == pyproject.toml, CHANGELOG entry exists
+  # ---------------------------------------------------------------
+  preflight:
+    name: Preflight / versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check versions and changelog
+        shell: bash
+        run: |
+          cargo_v=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          py_v=$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)
+          echo "Cargo.toml=$cargo_v pyproject.toml=$py_v ref=$GITHUB_REF"
+          [ "$cargo_v" = "$py_v" ] || { echo "::error::Cargo.toml ($cargo_v) != pyproject.toml ($py_v)"; exit 1; }
+          grep -qE "^##.*\b${cargo_v//./\\.}\b" CHANGELOG.md || { echo "::error::CHANGELOG.md has no heading for $cargo_v"; exit 1; }
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag_v=${GITHUB_REF#refs/tags/v}
+            [ "$tag_v" = "$cargo_v" ] || { echo "::error::tag v$tag_v != package version $cargo_v"; exit 1; }
+          fi
+
+  # ---------------------------------------------------------------
   # Build Python wheels for each OS × Python version
   # ---------------------------------------------------------------
   build:
     name: Build / ${{ matrix.os }} / ${{ matrix.python }}
+    needs: preflight
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python: ["3.12", "3.13", "3.14"]
+        include:
+          # Portable CPU baseline per platform (GitHub issue #6). Never `native`:
+          # that targets whatever CPU the runner VM happens to have.
+          - os: ubuntu-latest
+            rustflags: "-C target-cpu=x86-64-v2"
+          - os: windows-latest
+            rustflags: "-C target-cpu=x86-64-v2"
+          - os: macos-latest
+            rustflags: "-C target-cpu=apple-m1"
     runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: ${{ matrix.rustflags }}
 
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +66,9 @@ jobs:
       - uses: PyO3/maturin-action@v1
         with:
           command: build
+          # Linux: build inside the manylinux2014 container -> manylinux_2_17 wheels
+          # (glibc 2.17+), instead of the runner host's glibc. Ignored on other OSes.
+          manylinux: auto
           args: --release -o dist -i python${{ matrix.python }}
 
       - uses: actions/upload-artifact@v4
@@ -39,6 +81,7 @@ jobs:
   # ---------------------------------------------------------------
   sdist:
     name: Build sdist
+    needs: preflight
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,11 +97,128 @@ jobs:
           path: dist/*.tar.gz
 
   # ---------------------------------------------------------------
-  # Publish to crates.io
+  # Verify 1: static check, no instructions above the CPU baseline
+  # ---------------------------------------------------------------
+  verify-isa:
+    name: Verify / CPU instructions
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*
+          merge-multiple: true
+          path: dist
+
+      - name: Install disassemblers
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq binutils llvm
+
+      - name: Check every wheel
+        run: python3 scripts/check_wheel_isa.py --x86-baseline x86-64-v2 dist/
+
+  # ---------------------------------------------------------------
+  # Verify 2: run the Linux wheel on an emulated x86-64-v2 CPU (Intel SDE, Nehalem).
+  # Any instruction above the baseline traps; runtime-dispatched code sees the emulated
+  # CPUID and takes its fallback path, exactly as on a real old CPU.
+  # ---------------------------------------------------------------
+  verify-emulated:
+    name: Verify / emulated x86-64-v2 CPU
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheel-ubuntu-latest-py3.13
+          path: dist
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install wheel
+        # polars[rtcompat]: polars' own runtime for CPUs without AVX2 (its default needs AVX2).
+        run: |
+          uv pip install --system "polars[rtcompat]"
+          uv pip install --system --no-deps --no-index dist/*.whl
+
+      - uses: petarpetrovt/setup-sde@6d2773bc0ef3005fd52e0ae0bb91782321793aec # v6.0
+        with:
+          environmentVariableName: SDE_PATH
+          sdeVersion: 10.13.1
+
+      - name: Smoke test on emulated Nehalem (x86-64-v2)
+        run: ${SDE_PATH}/sde64 -nhm -- python tests/smoke_wheel.py
+
+  # ---------------------------------------------------------------
+  # Verify 3: install the built wheel and run it on every OS × Python
+  # ---------------------------------------------------------------
+  verify-install:
+    name: Verify / ${{ matrix.os }} / ${{ matrix.python }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.12", "3.13", "3.14"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}-py${{ matrix.python }}
+          path: dist
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install wheel (never from source)
+        shell: bash
+        run: |
+          uv pip install --system polars pytest
+          uv pip install --system --no-deps --no-index --only-binary ambers dist/*.whl
+
+      - name: Smoke test
+        run: python tests/smoke_wheel.py
+
+      - name: Python tests (small/synthetic data only)
+        run: pytest tests/test_apply_labels.py tests/test_apply_missing.py tests/test_validate.py tests/test_metadata_api.py tests/test_writer_issues.py tests/test_polars_compat.py tests/test_malformed.py tests/test_warnings.py tests/test_encoding.py -q -k "not RealFile"
+
+  verify-old-glibc:
+    name: Verify / Debian 11 (glibc 2.31)
+    needs: build
+    runs-on: ubuntu-latest
+    container: python:3.12-slim-bullseye
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheel-ubuntu-latest-py3.12
+          path: dist
+
+      - name: Install wheel and smoke test
+        run: |
+          pip install -q polars
+          pip install -q --no-deps --no-index dist/*.whl
+          python tests/smoke_wheel.py
+
+  # ---------------------------------------------------------------
+  # Publish (tags only, after every check passed)
   # ---------------------------------------------------------------
   publish-crates:
     name: Publish to crates.io
-    needs: [build, sdist]
+    needs: [preflight, build, sdist, verify-isa, verify-emulated, verify-install, verify-old-glibc]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
 
     steps:
@@ -70,12 +230,10 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-  # ---------------------------------------------------------------
-  # Publish to PyPI
-  # ---------------------------------------------------------------
   publish-pypi:
     name: Publish to PyPI
-    needs: [build, sdist]
+    needs: [preflight, build, sdist, verify-isa, verify-emulated, verify-install, verify-old-glibc]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -95,12 +253,10 @@ jobs:
 
       - uses: pypa/gh-action-pypi-publish@release/v1
 
-  # ---------------------------------------------------------------
-  # Create GitHub Release
-  # ---------------------------------------------------------------
   release:
     name: GitHub Release
-    needs: [build, sdist]
+    needs: [preflight, build, sdist, verify-isa, verify-emulated, verify-install, verify-old-glibc]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
