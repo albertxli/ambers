@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/*"]
 # The Python extension is left out so plain `cargo build` / `cargo test`
 # never need a Python interpreter. Build it with maturin.
-default-members = ["crates/ambers", "crates/ambers-codebook"]
+default-members = ["crates/ambers", "crates/ambers-codebook", "crates/ambers-cli"]
 
 [workspace.package]
 version = "0.4.7"
@@ -11,20 +11,27 @@ edition = "2024"
 license = "MIT"
 repository = "https://github.com/albertxli/ambers"
 
-# Every third-party dependency is declared once here; member crates opt in
-# with `{ workspace = true }` and add the features they need.
+# Every dependency is declared once here; member crates opt in with
+# `{ workspace = true }` and add the features they need.
 [workspace.dependencies]
+# Internal crates. Keep these versions equal to [workspace.package] version.
 ambers = { path = "crates/ambers", version = "0.4.7", default-features = false }
 ambers-codebook = { path = "crates/ambers-codebook", version = "0.4.7", default-features = false }
+ambers-cli = { path = "crates/ambers-cli", version = "0.4.7", default-features = false }
+
+# Third party.
+anyhow = "1"
 arrow = { version = "57", default-features = false }
-flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+clap = { version = "4", features = ["derive"] }
 encoding_rs = "0.8"
-thiserror = "2"
-rayon = "1"
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 indexmap = "2"
+insta = "1"
 mimalloc = "0.1"
 pyo3 = "0.26"
+rayon = "1"
 tempfile = "3"
+thiserror = "2"
 
 [profile.release]
 lto = "fat"

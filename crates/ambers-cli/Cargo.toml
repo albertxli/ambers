@@ -1,0 +1,26 @@
+[package]
+name = "ambers-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command-line interface for ambers: inspect SPSS .sav and .zsav files"
+# Not published yet; the binary ships through GitHub Releases and the wheel.
+publish = false
+
+[lib]
+name = "ambers_cli"
+
+[[bin]]
+name = "ambers"
+path = "src/main.rs"
+
+[dependencies]
+ambers = { workspace = true }
+anyhow = { workspace = true }
+arrow = { workspace = true, features = ["prettyprint"] }
+clap = { workspace = true }
+mimalloc = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }

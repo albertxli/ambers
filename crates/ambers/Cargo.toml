@@ -20,4 +20,6 @@ rayon = { workspace = true }
 indexmap = { workspace = true }
 
 [dev-dependencies]
+# prettyprint is for examples/peek.rs only; the library does not need it.
+arrow = { workspace = true, features = ["prettyprint"] }
 tempfile = { workspace = true }

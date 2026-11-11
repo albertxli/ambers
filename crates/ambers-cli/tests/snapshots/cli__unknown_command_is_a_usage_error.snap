@@ -1,0 +1,9 @@
+---
+source: crates/ambers-cli/tests/cli.rs
+expression: stderr(&output)
+---
+error: unrecognized subcommand 'bogus'
+
+Usage: ambers <COMMAND>
+
+For more information, try '--help'.
