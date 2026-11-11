@@ -32,6 +32,9 @@ jobs:
           py_v=$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)
           echo "Cargo.toml=$cargo_v pyproject.toml=$py_v ref=$GITHUB_REF"
           [ "$cargo_v" = "$py_v" ] || { echo "::error::Cargo.toml ($cargo_v) != pyproject.toml ($py_v)"; exit 1; }
+          # Internal crates in [workspace.dependencies] carry their own version string.
+          stale=$(grep -E '^ambers(-[a-z]+)? = \{ path' Cargo.toml | grep -v "version = \"$cargo_v\"" || true)
+          [ -z "$stale" ] || { echo "::error::internal crate versions differ from $cargo_v: $stale"; exit 1; }
           grep -qE "^##.*\b${cargo_v//./\\.}\b" CHANGELOG.md || { echo "::error::CHANGELOG.md has no heading for $cargo_v"; exit 1; }
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             tag_v=${GITHUB_REF#refs/tags/v}
@@ -99,11 +102,95 @@ jobs:
           path: dist/*.tar.gz
 
   # ---------------------------------------------------------------
+  # Build the standalone `ambers` binary: no Python, no C runtime to install.
+  # Keep in sync with the `cli` job in ci.yml.
+  # ---------------------------------------------------------------
+  cli:
+    name: CLI binary / ${{ matrix.target }}
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            rustflags: "-C target-cpu=x86-64-v2"
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            rustflags: "-C target-cpu=x86-64-v2 -C target-feature=+crt-static"
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            rustflags: "-C target-cpu=apple-m1"
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: ${{ matrix.rustflags }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
+
+      - name: Build
+        run: cargo build --release -p ambers-cli --target ${{ matrix.target }}
+
+      - name: Smoke test
+        run: target/${{ matrix.target }}/release/ambers info tests/data/survey.zsav --head 3
+
+      - name: Check the binary is standalone (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          if readelf -d target/${{ matrix.target }}/release/ambers | grep NEEDED; then
+            echo "::error::the Linux binary needs shared libraries"; exit 1
+          fi
+
+      - name: Check the binary is standalone (Windows)
+        if: runner.os == 'Windows'
+        run: python scripts/check_cli_imports.py target/${{ matrix.target }}/release/ambers.exe
+
+      - name: Check the binary is standalone (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          otool -L target/${{ matrix.target }}/release/ambers
+          if otool -L target/${{ matrix.target }}/release/ambers | grep -i python; then
+            echo "::error::the macOS binary links Python"; exit 1
+          fi
+
+      - name: Package
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          name=ambers-$version-${{ matrix.target }}
+          mkdir -p cli-dist/$name
+          cp README.md LICENSE cli-dist/$name/
+          cd cli-dist
+          if [ "$RUNNER_OS" = Windows ]; then
+            cp ../target/${{ matrix.target }}/release/ambers.exe $name/
+            7z a -bso0 $name.zip $name
+          else
+            cp ../target/${{ matrix.target }}/release/ambers $name/
+            tar czf $name.tar.gz $name
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: |
+            cli-dist/*.zip
+            cli-dist/*.tar.gz
+
+  # ---------------------------------------------------------------
   # Verify 1: static check, no instructions above the CPU baseline
   # ---------------------------------------------------------------
   verify-isa:
     name: Verify / CPU instructions
-    needs: build
+    needs: [build, cli]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -114,11 +201,31 @@ jobs:
           merge-multiple: true
           path: dist
 
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cli-*
+          merge-multiple: true
+          path: dist-cli
+
       - name: Install disassemblers
         run: sudo apt-get update -qq && sudo apt-get install -y -qq binutils llvm
 
       - name: Check every wheel
         run: python3 scripts/check_wheel_isa.py --x86-baseline x86-64-v2 dist/
+
+      - name: Check every CLI binary
+        run: |
+          # The script reads the architecture from the file name, so copy each
+          # binary out of its archive under the archive's (target-tagged) name.
+          mkdir cli-bin
+          for a in dist-cli/*.tar.gz; do tar xzf "$a" -C dist-cli; done
+          for a in dist-cli/*.zip; do unzip -q "$a" -d dist-cli; done
+          for d in dist-cli/ambers-*/; do
+            for b in "$d"ambers "$d"ambers.exe; do
+              if [ -f "$b" ]; then cp "$b" "cli-bin/$(basename "$d")-$(basename "$b")"; fi
+            done
+          done
+          python3 scripts/check_wheel_isa.py --x86-baseline x86-64-v2 cli-bin/*
 
   # ---------------------------------------------------------------
   # Verify 2: run the Linux wheel on an emulated x86-64-v2 CPU (Intel SDE, Nehalem).
@@ -219,7 +326,7 @@ jobs:
   # ---------------------------------------------------------------
   publish-crates:
     name: Publish to crates.io
-    needs: [preflight, build, sdist, verify-isa, verify-emulated, verify-install, verify-old-glibc]
+    needs: [preflight, build, sdist, cli, verify-isa, verify-emulated, verify-install, verify-old-glibc]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
 
@@ -234,7 +341,7 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    needs: [preflight, build, sdist, verify-isa, verify-emulated, verify-install, verify-old-glibc]
+    needs: [preflight, build, sdist, cli, verify-isa, verify-emulated, verify-install, verify-old-glibc]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: pypi
@@ -257,7 +364,7 @@ jobs:
 
   release:
     name: GitHub Release
-    needs: [preflight, build, sdist, verify-isa, verify-emulated, verify-install, verify-old-glibc]
+    needs: [preflight, build, sdist, cli, verify-isa, verify-emulated, verify-install, verify-old-glibc]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -273,6 +380,13 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: sdist
+          path: dist
+
+      # Standalone CLI archives: ambers-<version>-<target>.zip / .tar.gz
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cli-*
+          merge-multiple: true
           path: dist
 
       - uses: softprops/action-gh-release@v2
