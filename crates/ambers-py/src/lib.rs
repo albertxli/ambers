@@ -1,4 +1,7 @@
-//! PyO3 Python bindings for ambers.
+//! PyO3 Python bindings for ambers: the `ambers._ambers` extension module.
+
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod conversions;
 mod diff;
@@ -15,7 +18,7 @@ pub use self::metadata::PySpssMetadata;
 use self::io::{_read_sav, _read_sav_meta, _write_sav};
 
 /// Convert SpssError to PyErr.
-fn spss_err(e: crate::error::SpssError) -> PyErr {
+fn spss_err(e: ambers::error::SpssError) -> PyErr {
     PyIOError::new_err(format!("{e}"))
 }
 

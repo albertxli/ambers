@@ -12,9 +12,9 @@ use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyCapsule;
 
-use crate::constants::Compression;
-use crate::metadata::SpssMetadata;
-use crate::scanner::SavScanner;
+use ambers::constants::Compression;
+use ambers::metadata::SpssMetadata;
+use ambers::scanner::SavScanner;
 
 use super::metadata::PySpssMetadata;
 use super::spss_err;
@@ -146,7 +146,7 @@ pub(super) fn _read_sav(
     columns: Option<Vec<String>>,
     n_rows: Option<usize>,
 ) -> PyResult<(PyArrowData, PySpssMetadata)> {
-    let mut scanner = crate::scan_sav(path).map_err(spss_err)?;
+    let mut scanner = ambers::scan_sav(path).map_err(spss_err)?;
     if let Some(ref cols) = columns {
         let col_refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();
         scanner.select(&col_refs).map_err(spss_err)?;
@@ -166,7 +166,7 @@ pub(super) fn _read_sav(
 /// Read only metadata from an SPSS file (no data).
 #[pyfunction]
 pub(super) fn _read_sav_meta(path: &str) -> PyResult<PySpssMetadata> {
-    let meta = crate::read_sav_metadata(path).map_err(spss_err)?;
+    let meta = ambers::read_sav_metadata(path).map_err(spss_err)?;
     Ok(PySpssMetadata::from_inner(meta))
 }
 
@@ -218,13 +218,13 @@ pub(super) fn _write_sav(
             let has_numeric = specs.iter().any(|s| {
                 matches!(
                     s,
-                    crate::metadata::MissingSpec::Value(_)
-                        | crate::metadata::MissingSpec::Range { .. }
+                    ambers::metadata::MissingSpec::Value(_)
+                        | ambers::metadata::MissingSpec::Range { .. }
                 )
             });
             let has_string = specs
                 .iter()
-                .any(|s| matches!(s, crate::metadata::MissingSpec::StringValue(_)));
+                .any(|s| matches!(s, ambers::metadata::MissingSpec::StringValue(_)));
             if is_string_var && has_numeric {
                 return Err(PyValueError::new_err(format!(
                     "variable '{}': numeric missing values cannot be applied to a string variable",
@@ -250,7 +250,7 @@ pub(super) fn _write_sav(
     };
 
     // Write
-    crate::write_sav(path, &batch, &meta, comp, compression_level).map_err(spss_err)?;
+    ambers::write_sav(path, &batch, &meta, comp, compression_level).map_err(spss_err)?;
 
     Ok(())
 }

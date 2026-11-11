@@ -6,8 +6,8 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
-use crate::constants::{Alignment, Measure, Role};
-use crate::metadata::{MissingSpec, MrSet, MrType, Value};
+use ambers::constants::{Alignment, Measure, Role};
+use ambers::metadata::{MissingSpec, MrSet, MrType, Value};
 
 // ---------------------------------------------------------------------------
 // Rust → Python conversion helpers

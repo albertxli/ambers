@@ -6,8 +6,8 @@ use pyo3::exceptions::{PyIOError, PyKeyError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use crate::constants::Compression;
-use crate::metadata::{MissingSpec, SpssMetadata, Value};
+use ambers::constants::Compression;
+use ambers::metadata::{MissingSpec, SpssMetadata, Value};
 
 use super::conversions::{
     missing_specs_to_py, mr_set_to_py, py_to_alignment, py_to_measure, py_to_missing_specs,
@@ -595,7 +595,7 @@ impl PySpssMetadata {
 
     /// Print a formatted summary of the metadata.
     fn summary(&self) {
-        use crate::constants::Measure;
+        use ambers::constants::Measure;
 
         let m = &self.inner;
         let ncols = m.number_columns;
@@ -705,7 +705,7 @@ impl PySpssMetadata {
 
         // Role distribution
         if !m.variable_roles.is_empty() {
-            use crate::constants::Role;
+            use ambers::constants::Role;
             let mut n_input = 0usize;
             let mut n_target = 0usize;
             let mut n_both = 0usize;

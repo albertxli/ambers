@@ -8,8 +8,8 @@ use pyo3::exceptions::PyKeyError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};
 
-use crate::constants::{Measure, Role};
-use crate::metadata::{MissingSpec, SpssMetadata, Value};
+use ambers::constants::{Measure, Role};
+use ambers::metadata::{MissingSpec, SpssMetadata, Value};
 
 // format_count and format_f64 available from super::metadata if needed in the future.
 

@@ -15,7 +15,7 @@ import ambers
 import pyreadstat
 
 RUNS = 5
-TEST_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test_data")
+TEST_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "test_data")
 
 FILES = [
     ("test_1", "test_1_small.sav"),

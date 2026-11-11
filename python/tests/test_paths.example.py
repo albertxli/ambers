@@ -6,7 +6,7 @@ Place .sav files in the test_data/ directory (also gitignored).
 
 import os
 
-_TEST_DATA = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'test_data')
+_TEST_DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'test_data')
 
 # Default files for pytest (conftest.py)
 DEFAULT_FILES = [

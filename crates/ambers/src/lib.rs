@@ -15,10 +15,6 @@
 //! println!("Variables: {:?}", meta.variable_names);
 //! ```
 
-#[cfg(feature = "python")]
-#[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
-
 pub(crate) mod arrow_convert;
 pub(crate) mod columnar;
 pub(crate) mod compression;
@@ -38,9 +34,6 @@ pub mod writer;
 
 #[cfg(test)]
 pub(crate) mod test_support;
-
-#[cfg(feature = "python")]
-mod python;
 
 use std::fs::File;
 use std::io::{BufReader, Read, Seek};

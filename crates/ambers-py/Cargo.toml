@@ -1,0 +1,19 @@
+[package]
+name = "ambers-py"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Python bindings for ambers (the ambers._ambers extension module)"
+publish = false
+
+[lib]
+name = "_ambers"
+crate-type = ["cdylib"]
+
+[dependencies]
+ambers = { workspace = true }
+arrow = { workspace = true, features = ["ffi"] }
+indexmap = { workspace = true }
+mimalloc = { workspace = true }
+pyo3 = { workspace = true, features = ["extension-module", "indexmap"] }

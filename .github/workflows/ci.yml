@@ -69,7 +69,7 @@ jobs:
         run: uv pip install --system --no-deps dist/*.whl
 
       - name: Smoke test
-        run: python tests/smoke_wheel.py
+        run: python python/tests/smoke_wheel.py
 
       - uses: actions/upload-artifact@v4
         with:
@@ -78,7 +78,7 @@ jobs:
 
       - name: Run Python tests (small/synthetic data only)
         run: |
-          pytest tests/test_apply_labels.py tests/test_apply_missing.py tests/test_validate.py tests/test_metadata_api.py tests/test_writer_issues.py tests/test_polars_compat.py tests/test_malformed.py tests/test_warnings.py tests/test_encoding.py -v -k "not RealFile"
+          pytest python/tests/test_apply_labels.py python/tests/test_apply_missing.py python/tests/test_validate.py python/tests/test_metadata_api.py python/tests/test_writer_issues.py python/tests/test_polars_compat.py python/tests/test_malformed.py python/tests/test_warnings.py python/tests/test_encoding.py -v -k "not RealFile"
 
   wheel-isa:
     name: Wheel CPU instructions

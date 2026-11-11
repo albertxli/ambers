@@ -16,7 +16,7 @@ import pathlib
 import polars as pl
 import ambers as am
 
-OUT = pathlib.Path(__file__).resolve().parent.parent / "test_data" / "zsav_diagnostic"
+OUT = pathlib.Path(__file__).resolve().parent.parent.parent / "test_data" / "zsav_diagnostic"
 OUT.mkdir(parents=True, exist_ok=True)
 
 

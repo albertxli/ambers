@@ -1,6 +1,9 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
+# The Python extension is left out so plain `cargo build` / `cargo test`
+# never need a Python interpreter. Build it with maturin.
+default-members = ["crates/ambers"]
 
 [workspace.package]
 version = "0.4.7"
@@ -11,6 +14,7 @@ repository = "https://github.com/albertxli/ambers"
 # Every third-party dependency is declared once here; member crates opt in
 # with `{ workspace = true }` and add the features they need.
 [workspace.dependencies]
+ambers = { path = "crates/ambers", version = "0.4.7", default-features = false }
 arrow = { version = "57", default-features = false }
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 encoding_rs = "0.8"

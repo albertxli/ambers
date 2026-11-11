@@ -35,7 +35,7 @@ requires_pyreadstat = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 
 WRITER_ISSUES_DIR = (
-    pathlib.Path(__file__).resolve().parent.parent / "test_data" / "writer_issues"
+    pathlib.Path(__file__).resolve().parent.parent.parent / "test_data" / "writer_issues"
 )
 WRITER_ISSUES_DIR.mkdir(parents=True, exist_ok=True)
 

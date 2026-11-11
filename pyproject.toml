@@ -15,10 +15,9 @@ dependencies = [
 
 [tool.maturin]
 module-name = "ambers._ambers"
-manifest-path = "crates/ambers/Cargo.toml"
+manifest-path = "crates/ambers-py/Cargo.toml"
 python-source = "python"
-features = ["python"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["python/tests"]
 addopts = "-v"

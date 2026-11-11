@@ -11,24 +11,13 @@ readme = "../../README.md"
 name = "ambers"
 crate-type = ["rlib"]
 
-[features]
-default = []
-python = [
-    "dep:pyo3",
-    "dep:mimalloc",
-]
-
 [dependencies]
-arrow = { workspace = true, features = ["ffi"] }
+arrow = { workspace = true }
 flate2 = { workspace = true }
 encoding_rs = { workspace = true }
 thiserror = { workspace = true }
 rayon = { workspace = true }
 indexmap = { workspace = true }
-mimalloc = { workspace = true, optional = true }
-
-# Python-only (optional)
-pyo3 = { workspace = true, features = ["extension-module", "indexmap"], optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
