@@ -13,6 +13,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 ambers = { workspace = true }
+ambers-cli = { workspace = true }
 arrow = { workspace = true, features = ["ffi"] }
 indexmap = { workspace = true }
 mimalloc = { workspace = true }

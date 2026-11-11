@@ -22,8 +22,16 @@ fn spss_err(e: ambers::error::SpssError) -> PyErr {
     PyIOError::new_err(format!("{e}"))
 }
 
+/// Run the `ambers` command line (the same code as the standalone binary)
+/// and return its exit code. `argv[0]` is the program name.
+#[pyfunction]
+fn _run_cli(py: Python<'_>, argv: Vec<String>) -> u8 {
+    py.detach(|| ambers_cli::run(argv))
+}
+
 #[pymodule]
 fn _ambers(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(_run_cli, m)?)?;
     m.add_function(wrap_pyfunction!(_read_sav, m)?)?;
     m.add_function(wrap_pyfunction!(_read_sav_meta, m)?)?;
     m.add_function(wrap_pyfunction!(_write_sav, m)?)?;
