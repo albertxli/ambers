@@ -15,6 +15,7 @@ dependencies = [
 
 [tool.maturin]
 module-name = "ambers._ambers"
+manifest-path = "crates/ambers/Cargo.toml"
 python-source = "python"
 features = ["python"]
 

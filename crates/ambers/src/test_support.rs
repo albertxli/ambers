@@ -8,6 +8,7 @@ use std::path::Path;
 /// Absolute path of a repo-root-relative test file, e.g. `test_data/x.sav`.
 pub fn data_path(rel: &str) -> String {
     Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
         .join(rel)
         .to_string_lossy()
         .into_owned()

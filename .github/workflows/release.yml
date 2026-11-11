@@ -15,7 +15,9 @@ permissions:
 
 jobs:
   # ---------------------------------------------------------------
-  # Release sanity: tag == Cargo.toml == pyproject.toml, CHANGELOG entry exists
+  # Release sanity: tag == Cargo.toml == pyproject.toml, CHANGELOG entry exists.
+  # The root Cargo.toml is the workspace manifest; its first `version` line is
+  # [workspace.package] version, which every crate inherits.
   # ---------------------------------------------------------------
   preflight:
     name: Preflight / versions
@@ -226,7 +228,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Publish to crates.io
-        run: cargo publish --allow-dirty
+        run: cargo publish -p ambers --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
