@@ -1,0 +1,21 @@
+[package]
+name = "ambers-codebook"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Codebooks for SPSS files: export, import, validation and an HTML viewer"
+# Not published until the codebook format is designed and versioned.
+publish = false
+
+[features]
+default = []
+# Excel import/export. Will pull in rust_xlsxwriter (write) and calamine (read).
+xlsx = []
+# YAML import/export.
+yaml = []
+# Self-contained HTML viewer built from the files in assets/.
+html = []
+
+[dependencies]
+ambers = { workspace = true }

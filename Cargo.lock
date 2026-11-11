@@ -45,6 +45,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ambers-codebook"
+version = "0.4.7"
+dependencies = [
+ "ambers",
+]
+
+[[package]]
 name = "ambers-py"
 version = "0.4.7"
 dependencies = [
