@@ -4,6 +4,12 @@ All notable changes to ambers are documented in this file.
 
 ## [Unreleased]
 
+- Add the `ambers` command line with `ambers info <FILE> [--head N]`: file size, format, compression, encoding, creation time, label, rows, columns, damage warnings and the first variables, plus the first N rows as a table. It ships two ways running the same code: a standalone binary attached to each GitHub Release (Windows, Linux musl, macOS Apple Silicon; no Python or C runtime needed) and an `ambers` console script installed with the Python wheel
+- The repository is now a Cargo workspace: `crates/ambers` (the engine, published as `ambers`), `crates/ambers-py` (PyO3 bindings), `crates/ambers-cli` (the CLI) and `crates/ambers-codebook` (skeleton for the coming codebook and validation work). The Python API and the Rust API of `ambers` are unchanged
+- **Rust, breaking:** the `ambers` crate no longer has a `python` feature and no longer enables Arrow's `ffi` feature. The bindings moved to their own crate; if you relied on `arrow/ffi` being switched on through `ambers`, enable it on your own `arrow` dependency
+- Docs: the guides moved to `docs/` (`metadata.md`, `apply_labels.md`, `validate.md`, `warnings_and_errors.md`)
+- Tests: small synthetic fixtures are committed under `tests/data/` and run in CI; Rust tests that use the private `test_data/` files can be made to fail instead of skip with `AMBERS_REQUIRE_TEST_DATA=1`
+
 - Docs: `apply_labels.md` describes read-time labeling in other libraries generically, without naming a specific library
 
 ## [0.4.7] - 2026-11-05

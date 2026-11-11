@@ -31,7 +31,7 @@ jobs:
         run: cargo clippy -- -D warnings
 
       - name: Run tests
-        run: cargo test --lib --tests
+        run: cargo test --lib --tests --examples
 
   python-smoke:
     name: Python wheel / ${{ matrix.os }}
@@ -78,7 +78,7 @@ jobs:
 
       - name: Run Python tests (small/synthetic data only)
         run: |
-          pytest python/tests/test_apply_labels.py python/tests/test_apply_missing.py python/tests/test_validate.py python/tests/test_metadata_api.py python/tests/test_writer_issues.py python/tests/test_polars_compat.py python/tests/test_malformed.py python/tests/test_warnings.py python/tests/test_encoding.py python/tests/test_fixtures.py python/tests/test_cli.py -v -k "not RealFile"
+          pytest python/tests/test_apply_labels.py python/tests/test_apply_missing.py python/tests/test_validate.py python/tests/test_metadata_api.py python/tests/test_writer_issues.py python/tests/test_polars_compat.py python/tests/test_malformed.py python/tests/test_warnings.py python/tests/test_encoding.py python/tests/test_fixtures.py python/tests/test_cli.py python/tests/test_codebook.py python/tests/test_codebook_engine.py python/tests/test_codebook_types.py -v -k "not RealFile"
 
   # Standalone `ambers` binary: no Python, no C runtime to install.
   # Keep in sync with the `cli` job in release.yml.

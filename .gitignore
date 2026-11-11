@@ -7,7 +7,7 @@ __pycache__/
 dist/
 .venv/
 .pytest_cache/
-docs/
+notes/
 architecture.md
 test_data/
 python/tests/test_paths.py

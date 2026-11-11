@@ -32,6 +32,17 @@ uv add ambers
 cargo add ambers
 ```
 
+**Command line:**
+
+The `ambers` command needs no Python and no Rust. Download the archive for your platform from the [latest release](https://github.com/albertxli/ambers/releases/latest) (`ambers-<version>-x86_64-pc-windows-msvc.zip`, `-x86_64-unknown-linux-musl.tar.gz` or `-aarch64-apple-darwin.tar.gz`), unpack it, and run the binary inside.
+
+If you already have the Python package, the same command is installed with it (`uv tool install ambers` puts it on your PATH).
+
+```bash
+ambers info survey.sav            # size, compression, encoding, rows, columns, variables
+ambers info survey.sav --head 10  # plus the first 10 rows
+```
+
 ## Python
 
 ```python
@@ -154,7 +165,7 @@ labeled = am.apply_labels(df, meta, output="enum_null")
 | `"string"` | `pl.String` | Stringify (`3.0` → `"3"`) | Export — readable text for Excel/CSV |
 | `"enum_null"` | `pl.Enum` (ordered) | Null | Analysis — exclude unknowns from base |
 
-Numeric columns without value labels are skipped. String columns always pass through unmapped text. See [apply_labels.md](apply_labels.md) for full documentation.
+Numeric columns without value labels are skipped. String columns always pass through unmapped text. See [apply_labels.md](https://github.com/albertxli/ambers/blob/main/docs/apply_labels.md) for full documentation.
 
 ### validate
 
@@ -177,7 +188,7 @@ for error in report.errors:
 report.to_frame().write_csv("validation_issues.csv")
 ```
 
-See [validate.md](validate.md) for full documentation.
+See [validate.md](https://github.com/albertxli/ambers/blob/main/docs/validate.md) for full documentation.
 
 ## Rust
 
@@ -279,7 +290,7 @@ meta3 = (meta
 - **Scalar fields** (`file_label`, `weight_variable`) and **`notes`** are replaced entirely.
 - **Column renames are not tracked.** If you rename `"Q1"` to `"Q1a"` in your DataFrame, metadata for `"Q1"` does not carry over — you must explicitly provide metadata for `"Q1a"`.
 
-See [metadata.md](metadata.md) for the full API reference including update logic details, missing values, MR sets, and validation rules.
+See [metadata.md](https://github.com/albertxli/ambers/blob/main/docs/metadata.md) for the full API reference including update logic details, missing values, MR sets, and validation rules.
 
 > **SPSS tip:** Custom variable attributes are not shown in SPSS's Variable View by default. Go to **View > Customize Variable View** and click **OK**, or run `DISPLAY ATTRIBUTES` in SPSS syntax.
 
@@ -376,7 +387,7 @@ was wrong, or stops when the file cannot be read at all.
   hides the warning (findings stay in `sav.warnings`); `warnings.simplefilter("error",
   ambers.CorruptFileWarning)` makes any damaged file fatal in a pipeline.
 
-See [warnings_and_errors.md](warnings_and_errors.md) for every message, what it means, what
+See [warnings_and_errors.md](https://github.com/albertxli/ambers/blob/main/docs/warnings_and_errors.md) for every message, what it means, what
 ambers did, and what to do.
 
 ## License

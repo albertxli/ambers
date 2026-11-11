@@ -38,7 +38,7 @@ def apply_labels(
       responses are legitimate data.
     - Columns without value labels are skipped entirely.
 
-    See `apply_labels.md <apply_labels.md>`_ for full documentation.
+    See `docs/apply_labels.md <https://github.com/albertxli/ambers/blob/main/docs/apply_labels.md>`_ for full documentation.
 
     Args:
         df: A Polars DataFrame or LazyFrame with raw SPSS codes.

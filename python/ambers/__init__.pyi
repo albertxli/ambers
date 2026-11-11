@@ -145,7 +145,7 @@ class SpssMetadata:
             Discrete: ``{"type": "discrete", "values": [98, 99]}``.
             Range: ``{"type": "range", "low": 900, "high": 999}``.
             Range + discrete: ``{"type": "range", "low": 900, "high": 999, "discrete": 0}``.
-            Merged by variable name. See ``metadata.md`` for full reference.
+            Merged by variable name. See ``docs/metadata.md`` for full reference.
         variable_roles
             Variable roles: ``"input"``, ``"target"``, ``"both"``, ``"none"``, ``"partition"``,
             or ``"split"``. Merged by variable name.
@@ -155,7 +155,7 @@ class SpssMetadata:
         mr_sets
             Multiple response set definitions. Dict with ``"type"`` key (``"dichotomy"`` or
             ``"category"``), ``"variables"`` list, optional ``"label"``, and ``"counted_value"``
-            (required for dichotomy). Merged by set name. See ``metadata.md`` for full reference.
+            (required for dichotomy). Merged by set name. See ``docs/metadata.md`` for full reference.
 
         Returns
         -------
@@ -314,7 +314,7 @@ class SpssMetadata:
         """Return a new SpssMetadata with alignments merged. Values: "left", "right", "center"."""
         ...
     def with_variable_missing_values(self, value: dict[str, dict | None]) -> SpssMetadata:
-        """Return a new SpssMetadata with missing value specs merged. See metadata.md for dict format."""
+        """Return a new SpssMetadata with missing value specs merged. See docs/metadata.md for dict format."""
         ...
     def with_variable_roles(self, value: dict[str, str | None]) -> SpssMetadata:
         """Return a new SpssMetadata with roles merged. Values: "input", "target", "both", "none", "partition", "split"."""
@@ -323,7 +323,7 @@ class SpssMetadata:
         """Return a new SpssMetadata with custom variable attributes merged."""
         ...
     def with_mr_sets(self, value: dict[str, dict | None]) -> SpssMetadata:
-        """Return a new SpssMetadata with multiple response sets merged. See metadata.md for dict format."""
+        """Return a new SpssMetadata with multiple response sets merged. See docs/metadata.md for dict format."""
         ...
 
     # Properties (read-only)
