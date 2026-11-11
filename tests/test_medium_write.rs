@@ -1,10 +1,13 @@
+#[path = "../src/test_support.rs"]
+mod test_support;
+
 use std::io::Cursor;
 use std::time::Instant;
 
 #[test]
 fn test_medium_write_only() {
-    let path = "test_data/test_2_medium.sav";
-    if !std::path::Path::new(path).exists() {
+    let path = &test_support::data_path("test_data/test_2_medium.sav");
+    if !test_support::data_exists(path) {
         return;
     }
 

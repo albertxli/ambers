@@ -1,3 +1,6 @@
+#[path = "../src/test_support.rs"]
+mod test_support;
+
 use ambers::read_sav;
 use arrow::array::Array;
 use arrow::datatypes::DataType;
@@ -5,7 +8,8 @@ use arrow::datatypes::DataType;
 #[test]
 fn test_temporal_types_real_file() {
     let path = std::env::var("SAV_TEST_FILE")
-        .unwrap_or_else(|_| "test_data/test_2_medium.sav".to_string());
+        .unwrap_or_else(|_| test_support::data_path("test_data/test_2_medium.sav"));
+    test_support::data_exists(&path);
     let (batch, meta) = match read_sav(&path) {
         Ok(result) => result,
         Err(_) => {

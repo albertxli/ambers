@@ -164,32 +164,32 @@ fn roundtrip_file(path: &str) {
 
 #[test]
 fn test_roundtrip_test1_small() {
-    let path = "test_data/test_1_small.sav";
-    if std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test_1_small.sav");
+    if crate::test_support::data_exists(path) {
         roundtrip_file(path);
     }
 }
 
 #[test]
 fn test_roundtrip_test4_small() {
-    let path = "test_data/test_4_small.sav";
-    if std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test_4_small.sav");
+    if crate::test_support::data_exists(path) {
         roundtrip_file(path);
     }
 }
 
 #[test]
 fn test_roundtrip_test5_small() {
-    let path = "test_data/test_5_small.sav";
-    if std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test_5_small.sav");
+    if crate::test_support::data_exists(path) {
         roundtrip_file(path);
     }
 }
 
 #[test]
 fn test_roundtrip_test7_nulls() {
-    let path = "test_data/test7_null_column.sav";
-    if std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test7_null_column.sav");
+    if crate::test_support::data_exists(path) {
         roundtrip_file(path);
     }
 }
@@ -198,8 +198,8 @@ fn test_roundtrip_test7_nulls() {
 fn test_roundtrip_test9_empty_metadata() {
     // This file has 0 data rows with bytecode compression, which
     // triggers a pre-existing reader panic. Skip until reader is fixed.
-    let path = "test_data/test9_empty_file_with_metadata.sav";
-    if std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test9_empty_file_with_metadata.sav");
+    if crate::test_support::data_exists(path) {
         let result = std::panic::catch_unwind(|| crate::read_sav(path));
         if let Ok(Ok((_batch, meta))) = result {
             let _batch_empty = RecordBatch::new_empty(Arc::new(Schema::new(Vec::<Field>::new())));
@@ -487,32 +487,32 @@ fn roundtrip_file_bytecode(path: &str) {
 
 #[test]
 fn test_bytecode_roundtrip_test1_small() {
-    let path = "test_data/test_1_small.sav";
-    if std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test_1_small.sav");
+    if crate::test_support::data_exists(path) {
         roundtrip_file_bytecode(path);
     }
 }
 
 #[test]
 fn test_bytecode_roundtrip_test4_small() {
-    let path = "test_data/test_4_small.sav";
-    if std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test_4_small.sav");
+    if crate::test_support::data_exists(path) {
         roundtrip_file_bytecode(path);
     }
 }
 
 #[test]
 fn test_bytecode_roundtrip_test5_small() {
-    let path = "test_data/test_5_small.sav";
-    if std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test_5_small.sav");
+    if crate::test_support::data_exists(path) {
         roundtrip_file_bytecode(path);
     }
 }
 
 #[test]
 fn test_bytecode_roundtrip_test7_nulls() {
-    let path = "test_data/test7_null_column.sav";
-    if std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test7_null_column.sav");
+    if crate::test_support::data_exists(path) {
         roundtrip_file_bytecode(path);
     }
 }
@@ -684,32 +684,32 @@ fn roundtrip_file_zsav(path: &str) {
 
 #[test]
 fn test_zsav_roundtrip_test1_small() {
-    let path = "test_data/test_1_small.sav";
-    if std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test_1_small.sav");
+    if crate::test_support::data_exists(path) {
         roundtrip_file_zsav(path);
     }
 }
 
 #[test]
 fn test_zsav_roundtrip_test4_small() {
-    let path = "test_data/test_4_small.sav";
-    if std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test_4_small.sav");
+    if crate::test_support::data_exists(path) {
         roundtrip_file_zsav(path);
     }
 }
 
 #[test]
 fn test_zsav_roundtrip_test5_small() {
-    let path = "test_data/test_5_small.sav";
-    if std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test_5_small.sav");
+    if crate::test_support::data_exists(path) {
         roundtrip_file_zsav(path);
     }
 }
 
 #[test]
 fn test_zsav_roundtrip_test7_nulls() {
-    let path = "test_data/test7_null_column.sav";
-    if std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test7_null_column.sav");
+    if crate::test_support::data_exists(path) {
         roundtrip_file_zsav(path);
     }
 }
@@ -720,24 +720,24 @@ fn test_zsav_roundtrip_test7_nulls() {
 
 #[test]
 fn test_roundtrip_test2_medium() {
-    let path = "test_data/test_2_medium.sav";
-    if std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test_2_medium.sav");
+    if crate::test_support::data_exists(path) {
         roundtrip_file(path);
     }
 }
 
 #[test]
 fn test_bytecode_roundtrip_test2_medium() {
-    let path = "test_data/test_2_medium.sav";
-    if std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test_2_medium.sav");
+    if crate::test_support::data_exists(path) {
         roundtrip_file_bytecode(path);
     }
 }
 
 #[test]
 fn test_zsav_roundtrip_test2_medium() {
-    let path = "test_data/test_2_medium.sav";
-    if std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test_2_medium.sav");
+    if crate::test_support::data_exists(path) {
         roundtrip_file_zsav(path);
     }
 }
@@ -748,24 +748,24 @@ fn test_zsav_roundtrip_test2_medium() {
 
 #[test]
 fn test_roundtrip_test3_large() {
-    let path = "test_data/test_3_medium.sav";
-    if std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test_3_medium.sav");
+    if crate::test_support::data_exists(path) {
         roundtrip_file(path);
     }
 }
 
 #[test]
 fn test_bytecode_roundtrip_test3_large() {
-    let path = "test_data/test_3_medium.sav";
-    if std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test_3_medium.sav");
+    if crate::test_support::data_exists(path) {
         roundtrip_file_bytecode(path);
     }
 }
 
 #[test]
 fn test_zsav_roundtrip_test3_large() {
-    let path = "test_data/test_3_medium.sav";
-    if std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test_3_medium.sav");
+    if crate::test_support::data_exists(path) {
         roundtrip_file_zsav(path);
     }
 }
@@ -973,8 +973,8 @@ fn test_vls_roundtrip_no_ghost_columns() {
 /// Detailed metadata comparison for VLS-heavy files.
 #[test]
 fn test_roundtrip_test3_metadata() {
-    let path = "test_data/test_3_medium.sav";
-    if !std::path::Path::new(path).exists() {
+    let path = &crate::test_support::data_path("test_data/test_3_medium.sav");
+    if !crate::test_support::data_exists(path) {
         return;
     }
 

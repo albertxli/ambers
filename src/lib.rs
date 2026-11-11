@@ -36,6 +36,9 @@ pub(crate) mod value_labels;
 pub(crate) mod variable;
 pub mod writer;
 
+#[cfg(test)]
+pub(crate) mod test_support;
+
 #[cfg(feature = "python")]
 mod python;
 

@@ -5,6 +5,8 @@
 //! Fixtures are writer-produced UTF-8 files whose encoding records and name
 //! bytes are patched to a single-byte code page, so the tests run everywhere.
 //! The reporter's windows-1250 sample is used when present.
+#[path = "../src/test_support.rs"]
+mod test_support;
 
 use std::io::Cursor;
 use std::sync::Arc;
@@ -248,8 +250,10 @@ fn utf8_accented_labels_roundtrip() {
 
 #[test]
 fn issue5_sample_file() {
-    let path = "test_data/github_issues/issue5_mrset_parsing_panic_non_utf8_encoding.sav";
-    if !std::path::Path::new(path).exists() {
+    let path = &test_support::data_path(
+        "test_data/github_issues/issue5_mrset_parsing_panic_non_utf8_encoding.sav",
+    );
+    if !test_support::data_exists(path) {
         eprintln!("Skipping: {path} not present (reporter-supplied sample)");
         return;
     }

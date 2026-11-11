@@ -5,6 +5,8 @@
 //! case size is smaller than the number of dictionary slots). All fixtures are
 //! synthesized in memory with the writer and then byte-patched, so these tests
 //! run everywhere. The reporter's fuzzer files are used only when present.
+#[path = "../src/test_support.rs"]
+mod test_support;
 
 use std::io::Cursor;
 use std::sync::Arc;
@@ -299,8 +301,8 @@ fn empty_file_reads_zero_rows_without_panic() {
 
 #[test]
 fn issue2_repro_file_does_not_crash() {
-    let path = "test_data/github_issues/issue2_oob-write.sav";
-    if !std::path::Path::new(path).exists() {
+    let path = &test_support::data_path("test_data/github_issues/issue2_oob-write.sav");
+    if !test_support::data_exists(path) {
         eprintln!("Skipping: {path} not present (reporter-supplied fuzzer file)");
         return;
     }
@@ -417,8 +419,8 @@ fn case_size_zero_header_warns_but_reads() {
 
 #[test]
 fn issue2_repro_file_reports_two_warnings() {
-    let path = "test_data/github_issues/issue2_oob-write.sav";
-    if !std::path::Path::new(path).exists() {
+    let path = &test_support::data_path("test_data/github_issues/issue2_oob-write.sav");
+    if !test_support::data_exists(path) {
         eprintln!("Skipping: {path} not present (reporter-supplied fuzzer file)");
         return;
     }
@@ -472,8 +474,8 @@ fn duplicate_variable_names_are_rejected() {
 
 #[test]
 fn issue1_repro_file_is_rejected_for_duplicate_names() {
-    let path = "test_data/github_issues/issue1_buffer_overflow.sav";
-    if !std::path::Path::new(path).exists() {
+    let path = &test_support::data_path("test_data/github_issues/issue1_buffer_overflow.sav");
+    if !test_support::data_exists(path) {
         eprintln!("Skipping: {path} not present (reporter-supplied fuzzer file)");
         return;
     }
@@ -634,8 +636,8 @@ fn issue3_and_issue4_files_read_or_fail_fast() {
         ("issue4_slow-uncompressed", "errors"),
     ];
     for (name, expect) in cases {
-        let path = format!("test_data/github_issues/{name}.sav");
-        if !std::path::Path::new(&path).exists() {
+        let path = test_support::data_path(&format!("test_data/github_issues/{name}.sav"));
+        if !test_support::data_exists(&path) {
             eprintln!("Skipping: {path} not present");
             continue;
         }
