@@ -43,7 +43,7 @@ curl -LsSf https://raw.githubusercontent.com/albertxli/ambers/main/install.sh | 
 
 ```powershell
 # Windows
-powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/albertxli/ambers/main/install.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/albertxli/ambers/main/install.ps1 | iex"
 ```
 
 Either one downloads the program for your machine from the [latest release](https://github.com/albertxli/ambers/releases/latest) into `~/.local/bin` (Windows: `%LOCALAPPDATA%\ambers\bin`, added to your user PATH). No administrator rights are needed; run it again to update. Ready-made programs exist for Windows (64-bit), Linux (x86-64) and macOS (Apple Silicon); you can also download the archive from the release page and unpack it yourself.

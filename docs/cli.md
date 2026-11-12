@@ -28,7 +28,7 @@ curl -LsSf https://raw.githubusercontent.com/albertxli/ambers/main/install.sh | 
 
 ```powershell
 # Windows
-powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/albertxli/ambers/main/install.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/albertxli/ambers/main/install.ps1 | iex"
 ```
 
 The script downloads the program for your machine from the [latest release](https://github.com/albertxli/ambers/releases/latest) and puts `ambers` and `am` in one folder:

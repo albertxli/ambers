@@ -4,6 +4,8 @@ All notable changes to ambers are documented in this file.
 
 ## [Unreleased]
 
+- Docs: the Windows install line now passes `-NoProfile`, so a PowerShell profile that fails to load (for example a prompt theme started from a Git Bash shell) no longer prints an error before the install
+
 ## [0.5.0] - 2026-11-12
 
 - Add the `ambers` command line (short alias `am`) with `ambers info <FILE>`: a summary table (file, label, shape, size, compression, encoding, creation time, status, damage warnings) and a table of variables with name, type (`categorical` / `numeric` / `text` / `date`, as in `ambers.codebook()`) and label. The summary's border is green for a clean read, yellow when the reader recorded warnings and red when the file cannot be read; the `Status` row carries the same in text and colour is dropped when the output is piped. By default the first 10 and last 5 variables are listed; `--head N` / `--tail N` list only those, `--counts` reads the data once and adds valid (`N`) and `Missing` counts per variable, and `--rows N` adds the first N data rows. It ships two ways running the same code: standalone binaries attached to each GitHub Release (Windows, Linux musl, macOS Apple Silicon; no Python or C runtime needed) and console scripts installed with the Python wheel

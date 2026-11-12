@@ -1,6 +1,6 @@
 # Install the standalone `ambers` command (and its alias `am`) on Windows.
 #
-#   powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/albertxli/ambers/main/install.ps1 | iex"
+#   powershell -NoProfile -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/albertxli/ambers/main/install.ps1 | iex"
 #
 # It downloads the archive for Windows from the latest GitHub Release, puts the
 # two programs in %LOCALAPPDATA%\ambers\bin and adds that folder to your user
