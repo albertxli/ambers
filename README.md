@@ -38,7 +38,7 @@ The `ambers` command needs no Python and no Rust. Download the archive for your 
 
 If you already have the Python package, the same command is installed with it (`uv tool install ambers` puts it on your PATH).
 
-`am` is a short alias for `ambers`; both are installed.
+`am` is a short alias for `ambers`; both are installed. What follows is a short tour; [cli.md](https://github.com/albertxli/ambers/blob/main/docs/cli.md) is the full guide to every command, option and key.
 
 ```bash
 am info survey.sav                     # summary, then the first 10 and last 5 variables

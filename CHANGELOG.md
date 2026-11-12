@@ -9,6 +9,7 @@ All notable changes to ambers are documented in this file.
 - Rust: `ambers-codebook` gains the codebook core on Arrow, matching Python field by field: `types` (variable type detection), `profile::Profiler` (valid / missing / unique / labelled counts and per-value counts, fed batch by batch so it works on streamed files), and `validate::unlabeled_values` / `validate::duplicate_labels`. Python's `ambers.codebook()` and `ambers.validate()` are unchanged (the crate is still unpublished)
 - The repository is now a Cargo workspace: `crates/ambers` (the engine, published as `ambers`), `crates/ambers-py` (PyO3 bindings), `crates/ambers-cli` (the CLI) and `crates/ambers-codebook` (skeleton for the coming codebook and validation work). The Python API and the Rust API of `ambers` are unchanged
 - **Rust, breaking:** the `ambers` crate no longer has a `python` feature and no longer enables Arrow's `ffi` feature. The bindings moved to their own crate; if you relied on `arrow/ffi` being switched on through `ambers`, enable it on your own `arrow` dependency
+- Docs: `docs/cli.md`, a guide to the command line: every command and option, the viewer's keys, filtering, copying, and task recipes
 - Docs: the guides moved to `docs/` (`metadata.md`, `apply_labels.md`, `validate.md`, `warnings_and_errors.md`)
 - Tests: small synthetic fixtures are committed under `tests/data/` and run in CI; Rust tests that use the private `test_data/` files can be made to fail instead of skip with `AMBERS_REQUIRE_TEST_DATA=1`
 
