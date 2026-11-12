@@ -4,6 +4,7 @@ All notable changes to ambers are documented in this file.
 
 ## [Unreleased]
 
+- Docs: the README's command-line section is now a short tour (install, `am info`, `am view`) that links to `docs/cli.md` for the details
 - Docs: the Windows install line now passes `-NoProfile`, so a PowerShell profile that fails to load (for example a prompt theme started from a Git Bash shell) no longer prints an error before the install
 
 ## [0.5.0] - 2026-11-12

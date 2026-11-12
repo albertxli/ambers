@@ -15,6 +15,7 @@ Pure Rust SPSS `.sav`/`.zsav` reader and writer — Arrow-native, zero C depende
 - Blazing fast read and write for SPSS `.sav` (bytecode) and `.zsav` (zlib) files
 - Rich metadata: variable labels, value labels, missing values, MR sets, measure levels, and more
 - Lazy reader via `scan_sav()` — Polars LazyFrame with projection and row limit pushdown
+- A command line, `ambers` (or `am`): a quick summary of a file, and an interactive terminal viewer for its data
 - Pure Rust with a native Python API — native Arrow integration, no C dependencies
 - Benchmarked up to 3–10x faster reads and 4–20x faster writes compared to current popular SPSS I/O libraries
 
@@ -34,8 +35,6 @@ cargo add ambers
 
 **Command line:**
 
-The `ambers` command is a single program that needs no Python and no Rust.
-
 ```bash
 # macOS and Linux
 curl -LsSf https://raw.githubusercontent.com/albertxli/ambers/main/install.sh | sh
@@ -46,18 +45,17 @@ curl -LsSf https://raw.githubusercontent.com/albertxli/ambers/main/install.sh | 
 powershell -NoProfile -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/albertxli/ambers/main/install.ps1 | iex"
 ```
 
-Either one downloads the program for your machine from the [latest release](https://github.com/albertxli/ambers/releases/latest) into `~/.local/bin` (Windows: `%LOCALAPPDATA%\ambers\bin`, added to your user PATH). No administrator rights are needed; run it again to update. Ready-made programs exist for Windows (64-bit), Linux (x86-64) and macOS (Apple Silicon); you can also download the archive from the release page and unpack it yourself.
+A single program that needs no Python and no Rust. If you have the Python package, `uv tool install ambers` installs the same command.
 
-The Python package installs the same command, run through Python: `uv tool install ambers` puts it on your PATH, and in a project that has `uv add ambers` it is `uv run am`.
+## Command line
 
-`am` is a short alias for `ambers`; both are installed. What follows is a short tour; [cli.md](https://github.com/albertxli/ambers/blob/main/docs/cli.md) is the full guide to every command, option and key.
+The ambers CLI currently does two things: it prints a quick summary of a data file, and it lets you look through the data in an interactive terminal UI. `am` is a short alias for `ambers`.
+
+**`am info`** prints the file's summary and its variables:
 
 ```bash
-am info survey.sav                     # summary, then the first 10 and last 5 variables
-am info survey.sav --head 20           # only the first 20 variables
-am info survey.sav --head 5 --tail 5   # the first 5 and the last 5
-am info survey.sav --counts            # read the data: adds N and Missing per variable
-am info survey.sav --rows 10           # also the first 10 data rows
+am info survey.sav            # summary and variables
+am info survey.sav --counts   # also valid and missing counts per variable
 ```
 
 ```text
@@ -79,95 +77,34 @@ am info survey.sav --rows 10           # also the first 10 data rows
 └───┴────────┴─────────────┴───────────────┴────┴─────────┘
 ```
 
-**Type** is the codebook's: `categorical`, `numeric`, `text` or `date`. Without `--counts`, `info` reads only the file's dictionary, so it is instant on any file, and the type comes from the metadata alone (an unlabelled variable holding only 0 and 1 shows as `numeric`). With `--counts` it reads the data once for the listed variables and adds **N** (valid cases) and **Missing**, with the exact type; that took 1.6 seconds on a 5.4 GB file with 916 variables.
-
-In a terminal the summary's border is green when the file read cleanly, yellow when the reader recorded [warnings](https://github.com/albertxli/ambers/blob/main/docs/warnings_and_errors.md), and red when the file could not be read; the `Status` row says the same in text, so nothing is lost when the output is piped. Variable names are always shown in full; long labels keep their beginning and end.
-
-### Browse the data: `am view`
+**`am view`** opens the data in a full-screen grid, like SPSS's Data View:
 
 ```bash
-am view survey.sav                  # opens on value labels
-am view survey.sav --mode codes     # opens on stored codes
-am view big.sav --limit 200000      # load at most 200,000 rows
-am view big.sav --memory 8          # load at most 8 GB of data
-am view survey.sav --theme terminal # use your terminal's colours (default: Dracula)
+am view survey.sav
 ```
 
-A full-screen grid in the style of SPSS's Data View. The first screen appears at once and the rest of the file loads in the background.
-
-Loading stops by itself when the data would take more than half of the memory your machine has free at that moment (or the `--memory` you give), and the border says how many rows were loaded. The rows already loaded stay usable.
-
-| Key | Action |
-|---|---|
-| arrows, `h` `j` `k` `l` | move one cell |
-| mouse | the wheel scrolls up and down; Shift+wheel, Alt+wheel or a tilt wheel scrolls sideways; a click selects the cell under it |
-| PgUp / PgDn, Ctrl+u / Ctrl+d | a screen, half a screen |
-| Shift+arrows, or `{` `}` `<` `>` | 50 rows or columns at once |
-| Ctrl+↑ / Ctrl+↓, or `g` / `G` | first / last loaded row |
-| Ctrl+← / Ctrl+→, or `0` / `$`, or Home / End | far left / far right |
-| digits | go to that row as you type; Enter keeps it, Esc goes back |
-| Tab | switch what cells show: **Labels**, **Codes**, **Both** (`1  Male`) |
-| Enter | side panel with the current respondent's answers: variable, code and label, variable label |
-| `f` | freeze / unfreeze the first variable while scrolling sideways |
-| `/` | filter the rows by the current column (see below) |
-| `=` | keep only the rows with the current cell's value |
-| `c` | copy the current cell to the clipboard |
-| `C` or `t` | with the respondent panel open: copy that respondent, one line per variable (name, label, value), ready to paste into a spreadsheet |
-| `i` | Variable View and back |
-| `?` | list of keys |
-| `q`, Esc | close the panel, then clear the filters, then quit |
-
-**Filtering rows.** Put the cursor on a column and press `/`. A bar opens at the top and the grid narrows as you type; Enter keeps the filter, Esc drops it.
-
-| Typed | Rows kept |
-|---|---|
-| `jap` | the value or its label contains "jap", ignoring case |
-| `=Japan`, `=3` | the value or its label is exactly that |
-| `!=Japan` | everything else |
-| `>30`, `>=30`, `<30`, `<=30` | numeric variables only |
-| `=.` | system-missing (`!=.`: not missing) |
-| `japan\|france`, `=1\|=2`, `<18\|>65` | either: `\|` separates alternatives, each written like the forms above |
-
-A label and a code both match, whichever of Labels / Codes / Both is on screen. Filters stack: filter `country`, move to another column and press `/` again, and a row must pass both. `/` on a filtered column edits its filter, and emptying it removes it. The row numbers at the left stay the file's own, and going to a row by number lands on the next row the filter shows.
-
-To find one respondent: cursor on the id column, `/`, `=1042`, Enter. To read one country's open-ended answers: cursor on `country`, `/`, `jap`, Enter, then move to the open-ended column. Matching runs on the column's stored values, not on formatted text, and typing more only re-tests the rows still shown: a keystroke takes at most 14 ms on a 5.4 GB file with 395,330 rows.
-
-In Variable View (`i`), one row per variable with its type, label, labelled values, valid and missing counts:
+```text
+╭ survey.sav ──────────────────────────────────────────────────────────────────────────────────────╮
+│   # │       id │ gender  satisfaction       age      income  city          brand_a  brand_b  bra…│
+│   1 │        1 │ Male    Very dissatisfied   18    20000.00  Lisbon        No       Yes      Yes │
+│   2 │        2 │ Female  Dissatisfied        21    21500.50  Osaka         Yes      No       No  │
+│   3 │        3 │ Male    Neutral             24    23001.00  Lima          No       No       No  │
+│   4 │        4 │ Female  Satisfied           27    24501.50  Not answered  Yes      Yes      No  │
+│   5 │        5 │ Male    Refused             30    26002.00  Lisbon        No       No       Yes │
+╰ Labels ─ gender: Gender ──────────────────────────────── Row 2/20 ─ Var 2/13 ─ / filter ─ ? help ╯
+```
 
 | Key | Action |
 |---|---|
-| arrows, click | move the highlighted cell; the same fast and edge keys work here, and the list scrolls sideways while `#` and Name stay put |
-| Enter | side panel with the variable's values: full label, format, and every value with its count and share |
-| `J` / `K`, wheel over the panel | scroll the value table |
-| `c` | copy the highlighted cell in full (the whole label, the whole value list) |
-| `C` or `t` | with the value table open: copy the table as columns, ready to paste into a spreadsheet |
-| `d` | go to this variable in Data View |
-| `/` | search: the list narrows as you type to the variables whose name or label contains the text; Enter keeps it, Esc clears it |
+| arrows, mouse | move around; large files load in the background |
+| Tab | switch cells between value labels, stored codes, and both |
+| Enter | one respondent's answers in a side panel |
+| `/` | filter the rows by the current column: `japan`, `=3`, `>30`, `japan\|france` |
+| `i` | Variable View: type, label, values and counts per variable; `/` searches variables |
+| `c` | copy a cell; `C` copies a whole panel for pasting into a spreadsheet |
+| `?` | every key |
 
-To find a column among hundreds: `i`, `/`, part of its name or label, Enter, `d`.
-
-Under the list, a bar shows the highlighted cell's text in full, wrapped: the whole label or the whole value list, which the list itself has to cut.
-
-The letter forms of the fast and edge keys are there because some terminals and multiplexers keep Shift or Ctrl with the arrow keys for themselves (VS Code's terminal keeps Ctrl+↑ / Ctrl+↓, for example). `g` `G` `0` `$` work everywhere.
-
-While the viewer is open it captures the mouse, so selecting text with the mouse needs Shift held down (in most terminals).
-
-Files with incomplete labels are shown as they are, and the gaps are made visible:
-
-- A value with no label, in a variable that has labels, shows the value itself in the warning colour.
-- When two codes share a label, Labels mode shows `Other [97]` and `Other [98]`.
-- Values declared user-missing are dimmed; system-missing is `.`.
-- The border reports how many variables hold unlabelled values, and Variable View has a **Label check** column per variable (`ok`, `2 unlabelled: 7, 8`, `duplicate: Other (97, 98)`). These are the same checks as `ambers.validate()`, run on the rows loaded so far.
-
-Variable View describes each variable the way `ambers.codebook()` does, with the same rules and the same numbers:
-
-- **Type** is `categorical`, `numeric`, `text` or `date`. A numeric variable is categorical when it has value labels, belongs to a multiple-response set, or holds only 0 and 1; a string is `text` even with value labels.
-- **N** is the valid cases and **Missing** the system-missing ones (for strings, empty text too). Values declared user-missing count as valid.
-- The value table of a categorical variable lists every code: labelled codes that never occur (count 0), codes in the data without a label, and the system-missing row.
-- For a text, numeric or date variable the value table lists every distinct value with its count, the missing row first, then text from A to Z (symbols and digits before letters, ignoring case) and numbers and dates in ascending order. This goes beyond `ambers.codebook()`, which has one summary row for these types.
-- Counts cover the rows loaded so far and update while the file loads; the border says how many rows that is.
-
-A copied value table is tab-separated with a header row (`Code`, `Label`, `N`, `% valid`, `% total`), so pasting into a spreadsheet fills one column per field. Copying goes through the system clipboard (`clip` on Windows, `pbcopy` on macOS, `wl-copy` / `xclip` / `xsel` on Linux); if none is available, the terminal's clipboard escape sequence is used, which some terminals ignore.
+See [cli.md](https://github.com/albertxli/ambers/blob/main/docs/cli.md) for the full guide: every option, all keys, filtering, copying, and task recipes.
 
 ## Python
 
