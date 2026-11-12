@@ -97,11 +97,27 @@ Loading stops by itself when the data would take more than half of the memory yo
 | Tab | switch what cells show: **Labels**, **Codes**, **Both** (`1  Male`) |
 | Enter | side panel with the current respondent's answers: variable, code and label, variable label |
 | `f` | freeze / unfreeze the first variable while scrolling sideways |
+| `/` | filter the rows by the current column (see below) |
+| `=` | keep only the rows with the current cell's value |
 | `c` | copy the current cell to the clipboard |
 | `C` or `t` | with the respondent panel open: copy that respondent, one line per variable (name, label, value), ready to paste into a spreadsheet |
 | `i` | Variable View and back |
 | `?` | list of keys |
-| `q`, Esc | close the panel or view; quit |
+| `q`, Esc | close the panel, then clear the filters, then quit |
+
+**Filtering rows.** Put the cursor on a column and press `/`. A bar opens at the top and the grid narrows as you type; Enter keeps the filter, Esc drops it.
+
+| Typed | Rows kept |
+|---|---|
+| `jap` | the value or its label contains "jap", ignoring case |
+| `=Japan`, `=3` | the value or its label is exactly that |
+| `!=Japan` | everything else |
+| `>30`, `>=30`, `<30`, `<=30` | numeric variables only |
+| `=.` | system-missing (`!=.`: not missing) |
+
+A label and a code both match, whichever of Labels / Codes / Both is on screen. Filters stack: filter `country`, move to another column and press `/` again, and a row must pass both. `/` on a filtered column edits its filter, and emptying it removes it. The row numbers at the left stay the file's own, and going to a row by number lands on the next row the filter shows.
+
+To find one respondent: cursor on the id column, `/`, `=1042`, Enter. To read one country's open-ended answers: cursor on `country`, `/`, `jap`, Enter, then move to the open-ended column. Matching runs on the column's stored values, not on formatted text, and typing more only re-tests the rows still shown: a keystroke takes at most 14 ms on a 5.4 GB file with 395,330 rows.
 
 In Variable View (`i`), one row per variable with its type, label, labelled values, valid and missing counts:
 
@@ -113,6 +129,9 @@ In Variable View (`i`), one row per variable with its type, label, labelled valu
 | `c` | copy the highlighted cell in full (the whole label, the whole value list) |
 | `C` or `t` | with the value table open: copy the table as columns, ready to paste into a spreadsheet |
 | `d` | go to this variable in Data View |
+| `/` | search: the list narrows as you type to the variables whose name or label contains the text; Enter keeps it, Esc clears it |
+
+To find a column among hundreds: `i`, `/`, part of its name or label, Enter, `d`.
 
 Under the list, a bar shows the highlighted cell's text in full, wrapped: the whole label or the whole value list, which the list itself has to cut.
 

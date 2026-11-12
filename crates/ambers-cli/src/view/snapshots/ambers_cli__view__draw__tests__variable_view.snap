@@ -13,4 +13,4 @@ expression: "screen(\"imperfect_labels.sav\", 150, 12, &[Key::Char('i'), Key::Do
 │                                                                                                                                                    │
 │                                                                                                                                                    │
 │                                                                                                                                                    │
-╰ ↑↓←→ cell ─ Enter values ─ c copy cell ─ d go to data ─ i / Esc back ─────────────────────────────────────────────────── counts: 12 rows ─ Var 2/6 ╯
+╰ ↑↓←→ cell ─ Enter values ─ / search ─ c copy cell ─ d go to data ─ i / Esc back ──────────────────────────────────────── counts: 12 rows ─ Var 2/6 ╯

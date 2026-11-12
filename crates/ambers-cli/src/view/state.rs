@@ -12,6 +12,7 @@ use arrow::record_batch::RecordBatch;
 use unicode_width::UnicodeWidthStr;
 
 use super::detail::{self, Detail};
+use super::filter::{self, Candidates, Matcher, Query};
 use super::format::{Cell, Column, Mode};
 use super::loader::{End, Message};
 
@@ -25,6 +26,8 @@ const BAR_LINES: usize = 3;
 const FIXED_FIELDS: usize = 2;
 /// Said when the panel-copy key is pressed with no side panel open.
 const NO_PANEL: &str = "open the panel with Enter first";
+/// Longest text the filter bar accepts.
+const PROMPT_LENGTH: usize = 60;
 
 /// The fields of the variable list: title, and whether it is right-aligned.
 pub const VARIABLE_FIELDS: [(&str, bool); 8] = [
@@ -115,6 +118,51 @@ struct Goto {
     origin: usize,
 }
 
+/// A row filter on one column: what was typed, made ready for matching.
+struct RowFilter {
+    column: usize,
+    text: String,
+    matcher: Matcher,
+}
+
+/// The filter bar while it is being typed into.
+struct Prompt {
+    text: String,
+    target: Target,
+    /// Why the text is not a usable filter yet, e.g. `>` with no number.
+    problem: Option<String>,
+}
+
+enum Target {
+    /// A row filter on `column`, in Data View.
+    Rows {
+        column: usize,
+        /// The rows the other filters keep, which this one narrows; `None`
+        /// when there is no other filter.
+        base: Option<Vec<u32>>,
+        /// The filter being edited and its place in the list.
+        previous: Option<(usize, Box<RowFilter>)>,
+        /// The file row the cursor was on.
+        origin: usize,
+        /// The "contains" text the rows now shown were found with: typing
+        /// more of it only needs to test those rows again.
+        narrowed: Option<String>,
+    },
+    /// The variable search, in Variable View.
+    Variables,
+}
+
+/// The filter bar as text, for drawing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bar {
+    pub left: String,
+    pub right: String,
+    /// The bar is being typed into.
+    pub typing: bool,
+    /// `right` says what is wrong with the text.
+    pub problem: bool,
+}
+
 /// Text the viewer wants on the clipboard, and what to tell the user.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Copy {
@@ -150,13 +198,27 @@ pub struct State {
     pub panel_open: bool,
     pub help: bool,
 
+    /// The cursor's row and the first row on screen, as positions among
+    /// the rows shown: file rows when nothing is filtered (`row_at`).
     pub cursor_row: usize,
     pub cursor_col: usize,
     pub top_row: usize,
+    /// Row filters, in the order they were added; a row must pass all.
+    filters: Vec<RowFilter>,
+    /// The file rows shown, in order; `None` when every row is.
+    visible: Option<Vec<u32>>,
+    /// The filter bar, while it is typed into.
+    prompt: Option<Prompt>,
+    /// The variables listed in Variable View; `None` when every one is.
+    var_visible: Option<Vec<usize>>,
+    /// The variable search that was kept with Enter.
+    var_search: String,
     /// First scrollable column on screen.
     pub left_col: usize,
     /// First variable listed in the respondent panel.
     pub panel_top: usize,
+    /// The variable under the cursor (its place in the file), and the
+    /// first one listed as a position in the list (`var_at`).
     pub var_cursor: usize,
     pub var_top: usize,
     /// In Variable View: the highlighted field of the variable under the
@@ -229,6 +291,11 @@ impl State {
             cursor_row: 0,
             cursor_col: 0,
             top_row: 0,
+            filters: Vec::new(),
+            visible: None,
+            prompt: None,
+            var_visible: None,
+            var_search: String::new(),
             left_col: 0,
             panel_top: 0,
             var_cursor: 0,
@@ -266,8 +333,10 @@ impl State {
     pub fn receive(&mut self, message: Message) {
         match message {
             Message::Batch(batch) => {
+                let before = self.rows;
                 self.rows += batch.num_rows();
                 self.batches.push(batch);
+                self.admit(before..self.rows);
                 self.refresh_codebook(false);
             }
             Message::Finished(end) => {
@@ -294,7 +363,9 @@ impl State {
         self.cell_in(row, column, self.mode)
     }
 
-    pub fn cell_in(&self, row: usize, column: usize, mode: Mode) -> Cell {
+    /// The cell at a position among the rows shown.
+    pub fn cell_in(&self, position: usize, column: usize, mode: Mode) -> Cell {
+        let row = self.row_at(position);
         let batch = &self.batches[row / self.batch_rows];
         self.columns[column].cell(batch.column(column), row % self.batch_rows, mode)
     }
@@ -401,9 +472,35 @@ impl State {
         self.follow_panel();
     }
 
-    /// Data rows that fit: the screen minus the frame and the header.
+    /// Data rows that fit: the screen minus the frame, the header and the
+    /// filter bar.
     pub fn grid_rows(&self) -> usize {
-        self.height.saturating_sub(3)
+        self.height.saturating_sub(3 + self.data_bar())
+    }
+
+    /// Lines the filter bar takes in Data View: one while a filter is
+    /// typed or active, none otherwise.
+    pub fn data_bar(&self) -> usize {
+        let typing = matches!(
+            self.prompt,
+            Some(Prompt {
+                target: Target::Rows { .. },
+                ..
+            })
+        );
+        usize::from(typing || !self.filters.is_empty())
+    }
+
+    /// Lines the search bar takes in Variable View.
+    pub fn variable_bar(&self) -> usize {
+        let typing = matches!(
+            self.prompt,
+            Some(Prompt {
+                target: Target::Variables,
+                ..
+            })
+        );
+        usize::from(typing || self.var_visible.is_some())
     }
 
     /// Width of the respondent panel, frame included; 0 when closed.
@@ -498,10 +595,11 @@ impl State {
         }
 
         let rows = self.variable_rows().max(1);
-        if self.var_cursor < self.var_top {
-            self.var_top = self.var_cursor;
-        } else if self.var_cursor >= self.var_top + rows {
-            self.var_top = self.var_cursor + 1 - rows;
+        let position = self.var_position();
+        if position < self.var_top {
+            self.var_top = position;
+        } else if position >= self.var_top + rows {
+            self.var_top = position + 1 - rows;
         }
         self.follow_field();
     }
@@ -543,13 +641,13 @@ impl State {
     }
 
     /// Variables that fit in the list: the screen minus the frame, the
-    /// header, and the full-text bar with its rule.
+    /// header, the search bar, and the full-text bar with its rule.
     pub fn variable_rows(&self) -> usize {
         let bar = match self.bar_lines() {
             0 => 0,
             lines => lines + 1,
         };
-        self.grid_rows().saturating_sub(bar)
+        self.height.saturating_sub(3 + self.variable_bar() + bar)
     }
 
     /// Variables listed in the respondent panel: the screen minus its frame.
@@ -586,6 +684,12 @@ impl State {
         self.notice = None;
         if self.help {
             self.help = false;
+            return false;
+        }
+        if self.prompt.is_some() {
+            self.prompt_key(key);
+            self.follow_cursor();
+            self.refresh_detail();
             return false;
         }
         if self.goto.is_some() && self.goto_key(key) {
@@ -632,7 +736,8 @@ impl State {
             }
         }
         match goto.typed.parse::<usize>() {
-            Ok(row) => self.cursor_row = row.clamp(1, self.rows.max(1)) - 1,
+            // The row with that number, or the next one a filter shows.
+            Ok(row) => self.cursor_row = self.position_of(row.clamp(1, self.rows.max(1)) - 1),
             // Everything was deleted: back to where we started.
             Err(_) => {
                 self.cursor_row = goto.origin;
@@ -644,7 +749,7 @@ impl State {
     }
 
     fn data_key(&mut self, key: Key) -> bool {
-        let last_row = self.rows.saturating_sub(1);
+        let last_row = self.shown_rows().saturating_sub(1);
         let last_col = self.columns.len().saturating_sub(1);
         let page = self.grid_rows().max(1);
         let column_before = self.cursor_col;
@@ -682,8 +787,12 @@ impl State {
             Key::Char('i') => {
                 self.var_cursor = self.cursor_col;
                 self.screen = Screen::Variables;
+                self.snap_variable();
             }
             Key::Char('f') => self.frozen = !self.frozen,
+            // Filter the rows by this column, or by this cell's value.
+            Key::Char('/') => self.open_filter(),
+            Key::Char('=') => self.filter_by_cell(),
             // `c` is the cell and `C` / `t` the open panel, in both views.
             Key::Char('c') => self.copy_data_cell(),
             Key::Char('C') | Key::Char('t') => self.copy_respondent(),
@@ -694,18 +803,22 @@ impl State {
             Key::Char('K') if self.panel_open => {
                 self.panel_top = self.panel_top.saturating_sub(1);
             }
-            Key::Char(digit @ '1'..='9') if self.rows > 0 => {
+            Key::Char(digit @ '1'..='9') if self.shown_rows() > 0 => {
                 self.goto = Some(Goto {
                     typed: String::new(),
                     origin: self.cursor_row,
                 });
                 self.goto_key(Key::Char(digit));
             }
+            // One thing at a time: the panel, then the filters, then quit.
             Key::Esc | Key::Char('q') => {
-                if !self.panel_open {
+                if self.panel_open {
+                    self.panel_open = false;
+                } else if !self.filters.is_empty() {
+                    self.clear_filters();
+                } else {
                     return true;
                 }
-                self.panel_open = false;
             }
             _ => {}
         }
@@ -716,24 +829,36 @@ impl State {
     }
 
     fn variables_key(&mut self, key: Key) {
-        let last = self.columns.len().saturating_sub(1);
+        // Up and down move through the variables listed, which a search
+        // may have narrowed.
+        let listed = self.shown_variables();
+        let last = listed.saturating_sub(1);
         let last_field = VARIABLE_FIELDS.len() - 1;
         let page = self.variable_rows().max(1);
+        let position = self.var_position();
+        let moved = match key {
+            Key::Up | Key::Char('k') => Some(position.saturating_sub(1)),
+            Key::Down | Key::Char('j') => Some(position + 1),
+            Key::PageUp => Some(position.saturating_sub(page)),
+            Key::PageDown => Some(position + page),
+            Key::HalfUp => Some(position.saturating_sub(page / 2)),
+            Key::HalfDown => Some(position + page / 2),
+            Key::FastUp | Key::Char('{') => Some(position.saturating_sub(FAST_STEP)),
+            Key::FastDown | Key::Char('}') => Some(position + FAST_STEP),
+            Key::Top | Key::Char('g') => Some(0),
+            Key::Bottom | Key::Char('G') => Some(last),
+            _ => None,
+        };
+        if let Some(position) = moved {
+            if listed > 0 {
+                self.var_cursor = self.var_at(position.min(last));
+            }
+            return;
+        }
         match key {
-            Key::Up | Key::Char('k') => self.var_cursor = self.var_cursor.saturating_sub(1),
-            Key::Down | Key::Char('j') => self.var_cursor = (self.var_cursor + 1).min(last),
-            Key::PageUp => self.var_cursor = self.var_cursor.saturating_sub(page),
-            Key::PageDown => self.var_cursor = (self.var_cursor + page).min(last),
-            Key::HalfUp => self.var_cursor = self.var_cursor.saturating_sub(page / 2),
-            Key::HalfDown => self.var_cursor = (self.var_cursor + page / 2).min(last),
-            Key::FastUp | Key::Char('{') => {
-                self.var_cursor = self.var_cursor.saturating_sub(FAST_STEP);
-            }
-            Key::FastDown | Key::Char('}') => {
-                self.var_cursor = (self.var_cursor + FAST_STEP).min(last);
-            }
-            Key::Top | Key::Char('g') => self.var_cursor = 0,
-            Key::Bottom | Key::Char('G') => self.var_cursor = last,
+            Key::Char('/') => self.open_search(),
+            // A search that found nothing leaves no variable to act on.
+            Key::Enter | Key::Char('d') | Key::Char('c') if listed == 0 => {}
             // The highlighted cell: the row number is not one.
             Key::Left | Key::Char('h') => self.var_field = (self.var_field - 1).max(1),
             Key::Right | Key::Char('l') => self.var_field = (self.var_field + 1).min(last_field),
@@ -763,6 +888,7 @@ impl State {
             Key::Char('C') | Key::Char('t') => self.copy_table(),
             Key::Char('?') => self.help = true,
             Key::Esc | Key::Char('q') if self.detail.is_some() => self.detail = None,
+            Key::Esc | Key::Char('q') if self.var_visible.is_some() => self.clear_search(),
             Key::Esc | Key::Char('i') | Key::Char('q') => {
                 self.detail = None;
                 self.screen = Screen::Data;
@@ -789,7 +915,7 @@ impl State {
     }
 
     fn data_mouse(&mut self, mouse: Mouse, x: usize, y: usize) {
-        let last_row = self.rows.saturating_sub(1);
+        let last_row = self.shown_rows().saturating_sub(1);
         let last_col = self.columns.len().saturating_sub(1);
         let column_before = self.cursor_col;
         let panel_x = self.width.saturating_sub(self.panel_width());
@@ -811,9 +937,14 @@ impl State {
             Mouse::ScrollLeft => self.cursor_col = self.cursor_col.saturating_sub(WHEEL_ROWS),
             Mouse::ScrollRight => self.cursor_col = (self.cursor_col + WHEEL_ROWS).min(last_col),
             Mouse::Click => {
-                // The grid starts below the frame and the header.
-                if y >= 2 && y - 2 < self.grid_rows() && self.top_row + y - 2 < self.rows {
-                    self.cursor_row = self.top_row + y - 2;
+                // The grid starts below the frame, the filter bar and the
+                // header.
+                let first = 2 + self.data_bar();
+                if y >= first
+                    && y - first < self.grid_rows()
+                    && self.top_row + y - first < self.shown_rows()
+                {
+                    self.cursor_row = self.top_row + y - first;
                 }
                 // Columns start after the frame and the row-number gutter.
                 let columns_x = 1 + self.gutter_width() + 3;
@@ -830,7 +961,14 @@ impl State {
     }
 
     fn variables_mouse(&mut self, mouse: Mouse, x: usize, y: usize) {
-        let last = self.columns.len().saturating_sub(1);
+        let listed = self.shown_variables();
+        let last = listed.saturating_sub(1);
+        let position = self.var_position();
+        let go = |state: &mut State, position: usize| {
+            if listed > 0 {
+                state.var_cursor = state.var_at(position.min(last));
+            }
+        };
         let last_field = VARIABLE_FIELDS.len() - 1;
         let detail_x = self.width.saturating_sub(self.detail_width());
         if self.detail.is_some() && x >= detail_x {
@@ -845,13 +983,19 @@ impl State {
             return;
         }
         match mouse {
-            Mouse::ScrollUp => self.var_cursor = self.var_cursor.saturating_sub(WHEEL_ROWS),
-            Mouse::ScrollDown => self.var_cursor = (self.var_cursor + WHEEL_ROWS).min(last),
+            Mouse::ScrollUp => go(self, position.saturating_sub(WHEEL_ROWS)),
+            Mouse::ScrollDown => go(self, position + WHEEL_ROWS),
             Mouse::ScrollLeft => self.var_field = (self.var_field - 1).max(1),
             Mouse::ScrollRight => self.var_field = (self.var_field + 1).min(last_field),
             Mouse::Click => {
-                if y >= 2 && y - 2 < self.variable_rows() && self.var_top + y - 2 <= last {
-                    self.var_cursor = self.var_top + y - 2;
+                // The list starts below the frame, the search bar and the
+                // header.
+                let first = 2 + self.variable_bar();
+                if y >= first
+                    && y - first < self.variable_rows()
+                    && self.var_top + y - first < listed
+                {
+                    go(self, self.var_top + y - first);
                 }
                 if let Some(field) = (self.variable_layout().iter())
                     .find(|field| (field.x..field.x + field.width).contains(&x))
@@ -974,6 +1118,473 @@ impl State {
         self.detail_scroll = self.detail_scroll.min(rows.saturating_sub(1));
     }
 
+    // --- filters and search -------------------------------------------------
+    //
+    // A filter is the list of file rows it keeps (`visible`); the grid
+    // looks rows up through it. Nothing is copied or reformatted.
+
+    /// Rows shown: every loaded row, or those the filters keep.
+    pub fn shown_rows(&self) -> usize {
+        self.visible.as_ref().map_or(self.rows, Vec::len)
+    }
+
+    /// The file row at a position among the rows shown.
+    pub fn row_at(&self, position: usize) -> usize {
+        match &self.visible {
+            Some(rows) => rows[position] as usize,
+            None => position,
+        }
+    }
+
+    /// The file row under the cursor; 0 when no row is shown.
+    pub fn cursor_file_row(&self) -> usize {
+        if self.shown_rows() == 0 {
+            0
+        } else {
+            self.row_at(self.cursor_row)
+        }
+    }
+
+    /// Where a file row is among the rows shown. When a filter hides it:
+    /// the next row shown, or the last.
+    fn position_of(&self, row: usize) -> usize {
+        match &self.visible {
+            Some(rows) => rows
+                .partition_point(|&shown| (shown as usize) < row)
+                .min(rows.len().saturating_sub(1)),
+            None => row.min(self.rows.saturating_sub(1)),
+        }
+    }
+
+    /// Variables listed in Variable View: all, or those the search found.
+    pub fn shown_variables(&self) -> usize {
+        (self.var_visible.as_ref()).map_or(self.columns.len(), Vec::len)
+    }
+
+    /// The variable at a position in the list.
+    pub fn var_at(&self, position: usize) -> usize {
+        match &self.var_visible {
+            Some(found) => found[position],
+            None => position,
+        }
+    }
+
+    /// Where the variable under the cursor is in the list.
+    fn var_position(&self) -> usize {
+        match &self.var_visible {
+            Some(found) => (found.iter())
+                .position(|&variable| variable == self.var_cursor)
+                .unwrap_or(0),
+            None => self.var_cursor,
+        }
+    }
+
+    /// Keep the variable cursor on a listed variable.
+    fn snap_variable(&mut self) {
+        if let Some(found) = &self.var_visible
+            && !found.contains(&self.var_cursor)
+            && let Some(&first) = found.first()
+        {
+            self.var_cursor = first;
+        }
+    }
+
+    /// Show these rows, with the cursor on file row `row` or, when it is
+    /// no longer shown, the next one that is.
+    fn show(&mut self, visible: Option<Vec<u32>>, row: usize) {
+        self.visible = visible;
+        self.cursor_row = self.position_of(row);
+        // A shorter list must not leave the screen half empty.
+        let fits = (self.shown_rows()).saturating_sub(self.grid_rows().max(1));
+        self.top_row = self.top_row.min(fits);
+    }
+
+    /// What was typed for `column`, ready for matching. `Ok(None)` is an
+    /// empty filter; `Err` says what is missing.
+    fn matcher_for(
+        &self,
+        column: usize,
+        text: &str,
+    ) -> Result<Option<(filter::Parsed, Matcher)>, String> {
+        match filter::parse(text)? {
+            Some(parsed) => {
+                let matcher = Matcher::new(&self.columns[column], &parsed)?;
+                Ok(Some((parsed, matcher)))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// The rows every kept filter lets through; `None` without filters.
+    /// Each filter tests only the rows the ones before it kept.
+    fn passing(&mut self) -> Option<Vec<u32>> {
+        let mut kept: Option<Vec<u32>> = None;
+        for filter in &mut self.filters {
+            let candidates = match &kept {
+                Some(rows) => Candidates::Rows(rows),
+                None => Candidates::Range(0..self.rows),
+            };
+            let rows = filter.matcher.select(
+                &self.columns[filter.column],
+                filter.column,
+                &self.batches,
+                self.batch_rows,
+                candidates,
+            );
+            kept = Some(rows);
+        }
+        kept
+    }
+
+    /// Rows that just arrived from the loader: test only those, so a
+    /// filter is never re-run from the start while a file loads.
+    fn admit(&mut self, range: std::ops::Range<usize>) {
+        if self.visible.is_none() && self.filters.is_empty() {
+            return;
+        }
+        let mut kept: Option<Vec<u32>> = None;
+        for filter in &mut self.filters {
+            let candidates = match &kept {
+                Some(rows) => Candidates::Rows(rows),
+                None => Candidates::Range(range.clone()),
+            };
+            let rows = filter.matcher.select(
+                &self.columns[filter.column],
+                filter.column,
+                &self.batches,
+                self.batch_rows,
+                candidates,
+            );
+            kept = Some(rows);
+        }
+        let all = range.start as u32..range.end as u32;
+        if let Some(Prompt {
+            text,
+            target: Target::Rows { column, base, .. },
+            ..
+        }) = &mut self.prompt
+        {
+            if let Some(base) = base {
+                match &kept {
+                    Some(rows) => base.extend(rows),
+                    None => base.extend(all.clone()),
+                }
+            }
+            let typed = filter::parse(text).ok().flatten();
+            let matcher =
+                typed.and_then(|parsed| Matcher::new(&self.columns[*column], &parsed).ok());
+            if let Some(mut matcher) = matcher {
+                let candidates = match &kept {
+                    Some(rows) => Candidates::Rows(rows),
+                    None => Candidates::Range(range.clone()),
+                };
+                let rows = matcher.select(
+                    &self.columns[*column],
+                    *column,
+                    &self.batches,
+                    self.batch_rows,
+                    candidates,
+                );
+                kept = Some(rows);
+            }
+        }
+        if let Some(visible) = &mut self.visible {
+            match kept {
+                Some(rows) => visible.extend(rows),
+                None => visible.extend(all),
+            }
+        }
+    }
+
+    /// `/` in Data View: type a filter for the cursor's column, or edit
+    /// the one it has.
+    fn open_filter(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+        let column = self.cursor_col;
+        let origin = self.cursor_file_row();
+        let place = self.filters.iter().position(|f| f.column == column);
+        let previous = place.map(|place| (place, Box::new(self.filters.remove(place))));
+        let text = (previous.as_ref()).map_or(String::new(), |(_, filter)| filter.text.clone());
+        let base = self.passing();
+        self.prompt = Some(Prompt {
+            text,
+            target: Target::Rows {
+                column,
+                base,
+                previous,
+                origin,
+                narrowed: None,
+            },
+            problem: None,
+        });
+    }
+
+    /// `=` in Data View: keep the rows with this cell's value.
+    fn filter_by_cell(&mut self) {
+        if self.shown_rows() == 0 || self.columns.is_empty() {
+            return;
+        }
+        let column = self.cursor_col;
+        let origin = self.cursor_file_row();
+        let value = self.cell_in(self.cursor_row, column, Mode::Codes).text;
+        // An empty string counts as missing, like `.`.
+        let text = if value.trim().is_empty() {
+            "=.".to_string()
+        } else {
+            format!("={value}")
+        };
+        match self.matcher_for(column, &text) {
+            Ok(Some((_, matcher))) => {
+                self.filters.retain(|filter| filter.column != column);
+                self.filters.push(RowFilter {
+                    column,
+                    text,
+                    matcher,
+                });
+                let visible = self.passing();
+                self.show(visible, origin);
+            }
+            Ok(None) => {}
+            Err(problem) => self.notice = Some(problem),
+        }
+    }
+
+    fn clear_filters(&mut self) {
+        let origin = self.cursor_file_row();
+        self.filters.clear();
+        self.show(None, origin);
+        self.notice = Some("filters cleared".to_string());
+    }
+
+    /// `/` in Variable View: search the variables by name or label.
+    fn open_search(&mut self) {
+        self.prompt = Some(Prompt {
+            text: self.var_search.clone(),
+            target: Target::Variables,
+            problem: None,
+        });
+    }
+
+    fn clear_search(&mut self) {
+        self.var_search.clear();
+        self.var_visible = None;
+    }
+
+    /// A key while the bar is typed into. Every key is used up.
+    fn prompt_key(&mut self, key: Key) {
+        let Some(prompt) = &mut self.prompt else {
+            return;
+        };
+        match key {
+            Key::Char(ch) if prompt.text.chars().count() < PROMPT_LENGTH => prompt.text.push(ch),
+            Key::Backspace => {
+                prompt.text.pop();
+            }
+            Key::Enter => return self.keep_prompt(),
+            Key::Esc => return self.drop_prompt(),
+            _ => return,
+        }
+        self.retype();
+    }
+
+    /// The text in the bar changed: show what it finds.
+    fn retype(&mut self) {
+        let Some(mut prompt) = self.prompt.take() else {
+            return;
+        };
+        let ready = match &prompt.target {
+            Target::Rows { column, .. } => self.matcher_for(*column, &prompt.text),
+            Target::Variables => Ok(None),
+        };
+        match &mut prompt.target {
+            Target::Variables => {
+                let typed = !prompt.text.trim().is_empty();
+                self.var_visible = typed.then(|| filter::variables(&self.columns, &prompt.text));
+                self.var_top = 0;
+                self.snap_variable();
+            }
+            Target::Rows {
+                column,
+                base,
+                origin,
+                narrowed,
+                ..
+            } => {
+                prompt.problem = None;
+                let visible = match ready {
+                    // Not a filter yet, e.g. `>` before its number.
+                    Err(problem) => {
+                        prompt.problem = Some(problem);
+                        *narrowed = None;
+                        base.clone()
+                    }
+                    Ok(None) => {
+                        *narrowed = None;
+                        base.clone()
+                    }
+                    Ok(Some((parsed, mut matcher))) => {
+                        let needle = match (&parsed.query, parsed.negate) {
+                            (Query::Contains(needle), false) => Some(needle.clone()),
+                            _ => None,
+                        };
+                        // More of the same text can only keep fewer rows:
+                        // test the ones now shown, not the whole column.
+                        let again = match (&needle, narrowed.as_ref(), &self.visible) {
+                            (Some(new), Some(old), Some(shown)) if new.contains(old.as_str()) => {
+                                Some(shown)
+                            }
+                            _ => None,
+                        };
+                        let candidates = match (again, base.as_ref()) {
+                            (Some(shown), _) => Candidates::Rows(shown),
+                            (None, Some(base)) => Candidates::Rows(base),
+                            (None, None) => Candidates::Range(0..self.rows),
+                        };
+                        let rows = matcher.select(
+                            &self.columns[*column],
+                            *column,
+                            &self.batches,
+                            self.batch_rows,
+                            candidates,
+                        );
+                        *narrowed = needle;
+                        Some(rows)
+                    }
+                };
+                let origin = *origin;
+                self.show(visible, origin);
+            }
+        }
+        self.prompt = Some(prompt);
+    }
+
+    /// Enter in the bar: keep the filter or the search. An empty filter
+    /// removes the one that was being edited.
+    fn keep_prompt(&mut self) {
+        let Some(mut prompt) = self.prompt.take() else {
+            return;
+        };
+        let text = prompt.text.trim().to_string();
+        let column = match &prompt.target {
+            Target::Rows { column, .. } => *column,
+            Target::Variables => {
+                if text.is_empty() {
+                    self.var_visible = None;
+                }
+                self.var_search = text;
+                return;
+            }
+        };
+        match self.matcher_for(column, &text) {
+            // Stay in the bar and say what is missing.
+            Err(problem) => {
+                self.notice = Some(problem.clone());
+                prompt.problem = Some(problem);
+                self.prompt = Some(prompt);
+            }
+            Ok(ready) => {
+                if let Target::Rows { previous, .. } = prompt.target {
+                    let end = self.filters.len();
+                    let place = previous.map_or(end, |(place, _)| place.min(end));
+                    if let Some((_, matcher)) = ready {
+                        let filter = RowFilter {
+                            column,
+                            text,
+                            matcher,
+                        };
+                        self.filters.insert(place, filter);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Esc in the bar: back to how it was. For the variable search that
+    /// means no search.
+    fn drop_prompt(&mut self) {
+        let Some(prompt) = self.prompt.take() else {
+            return;
+        };
+        match prompt.target {
+            Target::Variables => self.clear_search(),
+            Target::Rows {
+                previous, origin, ..
+            } => {
+                if let Some((place, filter)) = previous {
+                    let place = place.min(self.filters.len());
+                    self.filters.insert(place, *filter);
+                }
+                // Not a saved copy: rows may have arrived in the meantime.
+                let visible = self.passing();
+                self.show(visible, origin);
+            }
+        }
+    }
+
+    /// The filter bar of the current view, when it shows.
+    pub fn bar(&self) -> Option<Bar> {
+        let count = |n: usize| crate::info::group_digits(n as u64);
+        match self.screen {
+            Screen::Data => {
+                let rows = format!("{} of {} rows", count(self.shown_rows()), count(self.rows));
+                if let Some(Prompt {
+                    text,
+                    target: Target::Rows { column, .. },
+                    problem,
+                }) = &self.prompt
+                {
+                    return Some(Bar {
+                        left: format!("Filter {}: {text}▏", self.columns[*column].name),
+                        right: problem.clone().unwrap_or(rows),
+                        typing: true,
+                        problem: problem.is_some(),
+                    });
+                }
+                if self.filters.is_empty() {
+                    return None;
+                }
+                let filters: Vec<String> = (self.filters.iter())
+                    .map(|filter| format!("{}: {}", self.columns[filter.column].name, filter.text))
+                    .collect();
+                Some(Bar {
+                    left: format!("Filter {}", filters.join(" │ ")),
+                    right: format!("{rows} ─ / edit ─ Esc clear"),
+                    typing: false,
+                    problem: false,
+                })
+            }
+            Screen::Variables => {
+                let found = format!(
+                    "{} of {} variables",
+                    count(self.shown_variables()),
+                    count(self.columns.len())
+                );
+                if let Some(Prompt {
+                    text,
+                    target: Target::Variables,
+                    ..
+                }) = &self.prompt
+                {
+                    return Some(Bar {
+                        left: format!("Search variables: {text}▏"),
+                        right: found,
+                        typing: true,
+                        problem: false,
+                    });
+                }
+                self.var_visible.as_ref()?;
+                Some(Bar {
+                    left: format!("Search variables: {}", self.var_search),
+                    right: format!("{found} ─ / edit ─ Esc clear"),
+                    typing: false,
+                    problem: false,
+                })
+            }
+        }
+    }
+
     // --- copy ---------------------------------------------------------------
     //
     // `c` copies the highlighted cell and `C` / `t` the open side panel, the
@@ -1014,7 +1625,7 @@ impl State {
             self.notice = Some(NO_PANEL.to_string());
             return;
         }
-        if self.rows == 0 || self.columns.is_empty() {
+        if self.shown_rows() == 0 || self.columns.is_empty() {
             return self.copy_text(String::new(), "");
         }
         let mut text = String::from("Variable\tLabel\tValue");
@@ -1038,13 +1649,14 @@ impl State {
         } else {
             "variables"
         };
-        let what = format!("row {} ({variables} {noun})", self.cursor_row + 1);
+        let row = self.row_at(self.cursor_row) + 1;
+        let what = format!("row {row} ({variables} {noun})");
         self.copy_text(text, &what);
     }
 
     /// The Data View cell under the cursor, in full, as it is shown.
     fn copy_data_cell(&mut self) {
-        if self.rows == 0 || self.columns.is_empty() {
+        if self.shown_rows() == 0 || self.columns.is_empty() {
             return self.copy_text(String::new(), "");
         }
         let text = self.cell(self.cursor_row, self.cursor_col).text;
@@ -1730,6 +2342,377 @@ pub(crate) mod tests {
             state.on_mouse(Mouse::ScrollRight, 30, 5);
         }
         assert_eq!(state.cursor_col, 12, "stops at the last column");
+    }
+
+    // --- filters and search ---
+
+    fn type_text(state: &mut State, text: &str) {
+        for ch in text.chars() {
+            assert!(!state.on_key(Key::Char(ch)));
+        }
+    }
+
+    /// The 1-based file rows shown.
+    fn shown(state: &State) -> Vec<usize> {
+        (0..state.shown_rows())
+            .map(|position| state.row_at(position) + 1)
+            .collect()
+    }
+
+    /// A state on survey.sav with the cursor on `column`.
+    fn on_column(name: &str) -> State {
+        let mut state = loaded("survey.sav", 100, 24);
+        state.cursor_col = state.columns.iter().position(|c| c.name == name).unwrap();
+        state
+    }
+
+    #[test]
+    fn a_filter_narrows_as_it_is_typed_and_enter_keeps_it() {
+        let mut state = on_column("city");
+        press(&mut state, &[Key::Char('/')]);
+        // Letters are text here, not keys: `l` does not move, `i` does
+        // not open Variable View.
+        type_text(&mut state, "li");
+        assert_eq!(state.screen, Screen::Data);
+        assert_eq!(state.cursor_col, 5);
+        assert_eq!(shown(&state).len(), 10, "Lisbon and Lima");
+        type_text(&mut state, "s");
+        assert_eq!(shown(&state), [1, 5, 9, 13, 17]);
+        let bar = state.bar().unwrap();
+        assert_eq!(
+            (bar.left.as_str(), bar.right.as_str()),
+            ("Filter city: lis▏", "5 of 20 rows")
+        );
+        assert!(bar.typing && !bar.problem);
+        // One line fewer for the grid while the bar shows.
+        assert_eq!(state.grid_rows(), 20);
+
+        // Deleting widens it again.
+        press(&mut state, &[Key::Backspace]);
+        assert_eq!(shown(&state).len(), 10);
+        type_text(&mut state, "s");
+
+        press(&mut state, &[Key::Enter]);
+        let bar = state.bar().unwrap();
+        assert_eq!(bar.left, "Filter city: lis");
+        assert_eq!(bar.right, "5 of 20 rows ─ / edit ─ Esc clear");
+        assert!(!bar.typing);
+
+        // The keys work on the rows shown.
+        press(&mut state, &[Key::Bottom]);
+        assert_eq!((state.cursor_row, state.cursor_file_row()), (4, 16));
+        assert_eq!(state.cell(state.cursor_row, 5).text, "Lisbon");
+        press(&mut state, &[Key::Down, Key::Top]);
+        assert_eq!(state.cursor_file_row(), 0);
+    }
+
+    #[test]
+    fn esc_in_the_bar_goes_back_to_how_it_was() {
+        let mut state = on_column("city");
+        press(
+            &mut state,
+            &[Key::Down, Key::Down, Key::Down, Key::Char('/')],
+        );
+        type_text(&mut state, "zzz");
+        assert_eq!(state.shown_rows(), 0);
+        press(&mut state, &[Key::Esc]);
+        assert_eq!(state.shown_rows(), 20);
+        assert_eq!(state.cursor_row, 3, "back on the row it was on");
+        assert_eq!(state.bar(), None);
+        assert_eq!(state.grid_rows(), 21);
+    }
+
+    #[test]
+    fn the_cursor_stays_on_its_row_or_the_next_one_shown() {
+        let mut state = on_column("city");
+        // Row 6 is Osaka; row 7 is Lima.
+        press(&mut state, &[Key::Char('6'), Key::Enter, Key::Char('/')]);
+        type_text(&mut state, "osa");
+        assert_eq!(state.cursor_file_row() + 1, 6);
+        press(&mut state, &[Key::Esc, Key::Down, Key::Char('/')]);
+        type_text(&mut state, "osa");
+        assert_eq!(
+            state.cursor_file_row() + 1,
+            10,
+            "the next Osaka after row 7"
+        );
+    }
+
+    #[test]
+    fn filters_stack_and_can_be_edited_or_removed() {
+        let mut state = on_column("gender");
+        press(&mut state, &[Key::Char('/')]);
+        type_text(&mut state, "=female");
+        press(&mut state, &[Key::Enter]);
+        assert_eq!(state.shown_rows(), 10);
+
+        state.cursor_col = 5;
+        press(&mut state, &[Key::Char('/')]);
+        type_text(&mut state, "osa");
+        press(&mut state, &[Key::Enter]);
+        assert_eq!(shown(&state), [2, 6, 10, 14, 18]);
+        assert_eq!(
+            state.bar().unwrap().left,
+            "Filter gender: =female │ city: osa"
+        );
+
+        // `/` on a filtered column edits its filter.
+        press(&mut state, &[Key::Char('/')]);
+        assert_eq!(state.bar().unwrap().left, "Filter city: osa▏");
+        // Esc keeps it as it was.
+        press(&mut state, &[Key::Backspace, Key::Esc]);
+        assert_eq!(shown(&state), [2, 6, 10, 14, 18]);
+        // Emptied and kept: that filter is removed, the other stays.
+        press(
+            &mut state,
+            &[
+                Key::Char('/'),
+                Key::Backspace,
+                Key::Backspace,
+                Key::Backspace,
+                Key::Enter,
+            ],
+        );
+        assert_eq!(state.shown_rows(), 10);
+        assert_eq!(state.bar().unwrap().left, "Filter gender: =female");
+    }
+
+    #[test]
+    fn esc_clears_the_filters_before_it_quits() {
+        let mut state = on_column("city");
+        press(&mut state, &[Key::Char('/')]);
+        type_text(&mut state, "osa");
+        press(&mut state, &[Key::Enter, Key::Down, Key::Enter]);
+        // The panel first, then the filters, then the viewer.
+        assert!(!state.on_key(Key::Esc));
+        assert!(!state.panel_open);
+        assert_eq!(state.shown_rows(), 5);
+        assert!(!state.on_key(Key::Esc));
+        assert_eq!(state.shown_rows(), 20);
+        assert_eq!(state.notice.as_deref(), Some("filters cleared"));
+        assert_eq!(state.cursor_file_row() + 1, 6, "still on its row");
+        assert!(state.on_key(Key::Esc));
+    }
+
+    #[test]
+    fn equals_filters_by_the_cell_under_the_cursor() {
+        let mut state = on_column("gender");
+        press(&mut state, &[Key::Down, Key::Char('=')]);
+        assert_eq!(state.shown_rows(), 10);
+        assert_eq!(state.bar().unwrap().left, "Filter gender: =2.00");
+        assert_eq!(state.cursor_file_row() + 1, 2);
+        // Again on the same column: replaced, not added twice.
+        press(&mut state, &[Key::Char('=')]);
+        assert_eq!(state.bar().unwrap().left, "Filter gender: =2.00");
+
+        // A system-missing cell: the rows where it is missing.
+        let mut state = on_column("satisfaction");
+        press(&mut state, &[Key::Char('7'), Key::Enter, Key::Char('=')]);
+        assert_eq!(shown(&state), [7, 14]);
+        assert_eq!(state.bar().unwrap().left, "Filter satisfaction: =.");
+
+        // Text and dates.
+        let mut state = on_column("city");
+        press(&mut state, &[Key::Char('=')]);
+        assert_eq!(shown(&state), [1, 5, 9, 13, 17]);
+        let mut state = on_column("interview_date");
+        press(&mut state, &[Key::Char('=')]);
+        assert!(shown(&state).contains(&1));
+    }
+
+    #[test]
+    fn a_half_typed_filter_shows_every_row_and_cannot_be_kept() {
+        let mut state = on_column("id");
+        press(&mut state, &[Key::Char('/'), Key::Char('>')]);
+        let bar = state.bar().unwrap();
+        assert_eq!(bar.right, "type a number after >");
+        assert!(bar.problem);
+        assert_eq!(state.shown_rows(), 20);
+        // Enter stays in the bar.
+        press(&mut state, &[Key::Enter]);
+        assert!(state.bar().unwrap().typing);
+        assert_eq!(state.notice.as_deref(), Some("type a number after >"));
+        type_text(&mut state, "=18");
+        press(&mut state, &[Key::Enter]);
+        assert_eq!(shown(&state), [18, 19, 20]);
+
+        // A comparison on text is refused the same way.
+        let mut state = on_column("city");
+        press(&mut state, &[Key::Char('/')]);
+        type_text(&mut state, ">3");
+        assert_eq!(
+            state.bar().unwrap().right,
+            "city is not numeric: > and < need numbers"
+        );
+    }
+
+    #[test]
+    fn go_to_row_lands_on_a_row_the_filter_shows() {
+        let mut state = on_column("city");
+        press(&mut state, &[Key::Char('/')]);
+        type_text(&mut state, "osa");
+        // Shown: 2, 6, 10, 14, 18.
+        press(&mut state, &[Key::Enter, Key::Char('7'), Key::Enter]);
+        assert_eq!(state.cursor_file_row() + 1, 10, "the next one shown");
+        press(&mut state, &[Key::Char('1'), Key::Char('4'), Key::Enter]);
+        assert_eq!(state.cursor_file_row() + 1, 14);
+        press(&mut state, &[Key::Char('2'), Key::Char('0'), Key::Enter]);
+        assert_eq!(state.cursor_file_row() + 1, 18, "past the end: the last");
+    }
+
+    #[test]
+    fn the_panel_and_the_copy_keys_follow_the_filter() {
+        let mut state = on_column("city");
+        press(&mut state, &[Key::Char('/')]);
+        type_text(&mut state, "osa");
+        press(&mut state, &[Key::Enter, Key::Down, Key::Char('c')]);
+        assert_eq!(state.take_copy().unwrap().text, "Osaka");
+        press(&mut state, &[Key::Enter, Key::Char('C')]);
+        let text = state.take_copy().unwrap().text;
+        assert_eq!(text.lines().nth(1), Some("id\tRespondent ID\t6"));
+        assert_eq!(state.notice.as_deref(), Some("copied row 6 (13 variables)"));
+    }
+
+    #[test]
+    fn rows_that_arrive_are_tested_as_they_come() {
+        let mut state = on_column("city");
+        press(&mut state, &[Key::Char('/')]);
+        type_text(&mut state, "osa");
+        // Rows 1-5 again, as rows 21-25: one more Osaka, while typing.
+        let extra = state.batches[0].clone();
+        state.receive(Message::Batch(extra.clone()));
+        assert_eq!(shown(&state), [2, 6, 10, 14, 18, 22]);
+        // And with the filter kept, and a second one typed.
+        press(&mut state, &[Key::Enter]);
+        state.receive(Message::Batch(extra.clone()));
+        assert_eq!(shown(&state), [2, 6, 10, 14, 18, 22, 27]);
+        state.cursor_col = 1;
+        press(&mut state, &[Key::Char('/')]);
+        type_text(&mut state, "fem");
+        state.receive(Message::Batch(extra));
+        assert_eq!(shown(&state), [2, 6, 10, 14, 18, 22, 27, 32]);
+        // Leaving the bar keeps the rows that came in meanwhile.
+        press(&mut state, &[Key::Esc]);
+        assert_eq!(shown(&state), [2, 6, 10, 14, 18, 22, 27, 32]);
+        assert_eq!(
+            state.bar().unwrap().right,
+            "8 of 35 rows ─ / edit ─ Esc clear"
+        );
+    }
+
+    #[test]
+    fn a_filter_with_no_rows_is_safe_to_use() {
+        let mut state = on_column("city");
+        press(&mut state, &[Key::Char('/')]);
+        type_text(&mut state, "zzz");
+        press(&mut state, &[Key::Enter]);
+        assert_eq!(state.shown_rows(), 0);
+        press(
+            &mut state,
+            &[
+                Key::Down,
+                Key::Bottom,
+                Key::PageDown,
+                Key::Char('5'),
+                Key::Char('='),
+                Key::Enter,
+                Key::Char('C'),
+                Key::Enter,
+                Key::Char('c'),
+            ],
+        );
+        assert_eq!(state.take_copy(), None);
+        state.on_mouse(Mouse::Click, 30, 5);
+        state.on_mouse(Mouse::ScrollDown, 30, 5);
+        assert_eq!(state.cursor_row, 0);
+    }
+
+    #[test]
+    fn a_click_lands_on_the_row_under_it_below_the_bar() {
+        let mut state = on_column("city");
+        press(&mut state, &[Key::Char('/')]);
+        type_text(&mut state, "osa");
+        press(&mut state, &[Key::Enter]);
+        // Frame, bar, header: the rows start on line 3.
+        state.on_mouse(Mouse::Click, 30, 4);
+        assert_eq!(state.cursor_file_row() + 1, 6);
+        state.on_mouse(Mouse::Click, 30, 2);
+        assert_eq!(state.cursor_file_row() + 1, 6, "the header is not a row");
+    }
+
+    #[test]
+    fn the_variable_search_narrows_the_list() {
+        let mut state = loaded("survey.sav", 100, 24);
+        press(&mut state, &[Key::Char('i'), Key::Char('/')]);
+        // `d` and `q` are text here.
+        type_text(&mut state, "brand");
+        assert_eq!(state.screen, Screen::Variables);
+        assert_eq!(state.shown_variables(), 3);
+        assert_eq!(state.var_cursor, 6, "the first one found");
+        let bar = state.bar().unwrap();
+        assert_eq!(
+            (bar.left.as_str(), bar.right.as_str()),
+            ("Search variables: brand▏", "3 of 13 variables")
+        );
+        press(&mut state, &[Key::Enter]);
+        assert_eq!(
+            state.bar().unwrap().right,
+            "3 of 13 variables ─ / edit ─ Esc clear"
+        );
+
+        // Up and down move among the variables found.
+        press(&mut state, &[Key::Down]);
+        assert_eq!(state.var_cursor, 7);
+        press(&mut state, &[Key::Bottom, Key::Down, Key::FastDown]);
+        assert_eq!(state.var_cursor, 8);
+        press(&mut state, &[Key::Top]);
+        assert_eq!(state.var_cursor, 6);
+        // A click on the second line of the list, under the bar.
+        state.on_mouse(Mouse::Click, 10, 4);
+        assert_eq!(state.var_cursor, 7);
+
+        // `d` goes to that variable's column; the search is still there.
+        press(&mut state, &[Key::Char('d')]);
+        assert_eq!((state.screen, state.cursor_col), (Screen::Data, 7));
+        press(&mut state, &[Key::Char('i')]);
+        assert_eq!((state.shown_variables(), state.var_cursor), (3, 7));
+
+        // Esc clears the search first, then leaves the view.
+        press(&mut state, &[Key::Esc]);
+        assert_eq!(
+            (state.screen, state.shown_variables()),
+            (Screen::Variables, 13)
+        );
+        assert_eq!(state.var_cursor, 7, "still on the variable");
+        press(&mut state, &[Key::Esc]);
+        assert_eq!(state.screen, Screen::Data);
+    }
+
+    #[test]
+    fn the_variable_search_looks_at_labels_and_can_find_nothing() {
+        let mut state = loaded("survey.sav", 100, 24);
+        press(&mut state, &[Key::Char('i'), Key::Char('/')]);
+        type_text(&mut state, "INCOME");
+        assert_eq!((state.shown_variables(), state.var_cursor), (1, 4));
+        // By label only: "Sampling weight".
+        press(&mut state, &[Key::Esc, Key::Char('/')]);
+        type_text(&mut state, "sampling");
+        assert_eq!((state.shown_variables(), state.var_cursor), (1, 12));
+
+        press(&mut state, &[Key::Esc, Key::Char('/')]);
+        type_text(&mut state, "zzzz");
+        press(&mut state, &[Key::Enter]);
+        assert_eq!(state.shown_variables(), 0);
+        // Nothing to open, copy or go to.
+        press(
+            &mut state,
+            &[Key::Enter, Key::Char('c'), Key::Down, Key::Char('d')],
+        );
+        assert!(state.detail.is_none());
+        assert_eq!(state.take_copy(), None);
+        assert_eq!(state.screen, Screen::Variables);
+        state.on_mouse(Mouse::Click, 10, 4);
+        state.on_mouse(Mouse::ScrollDown, 10, 4);
     }
 
     #[test]

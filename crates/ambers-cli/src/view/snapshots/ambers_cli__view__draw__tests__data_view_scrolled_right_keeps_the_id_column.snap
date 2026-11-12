@@ -11,4 +11,4 @@ expression: "screen(\"survey.sav\", 70, 10, &[Key::End])"
 │   5 │        5 │ 2024-01-01 11:28:00  00:05:44       0.50          │
 │   6 │        6 │ 2024-01-01 12:05:00  00:05:55       0.75          │
 │   7 │        7 │ 2024-01-01 12:42:00  00:06:06       1.00          │
-╰ Labels ─ weight: Sampling weight ─── Row 1/20 ─ Var 13/13 ─ ? help ╯
+╰ Labels ────────────────── Row 1/20 ─ Var 13/13 ─ / filter ─ ? help ╯

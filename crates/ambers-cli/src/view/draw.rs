@@ -32,11 +32,10 @@ const HELP: &[(&str, &str)] = &[
     ("Ctrl+u / Ctrl+d", "half a screen up / down"),
     ("Shift+arrows, { } < >", "50 rows or columns at once"),
     (
-        "Ctrl+arrows, g G 0 $",
+        "Ctrl+arrows, Home/End",
         "to the top, bottom, far left, far right",
     ),
-    ("", "(g G 0 $ work where the terminal keeps Ctrl+arrows)"),
-    ("Home / End", "far left / far right"),
+    ("g G 0 $", "the same, where the terminal keeps Ctrl+arrows"),
     ("1-9 …", "go to row (Enter keeps, Esc goes back)"),
     ("Tab", "next mode: Labels, Codes, Both"),
     ("f", "freeze / unfreeze the first variable"),
@@ -47,9 +46,12 @@ const HELP: &[(&str, &str)] = &[
     ("J / K", "scroll the side panel"),
     ("i", "Variable View and back"),
     ("d", "in Variable View: go to the variable's data"),
+    ("/", "filter rows by this column; search variables"),
+    ("", "jap  =Japan  !=3  >30  <=5  =. (missing)"),
+    ("=", "keep the rows with this cell's value"),
     ("c", "copy the highlighted cell, in full"),
     ("C or t", "copy the open side panel, for a spreadsheet"),
-    ("q, Esc", "close the panel or view; quit"),
+    ("q, Esc", "close the panel, clear filters, leave; quit"),
 ];
 
 pub fn draw(frame: &mut Frame, state: &State, theme: &Theme) {
@@ -106,7 +108,7 @@ pub fn draw(frame: &mut Frame, state: &State, theme: &Theme) {
 fn data_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
     // The right side (position, loading) always shows; the left side gets
     // whatever room remains between the corners.
-    let right = data_status_right(state, theme);
+    let right = data_status_right(state, theme, area.width >= 70);
     let room = (area.width as usize).saturating_sub(right.width() + 3);
     Block::bordered()
         .border_type(BorderType::Rounded)
@@ -122,16 +124,18 @@ fn data_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
     let columns_x = 1 + gutter + 3;
     let inner_width = area.width.saturating_sub(2);
 
-    // Header.
+    // The filter bar, when there is one, then the header.
+    filter_bar(buf, area, state, theme);
+    let header_y = 1 + state.data_bar();
     put(
         buf,
         area,
         1,
-        1,
+        header_y,
         &format!(" {:>gutter$} ", "#"),
         theme.gutter,
     );
-    put(buf, area, 1 + gutter + 2, 1, "│", theme.frame);
+    put(buf, area, 1 + gutter + 2, header_y, "│", theme.frame);
     for slot in &slots {
         let column = &state.columns[slot.column];
         let name = fit(&column.name, slot.width, column.right_aligned(state.mode));
@@ -140,28 +144,31 @@ fn data_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
         } else {
             theme.header
         };
-        put(buf, area, columns_x + slot.x, 1, &name, style);
+        put(buf, area, columns_x + slot.x, header_y, &name, style);
     }
     if let Some(x) = divider {
-        put(buf, area, columns_x + x, 1, "│", theme.frame);
+        put(buf, area, columns_x + x, header_y, "│", theme.frame);
     }
 
-    if state.rows == 0 {
+    if state.shown_rows() == 0 {
         let message = match &state.load {
+            _ if state.rows > 0 => "no row matches the filter",
             Load::Loading => "loading…",
             Load::Failed(_) => "the data could not be read",
             _ => "this file has no rows",
         };
-        put(buf, area, columns_x + 1, 3, message, theme.dim);
+        put(buf, area, columns_x + 1, header_y + 2, message, theme.dim);
         return;
     }
 
     for line in 0..state.grid_rows() {
+        // A position among the rows shown; a filter leaves gaps in the
+        // file's row numbers.
         let row = state.top_row + line;
-        if row >= state.rows {
+        if row >= state.shown_rows() {
             break;
         }
-        let y = 2 + line;
+        let y = header_y + 1 + line;
         let row_style = if row == state.cursor_row {
             theme.cursor_row
         } else if row % 2 == 1 {
@@ -173,7 +180,7 @@ fn data_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
             Rect::new(area.x + 1, area.y + y as u16, inner_width, 1),
             row_style,
         );
-        let number = group_digits((row + 1) as u64).replace(',', "");
+        let number = (state.row_at(row) + 1).to_string();
         put(
             buf,
             area,
@@ -270,7 +277,9 @@ fn data_status_left<'a>(state: &State, theme: &Theme, room: usize) -> Line<'a> {
     Line::from(spans)
 }
 
-fn data_status_right<'a>(state: &State, theme: &Theme) -> Line<'a> {
+/// The right of the bottom border. `roomy` adds the filter hint, which a
+/// narrow window has no room for.
+fn data_status_right<'a>(state: &State, theme: &Theme, roomy: bool) -> Line<'a> {
     let rows = group_digits(state.rows as u64);
     let total = state.total_rows.map(|total| group_digits(total as u64));
     let loading = match (&state.load, total) {
@@ -301,10 +310,11 @@ fn data_status_right<'a>(state: &State, theme: &Theme) -> Line<'a> {
         spans.push(Span::styled(text, style));
         spans.push(Span::styled("─", theme.frame));
     }
-    let row = if state.rows == 0 {
+    // The file's row number, as in the gutter, whatever is filtered.
+    let row = if state.shown_rows() == 0 {
         0
     } else {
-        state.cursor_row + 1
+        state.cursor_file_row() + 1
     };
     spans.push(Span::raw(format!(
         " Row {}/{rows} ",
@@ -317,8 +327,48 @@ fn data_status_right<'a>(state: &State, theme: &Theme) -> Line<'a> {
         state.columns.len()
     )));
     spans.push(Span::styled("─", theme.frame));
-    spans.push(Span::styled(" ? help ", theme.dim));
+    let hint = if roomy {
+        " / filter ─ ? help "
+    } else {
+        " ? help "
+    };
+    spans.push(Span::styled(hint, theme.dim));
     Line::from(spans)
+}
+
+/// The filter bar (Data View) or search bar (Variable View): one line
+/// under the top border, shown only while typed into or active.
+fn filter_bar(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
+    let Some(bar) = state.bar() else {
+        return;
+    };
+    // Inside the frame, with a space of padding on each side.
+    let inner = (area.width as usize).saturating_sub(4);
+    let right_width = bar.right.width().min(inner);
+    let left_width = inner.saturating_sub(right_width + 2);
+    let left_style = if bar.typing {
+        theme.accent
+    } else {
+        theme.header
+    };
+    let right_style = if bar.problem { theme.warn } else { theme.dim };
+    put(
+        buf,
+        area,
+        2,
+        1,
+        &fit(&bar.left, left_width, false),
+        left_style,
+    );
+    let right_x = (area.width as usize).saturating_sub(2 + right_width);
+    put(
+        buf,
+        area,
+        right_x,
+        1,
+        &fit(&bar.right, right_width, false),
+        right_style,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -328,10 +378,11 @@ fn data_status_right<'a>(state: &State, theme: &Theme) -> Line<'a> {
 /// One respondent's answers, one variable per line, in file order: name,
 /// the value with its label, and the variable's label.
 fn respondent_panel(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
-    let title = if state.rows == 0 {
+    let title = if state.shown_rows() == 0 {
         " Row ".to_string()
     } else {
-        format!(" Row {} ", group_digits((state.cursor_row + 1) as u64))
+        let row = state.cursor_file_row() + 1;
+        format!(" Row {} ", group_digits(row as u64))
     };
     Block::bordered()
         .border_type(BorderType::Rounded)
@@ -342,7 +393,7 @@ fn respondent_panel(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) 
             theme.dim,
         ))
         .render(area, buf);
-    if state.rows == 0 {
+    if state.shown_rows() == 0 {
         return;
     }
 
@@ -424,7 +475,8 @@ fn variable_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
     // unless the value table is open and shows the notice itself.
     let room = (area.width as usize).saturating_sub(right.width() + 3);
     let hints = [
-        " ↑↓←→ cell ─ Enter values ─ c copy cell ─ d go to data ─ i / Esc back ",
+        " ↑↓←→ cell ─ Enter values ─ / search ─ c copy cell ─ d go to data ─ i / Esc back ",
+        " Enter values ─ / search ─ c copy cell ─ d data ─ i back ",
         " Enter values ─ c copy cell ─ d data ─ i back ",
         " Enter values ─ c copy ─ i back ",
         " Enter values ─ c copy ",
@@ -451,23 +503,33 @@ fn variable_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
         .title_bottom(right.right_aligned())
         .render(area, buf);
 
+    // The search bar, when there is one, then the header.
+    filter_bar(buf, area, state, theme);
+    let header_y = 1 + state.variable_bar();
     let layout = state.variable_layout();
     for field in &layout {
         let title = fit(field.title, field.width, field.right);
-        put(buf, area, field.x, 1, &title, theme.header);
+        put(buf, area, field.x, header_y, &title, theme.header);
+    }
+    if state.shown_variables() == 0 && !state.columns.is_empty() {
+        let message = "no variable has that in its name or label";
+        put(buf, area, 2, header_y + 2, message, theme.dim);
+        return;
     }
 
     let inner_width = area.width.saturating_sub(2);
     for line in 0..state.variable_rows() {
-        let index = state.var_top + line;
-        if index >= state.columns.len() {
+        // A position in the list, which a search may have narrowed.
+        let position = state.var_top + line;
+        if position >= state.shown_variables() {
             break;
         }
-        let y = 2 + line;
+        let index = state.var_at(position);
+        let y = header_y + 1 + line;
         let on_cursor_row = index == state.var_cursor;
         let row_style = if on_cursor_row {
             theme.cursor_row
-        } else if index % 2 == 1 {
+        } else if position % 2 == 1 {
             theme.stripe
         } else {
             Style::new()
@@ -944,7 +1006,7 @@ mod tests {
 
     #[test]
     fn help_overlay() {
-        insta::assert_snapshot!(screen("survey.sav", 80, 20, &[Key::Char('?')]));
+        insta::assert_snapshot!(screen("survey.sav", 80, 26, &[Key::Char('?')]));
     }
 
     #[test]
@@ -1118,6 +1180,89 @@ mod tests {
     #[test]
     fn the_variable_list_scrolled_to_its_last_field() {
         insta::assert_snapshot!(screen("survey.sav", 80, 18, &[Key::Char('i'), Key::End]));
+    }
+
+    /// `keys`, with each character of `typed` pressed after them.
+    fn typing(keys: &[Key], typed: &str) -> Vec<Key> {
+        keys.iter()
+            .copied()
+            .chain(typed.chars().map(Key::Char))
+            .collect()
+    }
+
+    #[test]
+    fn the_filter_bar_while_typing() {
+        // On city: the grid narrows to Osaka as it is typed.
+        let keys = typing(&[Key::Char('$'), Key::Char('/')], "osa");
+        let text = screen("survey.sav", 100, 14, &keys[..]);
+        // `$` went to the last column; the filter is on that one.
+        assert!(text.contains("Filter weight: osa▏"), "{text}");
+
+        let mut keys = vec![Key::Right; 5];
+        keys.push(Key::Char('/'));
+        let text = screen("survey.sav", 100, 14, &typing(&keys, "osa"));
+        insta::assert_snapshot!(text);
+        assert!(text.contains("Filter city: osa▏"), "{text}");
+        assert!(text.contains("5 of 20 rows"), "{text}");
+    }
+
+    #[test]
+    fn two_filters_are_listed_in_the_bar() {
+        let mut keys = typing(&[Key::Right, Key::Char('/')], "=female");
+        keys.push(Key::Enter);
+        keys.extend([Key::Right; 4]);
+        keys.push(Key::Char('/'));
+        let mut keys = typing(&keys, "osa");
+        keys.push(Key::Enter);
+        let text = screen("survey.sav", 110, 14, &keys);
+        insta::assert_snapshot!(text);
+        assert!(
+            text.contains("Filter gender: =female │ city: osa"),
+            "{text}"
+        );
+        // The gutter keeps the file's row numbers.
+        assert!(text.contains("│   2 │"), "{text}");
+        assert!(text.contains("│  18 │"), "{text}");
+        assert!(!text.contains("│   1 │"), "{text}");
+    }
+
+    #[test]
+    fn a_filter_that_matches_nothing_says_so() {
+        let keys = typing(&[Key::Char('/')], "zzz");
+        let text = screen("survey.sav", 100, 14, &keys);
+        insta::assert_snapshot!(text);
+        assert!(text.contains("no row matches the filter"), "{text}");
+        assert!(text.contains("0 of 20 rows"), "{text}");
+    }
+
+    #[test]
+    fn a_half_typed_filter_says_what_is_missing() {
+        let text = screen("survey.sav", 100, 14, &[Key::Char('/'), Key::Char('>')]);
+        assert!(text.contains("Filter id: >▏"), "{text}");
+        assert!(text.contains("type a number after >"), "{text}");
+    }
+
+    #[test]
+    fn the_variable_search_bar() {
+        let keys = typing(&[Key::Char('i'), Key::Char('/')], "brand");
+        let text = screen("survey.sav", 100, 20, &keys);
+        insta::assert_snapshot!(text);
+        assert!(text.contains("Search variables: brand▏"), "{text}");
+        assert!(text.contains("3 of 13 variables"), "{text}");
+        // The numbers are the variables' places in the file.
+        assert!(text.contains(" 7  brand_a"), "{text}");
+        assert!(!text.contains("gender"), "{text}");
+
+        let none = screen(
+            "survey.sav",
+            100,
+            20,
+            &typing(&[Key::Char('i'), Key::Char('/')], "zzzz"),
+        );
+        assert!(
+            none.contains("no variable has that in its name or label"),
+            "{none}"
+        );
     }
 
     #[test]

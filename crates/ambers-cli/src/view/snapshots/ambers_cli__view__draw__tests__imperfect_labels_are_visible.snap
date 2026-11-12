@@ -17,4 +17,4 @@ expression: "screen(\"imperfect_labels.sav\", 100, 16, &[])"
 │  11 │       11 │ 7         Extremely likely   Brand B     New York         59.0                  │
 │  12 │       12 │ Agree     95                 Brand A     Los Angeles      70.0                  │
 │                                                                                                  │
-╰ Labels ─ id: Respondent ID ─ ⚠ 2 vars with unlabelled values ─────── Row 1/12 ─ Var 1/6 ─ ? help ╯
+╰ Labels ─ id: Respondent … ─────────────────────────────── Row 1/12 ─ Var 1/6 ─ / filter ─ ? help ╯

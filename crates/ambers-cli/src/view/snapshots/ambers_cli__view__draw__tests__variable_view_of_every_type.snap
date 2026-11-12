@@ -22,4 +22,4 @@ expression: "screen(\"variable_types.sav\", 150, 21, &[Key::Char('i')])"
 │ (empty)                                                                                                                                            │
 │                                                                                                                                                    │
 │                                                                                                                                                    │
-╰ ↑↓←→ cell ─ Enter values ─ c copy cell ─ d go to data ─ i / Esc back ─────────────────────────────────────────────────── counts: 8 rows ─ Var 1/17 ╯
+╰ ↑↓←→ cell ─ Enter values ─ / search ─ c copy cell ─ d go to data ─ i / Esc back ──────────────────────────────────────── counts: 8 rows ─ Var 1/17 ╯

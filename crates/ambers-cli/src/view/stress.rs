@@ -117,3 +117,83 @@ fn the_screen_stays_responsive_while_a_large_file_loads() {
         slowest,
     );
 }
+
+/// How long one keystroke in the filter bar takes on the whole file: the
+/// filter runs and the screen is drawn on every key.
+#[test]
+#[ignore = "measurement on a 5.4 GB private file; run by hand with --release"]
+fn typing_a_filter_stays_fast_on_a_large_file() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/test_6_large.sav");
+    if !path.exists() {
+        eprintln!("Skipping: {} not present", path.display());
+        return;
+    }
+    let (scanner, batch_rows) = loader::open(&path, None).unwrap();
+    let mut state = State::new(
+        "test_6_large.sav".to_string(),
+        scanner.metadata(),
+        &scanner.schema(),
+        batch_rows,
+        None,
+        Mode::Labels,
+    );
+    state.resize(200, 60);
+    for message in loader::spawn(scanner, state.profiler_handle(), None) {
+        state.receive(message);
+    }
+    let theme = Theme::pick(ThemeName::Dracula, false);
+    let mut terminal = Terminal::new(TestBackend::new(200, 60)).unwrap();
+    eprintln!("{} rows, {} columns", state.rows, state.columns.len());
+
+    // One column of each kind: all-distinct numbers, labelled codes, text.
+    let find =
+        |wanted: &dyn Fn(&super::format::Column) -> bool| state.columns.iter().position(wanted);
+    let plain = find(&|c| c.numeric && c.labels.is_empty());
+    let labelled = find(&|c| c.numeric && c.labels.len() > 2);
+    let text = find(&|c| !c.numeric && c.format.starts_with('A'));
+    let cases = [
+        ("numbers", plain, "104"),
+        ("labelled codes", labelled, "the"),
+        ("text", text, "the"),
+        ("text, exact", text, "=yes"),
+    ];
+    for (kind, column, typed) in cases {
+        let Some(column) = column else {
+            eprintln!("{kind}: no such column");
+            continue;
+        };
+        state.cursor_col = column;
+        state.on_key(Key::Char('/'));
+        let mut keys = Vec::new();
+        for ch in typed.chars() {
+            let key = Instant::now();
+            state.on_key(Key::Char(ch));
+            terminal.draw(|frame| draw(frame, &state, &theme)).unwrap();
+            keys.push(format!("{:.1?}", key.elapsed()));
+        }
+        eprintln!(
+            "{kind} ({}), typing {typed:?}: {} per key, {} rows kept",
+            state.columns[column].name,
+            keys.join(", "),
+            state.shown_rows()
+        );
+        state.on_key(Key::Esc);
+    }
+
+    // A second filter on top of a kept one tests only the rows it kept.
+    if let (Some(first), Some(second)) = (labelled, text) {
+        state.cursor_col = first;
+        state.on_key(Key::Char('='));
+        let kept = state.shown_rows();
+        state.cursor_col = second;
+        state.on_key(Key::Char('/'));
+        let key = Instant::now();
+        state.on_key(Key::Char('e'));
+        terminal.draw(|frame| draw(frame, &state, &theme)).unwrap();
+        eprintln!(
+            "stacked: one key on top of a filter keeping {kept} rows: {:.1?}, {} rows kept",
+            key.elapsed(),
+            state.shown_rows()
+        );
+    }
+}

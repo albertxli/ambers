@@ -1,0 +1,18 @@
+---
+source: crates/ambers-cli/src/view/draw.rs
+expression: text
+---
+╭ survey.sav ────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Filter gender: =female │ city: osa                                       5 of 20 rows ─ / edit ─ Esc clear │
+│   # │       id │ gender  satisfaction       age      income  city          brand_a  brand_b  brand_c  inte…│
+│   2 │        2 │ Female  Dissatisfied        21    21500.50  Osaka         Yes      No       No       2024…│
+│   6 │        6 │ Female  Very dissatisfied   33    27502.50  Osaka         Yes      No       No       2024…│
+│  10 │       10 │ Female  Refused             45    33504.50  Osaka         Yes      Yes      No       2024…│
+│  14 │       14 │ Female  .                   57    39506.50  Osaka         Yes      No       No       2024…│
+│  18 │       18 │ Female  Neutral             19   999999.00  Osaka         Yes      No       No       2024…│
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+╰ Labels ─ city: City of residence ───────────────────────────────── Row 2/20 ─ Var 6/13 ─ / filter ─ ? help ╯

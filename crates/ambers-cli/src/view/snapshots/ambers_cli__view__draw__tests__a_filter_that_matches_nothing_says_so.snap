@@ -1,0 +1,18 @@
+---
+source: crates/ambers-cli/src/view/draw.rs
+expression: text
+---
+╭ survey.sav ──────────────────────────────────────────────────────────────────────────────────────╮
+│ Filter id: zzz▏                                                                     0 of 20 rows │
+│   # │       id │ gender  satisfaction       age      income  city          brand_a  brand_b  bra…│
+│                                                                                                  │
+│       no row matches the filter                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+╰ Labels ─ id: Respondent ID ───────────────────────────── Row 0/20 ─ Var 1/13 ─ / filter ─ ? help ╯

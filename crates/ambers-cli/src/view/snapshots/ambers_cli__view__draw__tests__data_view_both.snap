@@ -15,4 +15,4 @@ expression: "screen(\"survey.sav\", 100, 14, &[Key::Tab, Key::Tab])"
 │   9 │        9 │ 1.00 Male    4.00  Satisfied           42   999999.00  Lisbon            0.00 No│
 │  10 │       10 │ 2.00 Female  99.00 Refused             45    33504.50  Osaka             1.00 Y…│
 │  11 │       11 │ 1.00 Male    1.00  Very dissatisfied   48    35005.00  Lima              0.00 No│
-╰ Both ─ id: Respondent ID ────────────────────────────────────────── Row 1/20 ─ Var 1/13 ─ ? help ╯
+╰ Both ─ id: Respondent ID ─────────────────────────────── Row 1/20 ─ Var 1/13 ─ / filter ─ ? help ╯

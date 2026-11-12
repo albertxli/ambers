@@ -1,0 +1,24 @@
+---
+source: crates/ambers-cli/src/view/draw.rs
+expression: text
+---
+╭ survey.sav ─ Variable View ──────────────────────────────────────────────────────────────────────╮
+│ Search variables: brand▏                                                       3 of 13 variables │
+│  #  Name             Type         Label                             Values                       │
+│  7  brand_a          categorical  Brands mentioned: A               0=No, 1=Yes                  │
+│  8  brand_b          categorical  Brands mentioned: B               0=No, 1=Yes                  │
+│  9  brand_c          categorical  Brands mentioned: C               0=No, 1=Yes                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│─ brand_a · Label ────────────────────────────────────────────────────────────────────────────────│
+│ Brands mentioned: A                                                                              │
+│                                                                                                  │
+│                                                                                                  │
+╰ Enter values ─ / search ─ c copy cell ─ d data ─ i back ───────────── counts: 20 rows ─ Var 7/13 ╯

@@ -10,6 +10,7 @@
 mod clipboard;
 mod detail;
 mod draw;
+mod filter;
 mod format;
 mod loader;
 mod state;

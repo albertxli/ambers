@@ -1,16 +1,17 @@
 ---
 source: crates/ambers-cli/src/view/draw.rs
-expression: "screen(\"survey.sav\", 80, 20, &[Key::Char('?')])"
+expression: "screen(\"survey.sav\", 80, 26, &[Key::Char('?')])"
 ---
+╭ survey.sav ──────────────────────────────────────────────────────────────────╮
+│   # │       id │ gender  satisfaction       age      income  city          b…│
 ╭ Keys ────────────────────────────────────────────────────────────────────────╮
 │ arrows, h j k l        move one cell                                         │
 │ mouse                  wheel scrolls (Shift or Alt: sideways), click selects │
 │ PgUp / PgDn            one screen up / down                                  │
 │ Ctrl+u / Ctrl+d        half a screen up / down                               │
 │ Shift+arrows, { } < >  50 rows or columns at once                            │
-│ Ctrl+arrows, g G 0 $   to the top, bottom, far left, far right               │
-│                        (g G 0 $ work where the terminal keeps Ctrl+arrows)   │
-│ Home / End             far left / far right                                  │
+│ Ctrl+arrows, Home/End  to the top, bottom, far left, far right               │
+│ g G 0 $                the same, where the terminal keeps Ctrl+arrows        │
 │ 1-9 …                  go to row (Enter keeps, Esc goes back)                │
 │ Tab                    next mode: Labels, Codes, Both                        │
 │ f                      freeze / unfreeze the first variable                  │
@@ -18,7 +19,12 @@ expression: "screen(\"survey.sav\", 80, 20, &[Key::Char('?')])"
 │ J / K                  scroll the side panel                                 │
 │ i                      Variable View and back                                │
 │ d                      in Variable View: go to the variable's data           │
+│ /                      filter rows by this column; search variables          │
+│                        jap  =Japan  !=3  >30  <=5  =. (missing)              │
+│ =                      keep the rows with this cell's value                  │
 │ c                      copy the highlighted cell, in full                    │
 │ C or t                 copy the open side panel, for a spreadsheet           │
-│ q, Esc                 close the panel or view; quit                         │
+│ q, Esc                 close the panel, clear filters, leave; quit           │
 ╰ any key closes ──────────────────────────────────────────────────────────────╯
+│                                                                              │
+╰ Labels ─ id: Respondent ID ───────── Row 1/20 ─ Var 1/13 ─ / filter ─ ? help ╯
