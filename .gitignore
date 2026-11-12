@@ -15,3 +15,6 @@ CLAUDE.md
 milestone4.md
 notebook_test/
 refactoring.md
+
+# Front end (web/): packages are installed by Bun, the build goes to crates/ambers-web/dist/
+node_modules/

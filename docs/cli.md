@@ -352,7 +352,7 @@ These are the checks of `ambers.validate()` (see [validate.md](validate.md)), ru
 
 ## `am open`: the file in your browser
 
-> In development. The command and its server work; the full browser interface is still being built, and until it is included the page shows only a file's first rows. `am view` is the complete viewer today.
+> In development. Today the page has a Data View: a grid of every row and variable that scrolls smoothly on files of any size, value labels / codes / both, resizable columns, and the selected cell shown in full with a Copy button. Filters, search and a Variable View are not there yet; `am view` has them. A binary built without the front end shows a basic page with a file's first rows instead, and says so when it starts.
 
 ```bash
 am open survey.sav                 # serve the file and open it in the browser
@@ -369,6 +369,8 @@ am open big.sav --memory 8         # load at most 8 GB of data
 | `--memory GB` | half of the free memory | Stop loading when the data takes this much memory |
 
 `am open` starts a small server on your machine and prints an address like `http://127.0.0.1:2627/?token=…`. The page asks the server for the rows it shows, so a file of any size opens at once and the data never leaves the machine.
+
+**In the page.** Click a cell or move with the arrow keys; PgUp / PgDn, Home / End and Ctrl+arrows work as in a spreadsheet, and Ctrl+C copies the selected cell. Drag the right edge of a column's header to resize it; double-click the edge to reset it. The strip under the grid shows the selected cell in full. While a file loads, the grid already works and the status bar shows the progress.
 
 **One server.** If ambers is already serving, a second `am open other.sav` opens that file in the running server and returns at once. A server from a different ambers version is left alone, and a new one starts on another port.
 

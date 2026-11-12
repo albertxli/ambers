@@ -140,7 +140,14 @@ fn address(port: u16, token: &str, dataset: Option<&str>) -> String {
 }
 
 /// 32 hexadecimal characters from the system's random source.
+///
+/// For front-end development only, `AMBERS_DEV_TOKEN` fixes the token, so
+/// the Vite dev server can be configured once to pass requests on (see
+/// `web/vite.config.ts`). Every other check stays in force.
 fn new_token() -> io::Result<String> {
+    if let Some(fixed) = std::env::var_os("AMBERS_DEV_TOKEN").filter(|token| !token.is_empty()) {
+        return Ok(fixed.to_string_lossy().into_owned());
+    }
     let mut bytes = [0u8; 16];
     getrandom::fill(&mut bytes).map_err(io::Error::other)?;
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())

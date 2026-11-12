@@ -1,0 +1,48 @@
+/*
+ * Every colour and font of the interface, in one place.
+ *
+ * The palette is the open Dracula theme (draculatheme.com, MIT). Dracula
+ * Pro values must not be put here: it is a paid theme and this repository
+ * is public (docs/decisions/0004-open-dracula-palette.md). To try another
+ * palette, change the `--dracula-*` values; nothing else names a colour.
+ */
+:root {
+  --dracula-background: #282a36;
+  --dracula-current-line: #44475a;
+  --dracula-foreground: #f8f8f2;
+  --dracula-comment: #6272a4;
+  --dracula-cyan: #8be9fd;
+  --dracula-green: #50fa7b;
+  --dracula-orange: #ffb86c;
+  --dracula-pink: #ff79c6;
+  --dracula-purple: #bd93f9;
+  --dracula-red: #ff5555;
+  --dracula-yellow: #f1fa8c;
+
+  /* Roles. Components use these, never the palette names above. */
+  --backdrop: color-mix(in srgb, var(--dracula-background) 62%, black);
+  --panel: var(--dracula-background);
+  --surface: color-mix(in srgb, var(--dracula-current-line) 38%, var(--dracula-background));
+  --selection: var(--dracula-current-line);
+  --border: color-mix(in srgb, var(--dracula-current-line) 72%, var(--dracula-background));
+  --grid-line: color-mix(in srgb, var(--dracula-current-line) 36%, var(--dracula-background));
+  --stripe: color-mix(in srgb, var(--dracula-current-line) 16%, var(--dracula-background));
+
+  --text: var(--dracula-foreground);
+  --text-muted: color-mix(in srgb, var(--dracula-comment) 62%, var(--dracula-foreground));
+  --text-faint: var(--dracula-comment);
+  --heading: var(--dracula-cyan);
+  --accent: var(--dracula-purple);
+  --cursor: var(--dracula-pink);
+  --warning: var(--dracula-orange);
+  --danger: var(--dracula-red);
+  --ok: var(--dracula-green);
+  --number: var(--dracula-orange);
+
+  --font-ui: "DM Sans Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "JetBrains Mono Variable", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+
+  --radius-large: 12px;
+  --radius: 7px;
+  --radius-small: 4px;
+}
