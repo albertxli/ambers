@@ -4,6 +4,13 @@ All notable changes to ambers are documented in this file.
 
 ## [Unreleased]
 
+- Viewer: a bar under the grid in Data View shows the highlighted cell in full, wrapped over up to three lines, as Variable View already did; `v` hides or shows it in both views
+- Viewer: columns can be resized. `[` and `]` make the current column narrower or wider, `w` widens it to the room the window has (again: back to its own width), and the right edge of a column in the header line can be dragged with the mouse
+- Viewer: the side panels (one respondent's answers, a variable's value table) can be resized with `-` and `+` or by dragging their left border
+- Viewer: marks in the header line show where a column's edge can be dragged; the one being dragged is highlighted
+- Viewer: the frame keeps a margin from the window's edge (dropped below 60 × 16), and the Dracula background is painted inside the rounded frames only, not as a sharp rectangle over the whole window
+- Viewer: the bottom border of Data View no longer repeats the variable's name and label while the full-text bar above it shows them
+
 - Docs: the README's command-line section is now a short tour (install, `am info`, `am view`) that links to `docs/cli.md` for the details
 - Docs: the Windows install line now passes `-NoProfile`, so a PowerShell profile that fails to load (for example a prompt theme started from a Git Bash shell) no longer prints an error before the install
 

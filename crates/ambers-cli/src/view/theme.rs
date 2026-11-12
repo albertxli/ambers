@@ -57,6 +57,7 @@ impl Theme {
         const STRIPE: Color = Color::Rgb(0x30, 0x32, 0x41);
 
         Theme {
+            // The background is painted inside frames only (`draw::card`).
             base: Style::new().fg(FOREGROUND).bg(BACKGROUND),
             frame: Style::new().fg(COMMENT),
             title: Style::new().fg(PURPLE).add_modifier(Modifier::BOLD),

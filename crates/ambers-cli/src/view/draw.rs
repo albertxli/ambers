@@ -24,12 +24,8 @@ use crate::render::wrap;
 /// The keys, as listed by `?`.
 const HELP: &[(&str, &str)] = &[
     ("arrows, h j k l", "move one cell"),
-    (
-        "mouse",
-        "wheel scrolls (Shift or Alt: sideways), click selects",
-    ),
-    ("PgUp / PgDn", "one screen up / down"),
-    ("Ctrl+u / Ctrl+d", "half a screen up / down"),
+    ("mouse", "scroll (Shift/Alt: sideways), click, drag an edge"),
+    ("PgUp/PgDn, Ctrl+u/d", "a screen, half a screen up / down"),
     ("Shift+arrows, { } < >", "50 rows or columns at once"),
     (
         "Ctrl+arrows, Home/End",
@@ -44,6 +40,9 @@ const HELP: &[(&str, &str)] = &[
         "side panel: this respondent, or this variable's values",
     ),
     ("J / K", "scroll the side panel"),
+    ("[ ]  w", "column narrower / wider; w: full width and back"),
+    ("- +", "side panel narrower / wider"),
+    ("v", "show / hide the full text under the table"),
     ("i", "Variable View and back"),
     ("d", "in Variable View: go to the variable's data"),
     ("/", "filter rows by this column; search variables"),
@@ -55,13 +54,22 @@ const HELP: &[(&str, &str)] = &[
 ];
 
 pub fn draw(frame: &mut Frame, state: &State, theme: &Theme) {
-    let area = frame.area();
+    let screen = frame.area();
     let buf = frame.buffer_mut();
-    buf.set_style(area, theme.base);
-    if area.width < 24 || area.height < 5 {
-        put(buf, area, 0, 0, "window too small", theme.warn);
+    if screen.width < 24 || screen.height < 5 {
+        put(buf, screen, 0, 0, "window too small", theme.warn);
         return;
     }
+    // Everything sits inside the margin, which keeps the terminal's own
+    // colour: only the cards are filled (`card`).
+    let (left, top) = state.margin();
+    let (left, top) = (left as u16, top as u16);
+    let area = Rect::new(
+        screen.x + left,
+        screen.y + top,
+        screen.width - 2 * left,
+        screen.height - 2 * top,
+    );
     match state.screen {
         Screen::Data => {
             let panel = state.panel_width() as u16;
@@ -72,7 +80,7 @@ pub fn draw(frame: &mut Frame, state: &State, theme: &Theme) {
             data_view(buf, grid, state, theme);
             if panel > 0 {
                 let side = Rect {
-                    x: grid.width,
+                    x: area.x + grid.width,
                     width: panel,
                     ..area
                 };
@@ -88,7 +96,7 @@ pub fn draw(frame: &mut Frame, state: &State, theme: &Theme) {
             variable_view(buf, list, state, theme);
             if panel > 0 {
                 let side = Rect {
-                    x: list.width,
+                    x: area.x + list.width,
                     width: panel,
                     ..area
                 };
@@ -97,7 +105,24 @@ pub fn draw(frame: &mut Frame, state: &State, theme: &Theme) {
         }
     }
     if state.help {
-        help(buf, area, theme);
+        help(buf, screen, theme);
+    }
+}
+
+/// Give a framed area the theme's colours: the background inside the frame
+/// only. Filled frame cells reach half a cell past the line, which shows
+/// as a second, sharp-cornered shape behind the rounded one; no fill at
+/// all makes the stripes and the text bar hard to read (both tried
+/// 2026-11-12).
+fn card(buf: &mut Buffer, area: Rect, theme: &Theme) {
+    let text = Style {
+        bg: None,
+        ..theme.base
+    };
+    buf.set_style(area, text);
+    if area.width > 2 && area.height > 2 {
+        let inside = Rect::new(area.x + 1, area.y + 1, area.width - 2, area.height - 2);
+        buf.set_style(inside, theme.base);
     }
 }
 
@@ -110,6 +135,7 @@ fn data_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
     // whatever room remains between the corners.
     let right = data_status_right(state, theme, area.width >= 70);
     let room = (area.width as usize).saturating_sub(right.width() + 3);
+    card(buf, area, theme);
     Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(theme.frame)
@@ -145,6 +171,21 @@ fn data_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
             theme.header
         };
         put(buf, area, columns_x + slot.x, header_y, &name, style);
+        // A mark after each column that shows whole: where its edge can
+        // be dragged. It lights up while it is.
+        // The frozen column has its divider, and a mark beside the frame
+        // would double it.
+        let x = columns_x + slot.x + slot.width;
+        let frozen = divider.is_some() && slot.column == 0;
+        let whole = slot.width == state.column_width(slot.column);
+        if whole && !frozen && x + 2 < area.width as usize {
+            let style = if state.grabbed_column() == Some(slot.column) {
+                theme.accent
+            } else {
+                theme.frame
+            };
+            put(buf, area, x, header_y, "│", style);
+        }
     }
     if let Some(x) = divider {
         put(buf, area, columns_x + x, header_y, "│", theme.frame);
@@ -211,6 +252,17 @@ fn data_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
             put(buf, area, columns_x + slot.x, y, &text, style);
         }
     }
+
+    // Under the grid: the highlighted cell in full, as the mode shows it.
+    if let Some(column) = state.columns.get(state.cursor_col) {
+        let heading = if column.label.is_empty() {
+            column.name.clone()
+        } else {
+            format!("{} · {}", column.name, column.label)
+        };
+        let full = state.cell(state.cursor_row, state.cursor_col).text;
+        full_text_bar(buf, area, state, theme, &heading, &full.replace('\n', " "));
+    }
 }
 
 /// How a cell's flags show: a value without a label in the warning colour,
@@ -243,12 +295,14 @@ fn data_status_left<'a>(state: &State, theme: &Theme, room: usize) -> Line<'a> {
         pieces.push((format!(" Go to row: {typed}▏"), theme.accent));
     } else if let Some(notice) = &state.notice {
         pieces.push((format!(" {notice} "), theme.accent));
+    } else if state.bar_lines() > 0 {
+        // The bar above the border already names the variable.
     } else if let Some(column) = state.columns.get(state.cursor_col) {
         let label = if column.label.is_empty() {
             String::new()
         } else {
             // As much of the label as the border has room for, after the
-            // mode, the name and the warning; `L` copies all of it.
+            // mode, the name and the warning; the bar above has all of it.
             let taken = mode.width() + column.name.width() + 6;
             let taken = taken + warning.as_ref().map_or(0, |warning| warning.width() + 1);
             let width = column.label.width().min(room.saturating_sub(taken).max(12));
@@ -384,14 +438,24 @@ fn respondent_panel(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) 
         let row = state.cursor_file_row() + 1;
         format!(" Row {} ", group_digits(row as u64))
     };
+    // The longest hint that fits between the corners.
+    let room = (area.width as usize).saturating_sub(2);
+    let hints = [
+        " J/K scroll ─ C copy row ─ Enter close ",
+        " C copy row ─ Enter close ",
+        " C copy row ",
+        "",
+    ];
+    let hint = hints
+        .iter()
+        .find(|hint| hint.width() <= room)
+        .unwrap_or(&"");
+    card(buf, area, theme);
     Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(theme.frame)
         .title(Line::styled(title, theme.title))
-        .title_bottom(Line::styled(
-            " J/K scroll ─ C copy row ─ Enter close ",
-            theme.dim,
-        ))
+        .title_bottom(Line::styled(*hint, theme.dim))
         .render(area, buf);
     if state.shown_rows() == 0 {
         return;
@@ -492,6 +556,7 @@ fn variable_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
             Line::styled(*hint, theme.dim)
         }
     };
+    card(buf, area, theme);
     Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(theme.frame)
@@ -569,33 +634,45 @@ fn variable_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
             );
         }
     }
-    full_text_bar(buf, area, state, theme);
+    if let Some(column) = state.columns.get(state.var_cursor) {
+        let (title, _) = VARIABLE_FIELDS[state.var_field];
+        let heading = format!("{} · {title}", column.name);
+        // Labelled values are one per line when copied; here they run on.
+        let full = state.variable_cell(state.var_cursor, state.var_field);
+        full_text_bar(buf, area, state, theme, &heading, &full.replace('\n', ", "));
+    }
 }
 
-/// Under the variable list, the highlighted cell's text in full, wrapped:
-/// the whole label, the whole value list. The list itself shows them cut.
-fn full_text_bar(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
+/// Under the grid or the variable list, the highlighted cell's text in
+/// full, wrapped: a whole open-ended answer, a whole label, a whole value
+/// list. The table above shows them cut.
+fn full_text_bar(
+    buf: &mut Buffer,
+    area: Rect,
+    state: &State,
+    theme: &Theme,
+    heading: &str,
+    full: &str,
+) {
     let lines = state.bar_lines();
-    if lines == 0 || state.columns.is_empty() {
+    if lines == 0 || area.width < 8 {
         return;
     }
-    // A rule, then the text, above the bottom border.
+    // A rule joined to the frame, then the text, above the bottom border.
     let rule_y = (area.height as usize).saturating_sub(lines + 2);
     let inner_width = (area.width as usize).saturating_sub(2);
+    let y = area.y + rule_y as u16;
     put(buf, area, 1, rule_y, &"─".repeat(inner_width), theme.frame);
-
-    let (title, _) = VARIABLE_FIELDS[state.var_field];
-    let name = &state.columns[state.var_cursor].name;
-    let heading = format!("{name} · {title}");
+    buf.set_string(area.x, y, "├", theme.frame);
+    buf.set_string(area.right() - 1, y, "┤", theme.frame);
+    let heading = fit(heading, heading.width().min(inner_width - 4), false);
     put(buf, area, 2, rule_y, &format!(" {heading} "), theme.header);
 
     let text_width = inner_width.saturating_sub(2);
-    let full = state.variable_cell(state.var_cursor, state.var_field);
-    // Labelled values are one per line when copied; here they run on.
-    let wrapped = wrap(&full.replace('\n', ", "), text_width);
+    let wrapped = wrap(full, text_width);
     let mut shown: Vec<String> = wrapped.lines().take(lines).map(str::to_string).collect();
     if wrapped.lines().count() > lines {
-        // More than fits: the last line says so. `C` still copies all of it.
+        // More than fits: the last line says so. `c` still copies all of it.
         let last = shown.last_mut().expect("at least one line is shown");
         *last = fit(&format!("{last} "), text_width.saturating_sub(1), false)
             .trim_end()
@@ -629,6 +706,7 @@ fn variable_detail(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
         .iter()
         .find(|hint| hint.width() <= room)
         .unwrap_or(&"");
+    card(buf, area, theme);
     Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(theme.frame)
@@ -890,6 +968,7 @@ mod tests {
     use super::*;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::style::Color;
 
     use super::super::state::Key;
     use super::super::state::tests::loaded;
@@ -1278,5 +1357,92 @@ mod tests {
         let narrow = render(&state, 70, 10);
         assert!(narrow.contains(" Row 1/20 "), "{narrow}");
         assert!(!narrow.contains("how satisfied were you overall?"));
+    }
+
+    /// The screen as the program shows it: with the margin.
+    fn with_margin(width: u16, height: u16, keys: &[Key]) -> (State, String) {
+        let mut state = loaded("survey.sav", width, height);
+        state.margins = true;
+        state.resize(width, height);
+        for &key in keys {
+            state.on_key(key);
+        }
+        let text = render(&state, width, height);
+        (state, text)
+    }
+
+    #[test]
+    fn the_frame_sits_inside_a_margin() {
+        let (_, text) = with_margin(100, 20, &[]);
+        insta::assert_snapshot!(text);
+    }
+
+    #[test]
+    fn a_widened_column_and_a_resized_panel() {
+        // On city: as wide as the screen allows, then the respondent
+        // panel, made narrower.
+        let keys = [
+            Key::Right,
+            Key::Right,
+            Key::Right,
+            Key::Right,
+            Key::Right,
+            Key::Char('w'),
+            Key::Enter,
+            Key::Char('-'),
+            Key::Char('-'),
+        ];
+        let (_, text) = with_margin(120, 20, &keys);
+        insta::assert_snapshot!(text);
+    }
+
+    #[test]
+    fn the_data_view_bar_shows_a_long_answer_in_full() {
+        let mut state = loaded("survey.sav", 100, 16);
+        let city = (state.columns.iter())
+            .position(|column| column.name == "city")
+            .unwrap();
+        state.cursor_col = city;
+        let text = render(&state, 100, 16);
+        // The rule carries the variable and its label, joined to the frame.
+        let rule = text.lines().nth(11).unwrap();
+        assert!(rule.starts_with("├─ city · "), "{text}");
+        assert!(rule.ends_with('┤'), "{text}");
+        assert!(text.lines().nth(12).unwrap().contains("Lisbon"), "{text}");
+        // Hidden with `v`, the grid has the lines.
+        state.on_key(Key::Char('v'));
+        let hidden = render(&state, 100, 16);
+        assert!(!hidden.contains('├'), "{hidden}");
+    }
+
+    #[test]
+    fn the_background_is_painted_inside_the_frames_only() {
+        let (state, _) = with_margin(100, 20, &[Key::Enter]);
+        let theme = Theme::pick(ThemeName::Dracula, false);
+        let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
+        terminal.draw(|frame| draw(frame, &state, &theme)).unwrap();
+        let buffer = terminal.backend().buffer();
+        let bg = |x: u16, y: u16| buffer[(x, y)].style().bg;
+        // The margin and the frame lines keep the terminal's own colour.
+        for (x, y) in [
+            (0, 0),
+            (99, 19),
+            (2, 1),
+            (3, 1),
+            (2, 10),
+            (97, 10),
+            (40, 18),
+        ] {
+            assert!(
+                matches!(bg(x, y), None | Some(Color::Reset)),
+                "cell {x},{y}: {:?}",
+                bg(x, y)
+            );
+        }
+        // Inside the frames the background is painted.
+        for (x, y) in [(3, 2), (30, 16), (96, 10)] {
+            assert_eq!(bg(x, y), theme.base.bg, "cell {x},{y}");
+        }
+        assert_eq!(bg(40, 3), theme.cursor_row.bg);
     }
 }

@@ -17,7 +17,7 @@ expression: "screen(\"imperfect_labels.sav\", 130, 20,\n&[Key::Char('i'), Key::D
 │                                                               ││     6  (no label)                       1      8.3%      8.3% │
 │                                                               ││     7  (no label)                       1      8.3%      8.3% │
 │                                                               ││     8  (no label)                       1      8.3%      8.3% │
-│─ scale · Label ───────────────────────────────────────────────││     9  (no label)                       1      8.3%      8.3% │
+├─ scale · Label ───────────────────────────────────────────────┤│     9  (no label)                       1      8.3%      8.3% │
 │ Likelihood to recommend                                       ││    10  Extremely likely                 1      8.3%      8.3% │
 │                                                               ││    95  (no label, user-missing)         1      8.3%      8.3% │
 │                                                               ││                                                               │

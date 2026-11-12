@@ -3,7 +3,7 @@ source: crates/ambers-cli/src/view/draw.rs
 expression: "screen(\"survey.sav\", 40, 10, &[Key::Right, Key::Right])"
 ---
 ╭ survey.sav ──────────────────────────╮
-│   # │       id │ satisfaction       …│
+│   # │       id │ satisfaction     │ …│
 │   1 │        1 │ Very dissatisfied  …│
 │   2 │        2 │ Dissatisfied       …│
 │   3 │        3 │ Neutral            …│

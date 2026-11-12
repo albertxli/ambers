@@ -1,0 +1,23 @@
+---
+source: crates/ambers-cli/src/view/draw.rs
+expression: text
+---
+
+  ╭ survey.sav ────────────────────────────────────────────────────────────────╮╭ Row 1 ─────────────────────────────╮
+  │   # │       id │ city                                                      ││ id           1          Responden… │
+  │   1 │        1 │ Lisbon                                                    ││ gender       1.00 Male  Gender     │
+  │   2 │        2 │ Osaka                                                     ││ satisfacti…  1.00  Ve…  Overall s… │
+  │   3 │        3 │ Lima                                                      ││ age          18         Age in ye… │
+  │   4 │        4 │ Not answered                                              ││ income       20000.00   Annual in… │
+  │   5 │        5 │ Lisbon                                                    ││ city         Lisbon     City of r… │
+  │   6 │        6 │ Osaka                                                     ││ brand_a      0.00 No    Brands me… │
+  │   7 │        7 │ Lima                                                      ││ brand_b      1.00 Yes   Brands me… │
+  │   8 │        8 │ Not answered                                              ││ brand_c      1.00 Yes   Brands me… │
+  │   9 │        9 │ Lisbon                                                    ││ interview_…  2024-01-…  Interview… │
+  │  10 │       10 │ Osaka                                                     ││ interview_…  2024-01-…  Interview… │
+  │  11 │       11 │ Lima                                                      ││ duration     00:05:00   Interview… │
+  ├─ city · City of residence ─────────────────────────────────────────────────┤│ weight       0.50       Sampling … │
+  │ Lisbon                                                                     ││                                    │
+  │                                                                            ││                                    │
+  │                                                                            ││                                    │
+  ╰ Labels ─────────────────────────── Row 1/20 ─ Var 6/13 ─ / filter ─ ? help ╯╰ C copy row ─ Enter close ──────────╯

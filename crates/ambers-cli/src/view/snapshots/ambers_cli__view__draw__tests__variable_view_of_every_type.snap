@@ -18,7 +18,7 @@ expression: "screen(\"variable_types.sav\", 150, 21, &[Key::Char('i')])"
 │ 12  response   categorical                                    0=Not selected, 1=Selected            8        0  ok                                 │
 │ 13  Q1_health  categorical                                    0=Not selected, 1=Health insu…        8        0  ok                                 │
 │ 14  likert     categorical  Overall rating                    1=Very poor, 2=Poor, 3=Fair, …        7        1  ok                                 │
-│─ id · Label ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────│
+├─ id · Label ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
 │ (empty)                                                                                                                                            │
 │                                                                                                                                                    │
 │                                                                                                                                                    │

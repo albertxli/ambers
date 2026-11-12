@@ -101,6 +101,7 @@ am view survey.sav
 | Enter | one respondent's answers in a side panel |
 | `/` | filter the rows by the current column: `japan`, `=3`, `>30`, `japan\|france` |
 | `i` | Variable View: type, label, values and counts per variable; `/` searches variables |
+| `w` | widen the current column to read long text; the bar under the grid shows the cell in full |
 | `c` | copy a cell; `C` copies a whole panel for pasting into a spreadsheet |
 | `?` | every key |
 

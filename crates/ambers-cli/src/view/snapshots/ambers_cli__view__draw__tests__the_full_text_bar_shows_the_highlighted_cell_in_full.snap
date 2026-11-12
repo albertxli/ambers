@@ -15,7 +15,7 @@ expression: values
 │  9  brand_c          0=No, 1=Yes                          20        0  ok    │
 │ 10  interview_date                                        20        0        │
 │ 11  interview_start                                       20        0        │
-│─ gender · Values ────────────────────────────────────────────────────────────│
+├─ gender · Values ────────────────────────────────────────────────────────────┤
 │ 1=Male, 2=Female                                                             │
 │                                                                              │
 │                                                                              │

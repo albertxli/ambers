@@ -223,6 +223,10 @@ One row per respondent, one column per variable. The row numbers at the left and
 | `f` | freeze / unfreeze the first variable |
 | Enter | side panel with the current respondent: every variable, its value and its label |
 | `J` / `K` | scroll that panel |
+| `[` / `]` | make the current column narrower / wider |
+| `w` | make the current column as wide as the window allows; again: back to its own width |
+| `-` / `+` | make the side panel narrower / wider |
+| `v` | hide / show the full-text bar under the grid |
 | `/` | filter the rows by the current column |
 | `=` | keep only the rows with the current cell's value |
 | `c` | copy the current cell |
@@ -231,11 +235,18 @@ One row per respondent, one column per variable. The row numbers at the left and
 | `?` | list of keys |
 | `q`, Esc | close the panel, then clear the filters, then quit |
 
-**Mouse.** The wheel scrolls up and down. Shift+wheel, Alt+wheel or a tilt wheel scrolls sideways. A click selects the cell under it.
+**Mouse.** The wheel scrolls up and down. Shift+wheel, Alt+wheel or a tilt wheel scrolls sideways. A click selects the cell under it. Drag the mark after a column's name in the header line to resize the column, and the side panel's left border to resize the panel.
+
+**Reading long text.** Columns are at most 30 characters wide at first (40 in Both mode), so a long answer is cut in the grid. Two ways to read it whole:
+
+- The bar under the grid shows the highlighted cell in full, wrapped over up to three lines, under the variable's name and label. `v` hides it when you want the lines for rows.
+- `w` widens the current column to the room the window has; `[` and `]` adjust it a few characters at a time. A width you set stays until you change it, in all three modes.
+
+The bar is left out when the window is shorter than 14 lines.
 
 **What cells show.** Numbers are written in the variable's SPSS print format (`3.00` for F8.2). System-missing is `.`. In Labels mode a value with a label shows the label and a value without one shows itself.
 
-The bottom border shows the mode, the current variable with its label, and the position (`Row 12/1,500 ─ Var 3/75`).
+The bottom border shows the mode and the position (`Row 12/1,500 ─ Var 3/75`); the current variable's name and label are on the full-text bar, or on the border when the bar is hidden.
 
 ### Filtering rows
 
@@ -283,6 +294,8 @@ Press `i`. One row per variable, described as `ambers.codebook()` describes it, 
 | arrows, click | move the highlighted cell; the fast and edge keys of Data View work here too |
 | Enter | side panel with the variable's value table |
 | `J` / `K`, or the wheel over the panel | scroll the value table |
+| `-` / `+`, or drag the panel's left border | make the value table narrower / wider |
+| `v` | hide / show the full-text bar under the list |
 | `/` | search the variables by name or label |
 | `d` | go to this variable's column in Data View |
 | `c` | copy the highlighted cell in full |
@@ -330,6 +343,8 @@ These are the checks of `ambers.validate()` (see [validate.md](validate.md)), ru
 - `am view` needs an interactive terminal; it refuses to start when its input or output is piped.
 - The viewer captures the mouse. To select text with the mouse, hold Shift while dragging (in most terminals).
 - Some terminals and multiplexers keep key combinations for themselves: VS Code's terminal keeps Ctrl+↑ / Ctrl+↓, and Herdr keeps Ctrl+← / Ctrl+→. The letter forms always work: `g` `G` `0` `$` for the edges, `{` `}` `<` `>` for 50 at a time.
+- If a terminal does not report mouse drags, resize with the keys: `[` `]` `w` for a column, `-` `+` for the side panel.
+- The frame keeps a small margin from the window's edge, which shows your terminal's own background; the Dracula background is painted inside the frames only. A window narrower than 60 columns or shorter than 16 lines has no margin, so a small pane loses nothing.
 - `NO_COLOR` turns colour off; highlights then use bold and reverse video.
 - Colours: `--theme dracula` looks the same everywhere; `--theme terminal` follows your terminal's palette.
 

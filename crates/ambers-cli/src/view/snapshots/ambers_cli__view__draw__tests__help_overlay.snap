@@ -3,12 +3,10 @@ source: crates/ambers-cli/src/view/draw.rs
 expression: "screen(\"survey.sav\", 80, 26, &[Key::Char('?')])"
 ---
 ╭ survey.sav ──────────────────────────────────────────────────────────────────╮
-│   # │       id │ gender  satisfaction       age      income  city          b…│
 ╭ Keys ────────────────────────────────────────────────────────────────────────╮
 │ arrows, h j k l        move one cell                                         │
-│ mouse                  wheel scrolls (Shift or Alt: sideways), click selects │
-│ PgUp / PgDn            one screen up / down                                  │
-│ Ctrl+u / Ctrl+d        half a screen up / down                               │
+│ mouse                  scroll (Shift/Alt: sideways), click, drag an edge     │
+│ PgUp/PgDn, Ctrl+u/d    a screen, half a screen up / down                     │
 │ Shift+arrows, { } < >  50 rows or columns at once                            │
 │ Ctrl+arrows, Home/End  to the top, bottom, far left, far right               │
 │ g G 0 $                the same, where the terminal keeps Ctrl+arrows        │
@@ -17,6 +15,9 @@ expression: "screen(\"survey.sav\", 80, 26, &[Key::Char('?')])"
 │ f                      freeze / unfreeze the first variable                  │
 │ Enter                  side panel: this respondent, or this variable's values│
 │ J / K                  scroll the side panel                                 │
+│ [ ]  w                 column narrower / wider; w: full width and back       │
+│ - +                    side panel narrower / wider                           │
+│ v                      show / hide the full text under the table             │
 │ i                      Variable View and back                                │
 │ d                      in Variable View: go to the variable's data           │
 │ /                      filter rows by this column; search variables          │
@@ -26,5 +27,4 @@ expression: "screen(\"survey.sav\", 80, 26, &[Key::Char('?')])"
 │ C or t                 copy the open side panel, for a spreadsheet           │
 │ q, Esc                 close the panel, clear filters, leave; quit           │
 ╰ any key closes ──────────────────────────────────────────────────────────────╯
-│                                                                              │
-╰ Labels ─ id: Respondent ID ───────── Row 1/20 ─ Var 1/13 ─ / filter ─ ? help ╯
+╰ Labels ───────────────────────────── Row 1/20 ─ Var 1/13 ─ / filter ─ ? help ╯

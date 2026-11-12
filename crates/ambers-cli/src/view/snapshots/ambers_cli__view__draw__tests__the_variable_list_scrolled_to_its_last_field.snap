@@ -15,7 +15,7 @@ expression: "screen(\"survey.sav\", 80, 18, &[Key::Char('i'), Key::End])"
 │  9  brand_c               20        0  ok                                    │
 │ 10  interview_date        20        0                                        │
 │ 11  interview_start       20        0                                        │
-│─ id · Label check ───────────────────────────────────────────────────────────│
+├─ id · Label check ───────────────────────────────────────────────────────────┤
 │ (empty)                                                                      │
 │                                                                              │
 │                                                                              │

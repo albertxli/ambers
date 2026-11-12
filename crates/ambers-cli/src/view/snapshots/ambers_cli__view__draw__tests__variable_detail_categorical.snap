@@ -17,7 +17,7 @@ expression: "screen(\"imperfect_labels.sav\", 130, 20,\n&[Key::Char('i'), Key::D
 │                                                               ││     8  (no label)                       1      9.1%      8.3% │
 │                                                               ││    99  Refused (user-missing)           1      9.1%      8.3% │
 │                                                               ││                                                               │
-│─ q1 · Label ──────────────────────────────────────────────────││                                                               │
+├─ q1 · Label ──────────────────────────────────────────────────┤│                                                               │
 │ Agreement                                                     ││                                                               │
 │                                                               ││                                                               │
 │                                                               ││                                                               │

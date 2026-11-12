@@ -28,6 +28,17 @@ const FIXED_FIELDS: usize = 2;
 const NO_PANEL: &str = "open the panel with Enter first";
 /// Longest text the filter bar accepts.
 const PROMPT_LENGTH: usize = 60;
+/// Empty space around the frame: columns left and right, lines above and
+/// below. A terminal cell is about twice as tall as it is wide.
+const MARGIN: (usize, usize) = (2, 1);
+/// The smallest window that still gets the margin.
+const MARGIN_FROM: (usize, usize) = (60, 16);
+/// Characters a column or a side panel grows or shrinks by per key press.
+const RESIZE_STEP: usize = 4;
+/// The narrowest a column can be made.
+const MIN_COLUMN: usize = 3;
+/// The narrowest a side panel can be made, and what it leaves the main view.
+const MIN_PANEL: usize = 24;
 
 /// The fields of the variable list: title, and whether it is right-aligned.
 pub const VARIABLE_FIELDS: [(&str, bool); 8] = [
@@ -50,6 +61,19 @@ pub enum Mouse {
     ScrollRight,
     /// The left button, pressed.
     Click,
+    /// The pointer moved with the left button held.
+    Drag,
+    /// The left button, let go.
+    Release,
+}
+
+/// What a press of the mouse took hold of, to resize by dragging.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Grab {
+    /// The right edge of a column, whose text starts at screen column `start`.
+    Column { column: usize, start: usize },
+    /// The border between the main view and the side panel.
+    Split,
 }
 
 /// One field of the variable list on screen.
@@ -248,6 +272,21 @@ pub struct State {
     /// While loading, the cache is brought up to date this often.
     pub refresh_every: Duration,
     copy: Option<Copy>,
+    /// Widths the user gave to columns of Data View; `None` keeps the
+    /// width from the metadata.
+    column_widths: Vec<Option<usize>>,
+    /// Widths the user gave to the respondent panel and the value table.
+    panel_size: Option<usize>,
+    detail_size: Option<usize>,
+    /// What the mouse is dragging.
+    grab: Option<Grab>,
+    /// The full-text bar under the grid and the variable list is shown.
+    pub text_bar: bool,
+    /// Leave empty space around the frame when the window has room.
+    pub margins: bool,
+    /// The space left on each side: columns, lines.
+    margin: (usize, usize),
+    /// The size inside the margin.
     width: usize,
     height: usize,
 }
@@ -271,6 +310,13 @@ impl State {
             refreshed: None,
             refresh_every: Duration::from_millis(250),
             copy: None,
+            column_widths: vec![None; columns.len()],
+            panel_size: None,
+            detail_size: None,
+            grab: None,
+            text_bar: true,
+            margins: true,
+            margin: (0, 0),
             detail: None,
             detail_scroll: 0,
             var_field: 3,
@@ -465,17 +511,33 @@ impl State {
 
     // --- layout -----------------------------------------------------------
 
+    /// Take the terminal's size. Everything below is laid out inside the
+    /// margin, which a small window does without.
     pub fn resize(&mut self, width: u16, height: u16) {
-        self.width = width as usize;
-        self.height = height as usize;
+        let (width, height) = (width as usize, height as usize);
+        let roomy = width >= MARGIN_FROM.0 && height >= MARGIN_FROM.1;
+        self.margin = if self.margins && roomy {
+            MARGIN
+        } else {
+            (0, 0)
+        };
+        self.width = width - 2 * self.margin.0;
+        self.height = height - 2 * self.margin.1;
         self.follow_cursor();
         self.follow_panel();
     }
 
-    /// Data rows that fit: the screen minus the frame, the header and the
-    /// filter bar.
+    /// The empty space around the frame: columns each side, lines above
+    /// and below.
+    pub fn margin(&self) -> (usize, usize) {
+        self.margin
+    }
+
+    /// Data rows that fit: the screen minus the frame, the header, the
+    /// filter bar, and the full-text bar with its rule.
     pub fn grid_rows(&self) -> usize {
-        self.height.saturating_sub(3 + self.data_bar())
+        self.height
+            .saturating_sub(3 + self.data_bar() + self.bar_space())
     }
 
     /// Lines the filter bar takes in Data View: one while a filter is
@@ -508,9 +570,87 @@ impl State {
         if !self.panel_open {
             return 0;
         }
-        (self.width * 2 / 5)
-            .clamp(36, 72)
-            .min(self.width.saturating_sub(24))
+        let width = (self.panel_size).unwrap_or((self.width * 2 / 5).clamp(36, 72));
+        self.fit_panel(width)
+    }
+
+    /// A side panel's width within its limits: wide enough to read, and
+    /// leaving the main view as much.
+    fn fit_panel(&self, width: usize) -> usize {
+        width
+            .max(MIN_PANEL)
+            .min(self.width.saturating_sub(MIN_PANEL))
+    }
+
+    /// The side panel of the current view, `-` / `+` or dragged.
+    fn set_panel_width(&mut self, width: usize) {
+        let width = self.fit_panel(width);
+        match self.screen {
+            Screen::Data => self.panel_size = Some(width),
+            Screen::Variables => self.detail_size = Some(width),
+        }
+    }
+
+    fn resize_panel(&mut self, wider: bool) {
+        let current = match self.screen {
+            Screen::Data => self.panel_width(),
+            Screen::Variables => self.detail_width(),
+        };
+        if current == 0 {
+            self.notice = Some(NO_PANEL.to_string());
+        } else if wider {
+            self.set_panel_width(current + RESIZE_STEP);
+        } else {
+            self.set_panel_width(current.saturating_sub(RESIZE_STEP));
+        }
+    }
+
+    /// A column's width in Data View: the one the user set, or the one
+    /// from the metadata for the current mode.
+    pub fn column_width(&self, column: usize) -> usize {
+        self.column_widths[column].unwrap_or_else(|| self.columns[column].width(self.mode))
+    }
+
+    /// The widest a column can be and still show whole: the room beside
+    /// the row numbers and the frozen first column.
+    fn widest_column(&self, column: usize) -> usize {
+        let frozen = if self.frozen_active() && column != 0 {
+            self.column_width(0) + 3
+        } else {
+            0
+        };
+        (self.columns_width().saturating_sub(1 + frozen)).max(MIN_COLUMN)
+    }
+
+    fn set_column_width(&mut self, column: usize, width: usize) {
+        let width = width.clamp(MIN_COLUMN, self.widest_column(column));
+        self.column_widths[column] = Some(width);
+    }
+
+    /// `[` and `]`: the cursor's column, a few characters at a time.
+    fn resize_column(&mut self, wider: bool) {
+        if self.columns.is_empty() {
+            return;
+        }
+        let current = self.column_width(self.cursor_col);
+        let width = if wider {
+            current + RESIZE_STEP
+        } else {
+            current.saturating_sub(RESIZE_STEP)
+        };
+        self.set_column_width(self.cursor_col, width);
+    }
+
+    /// `w`: the cursor's column as wide as the screen allows, to read long
+    /// text; again, back to its own width.
+    fn toggle_wide(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+        let column = self.cursor_col;
+        if self.column_widths[column].take().is_none() {
+            self.set_column_width(column, usize::MAX);
+        }
     }
 
     /// Digits reserved for row numbers.
@@ -546,7 +686,7 @@ impl State {
             if *x + 1 >= available {
                 return false;
             }
-            let width = self.columns[column].width(self.mode);
+            let width = self.column_width(column);
             slots.push(Slot {
                 column,
                 x: *x + 1,
@@ -569,9 +709,7 @@ impl State {
 
     fn fully_visible(&self, column: usize) -> bool {
         let (slots, _) = self.visible_columns();
-        slots.iter().any(|slot| {
-            slot.column == column && slot.width == self.columns[column].width(self.mode)
-        })
+        (slots.iter()).any(|slot| slot.column == column && slot.width == self.column_width(column))
     }
 
     /// Scroll so the cursor cell is on screen.
@@ -634,20 +772,30 @@ impl State {
             .any(|shown| shown.index == field && shown.width == widths[field])
     }
 
-    /// Lines of the full-text bar under the variable list; none on a
-    /// screen too short to spare them.
+    /// Lines of the full-text bar under the grid and the variable list;
+    /// none when it is hidden (`v`) or the screen is too short to spare
+    /// them.
     pub fn bar_lines(&self) -> usize {
-        if self.height >= 14 { BAR_LINES } else { 0 }
+        if self.text_bar && self.height >= 14 {
+            BAR_LINES
+        } else {
+            0
+        }
+    }
+
+    /// Lines the full-text bar takes with its rule.
+    fn bar_space(&self) -> usize {
+        match self.bar_lines() {
+            0 => 0,
+            lines => lines + 1,
+        }
     }
 
     /// Variables that fit in the list: the screen minus the frame, the
     /// header, the search bar, and the full-text bar with its rule.
     pub fn variable_rows(&self) -> usize {
-        let bar = match self.bar_lines() {
-            0 => 0,
-            lines => lines + 1,
-        };
-        self.height.saturating_sub(3 + self.variable_bar() + bar)
+        self.height
+            .saturating_sub(3 + self.variable_bar() + self.bar_space())
     }
 
     /// Variables listed in the respondent panel: the screen minus its frame.
@@ -790,6 +938,13 @@ impl State {
                 self.snap_variable();
             }
             Key::Char('f') => self.frozen = !self.frozen,
+            // Sizes: this column, the side panel, the full-text bar.
+            Key::Char('[') => self.resize_column(false),
+            Key::Char(']') => self.resize_column(true),
+            Key::Char('w') => self.toggle_wide(),
+            Key::Char('-') => self.resize_panel(false),
+            Key::Char('+') => self.resize_panel(true),
+            Key::Char('v') => self.text_bar = !self.text_bar,
             // Filter the rows by this column, or by this cell's value.
             Key::Char('/') => self.open_filter(),
             Key::Char('=') => self.filter_by_cell(),
@@ -856,6 +1011,9 @@ impl State {
             return;
         }
         match key {
+            Key::Char('-') => self.resize_panel(false),
+            Key::Char('+') => self.resize_panel(true),
+            Key::Char('v') => self.text_bar = !self.text_bar,
             Key::Char('/') => self.open_search(),
             // A search that found nothing leaves no variable to act on.
             Key::Enter | Key::Char('d') | Key::Char('c') if listed == 0 => {}
@@ -900,18 +1058,80 @@ impl State {
     // --- mouse --------------------------------------------------------------
 
     /// Apply a mouse event at screen cell (`x`, `y`). The wheel moves three
-    /// rows at a time; a click moves the cursor to the cell under it.
+    /// rows at a time; a click moves the cursor to the cell under it; a
+    /// press on a column's edge or the side panel's border drags it.
     pub fn on_mouse(&mut self, mouse: Mouse, x: usize, y: usize) {
         if self.help {
             return;
         }
-        self.notice = None;
-        match self.screen {
-            Screen::Data => self.data_mouse(mouse, x, y),
-            Screen::Variables => self.variables_mouse(mouse, x, y),
+        // Everything is laid out inside the margin.
+        let x = x.saturating_sub(self.margin.0);
+        let y = y.saturating_sub(self.margin.1);
+        match mouse {
+            // Nothing scrolls while an edge is dragged: it would move the
+            // edge away from the pointer.
+            Mouse::Drag => return self.drag(x),
+            Mouse::Release => self.grab = None,
+            Mouse::Click if self.grab_at(x, y) => return,
+            _ => {
+                self.notice = None;
+                match self.screen {
+                    Screen::Data => self.data_mouse(mouse, x, y),
+                    Screen::Variables => self.variables_mouse(mouse, x, y),
+                }
+            }
         }
         self.follow_cursor();
         self.refresh_detail();
+    }
+
+    /// Take hold of what is under a press, if it can be dragged: the side
+    /// panel's border, or the right edge of a column in the header line.
+    fn grab_at(&mut self, x: usize, y: usize) -> bool {
+        let panel = match self.screen {
+            Screen::Data => self.panel_width(),
+            Screen::Variables => self.detail_width(),
+        };
+        // The panel's left border, or the main view's right one beside it.
+        let border = self.width.saturating_sub(panel);
+        self.grab = if panel > 0 && (x == border || x + 1 == border) {
+            Some(Grab::Split)
+        } else if self.screen == Screen::Data && y == 1 + self.data_bar() {
+            let columns_x = 1 + self.gutter_width() + 3;
+            // The gap after a column that is shown whole.
+            (self.visible_columns().0.into_iter())
+                .filter(|slot| slot.width == self.column_width(slot.column))
+                .find(|slot| {
+                    let edge = columns_x + slot.x + slot.width;
+                    x == edge || x == edge + 1
+                })
+                .map(|slot| Grab::Column {
+                    column: slot.column,
+                    start: columns_x + slot.x,
+                })
+        } else {
+            None
+        };
+        self.grab.is_some()
+    }
+
+    /// The column whose edge is being dragged, for drawing.
+    pub fn grabbed_column(&self) -> Option<usize> {
+        match self.grab {
+            Some(Grab::Column { column, .. }) => Some(column),
+            _ => None,
+        }
+    }
+
+    /// Follow the pointer with whatever was grabbed.
+    fn drag(&mut self, x: usize) {
+        match self.grab {
+            Some(Grab::Split) => self.set_panel_width(self.width.saturating_sub(x)),
+            Some(Grab::Column { column, start }) => {
+                self.set_column_width(column, x.saturating_sub(start));
+            }
+            None => {}
+        }
     }
 
     fn data_mouse(&mut self, mouse: Mouse, x: usize, y: usize) {
@@ -954,6 +1174,7 @@ impl State {
                     self.cursor_col = slot.column;
                 }
             }
+            Mouse::Drag | Mouse::Release => {}
         }
         if self.cursor_col != column_before {
             self.follow_panel();
@@ -1003,6 +1224,7 @@ impl State {
                     self.var_field = field.index.max(1);
                 }
             }
+            Mouse::Drag | Mouse::Release => {}
         }
     }
 
@@ -1014,9 +1236,8 @@ impl State {
         if self.detail.is_none() {
             return 0;
         }
-        (self.width / 2)
-            .clamp(46, 96)
-            .min(self.width.saturating_sub(24))
+        let width = (self.detail_size).unwrap_or((self.width / 2).clamp(46, 96));
+        self.fit_panel(width)
     }
 
     /// Where each field of the variable list is drawn: its offset from the
@@ -1695,6 +1916,8 @@ pub(crate) mod tests {
             None,
             Mode::Labels,
         );
+        // Tests place things by screen cell: no margin unless they ask.
+        state.margins = false;
         state.resize(width, height);
         // Tests look at the counts straight after a batch.
         state.refresh_every = Duration::ZERO;
@@ -2392,7 +2615,7 @@ pub(crate) mod tests {
         );
         assert!(bar.typing && !bar.problem);
         // One line fewer for the grid while the bar shows.
-        assert_eq!(state.grid_rows(), 20);
+        assert_eq!(state.grid_rows(), 16);
 
         // Deleting widens it again.
         press(&mut state, &[Key::Backspace]);
@@ -2453,7 +2676,7 @@ pub(crate) mod tests {
         assert_eq!(state.shown_rows(), 20);
         assert_eq!(state.cursor_row, 3, "back on the row it was on");
         assert_eq!(state.bar(), None);
-        assert_eq!(state.grid_rows(), 21);
+        assert_eq!(state.grid_rows(), 17);
     }
 
     #[test]
@@ -2755,5 +2978,160 @@ pub(crate) mod tests {
         assert_eq!((tall.bar_lines(), tall.variable_rows()), (3, 23));
         let short = loaded("survey.sav", 100, 12);
         assert_eq!((short.bar_lines(), short.variable_rows()), (0, 9));
+    }
+
+    #[test]
+    fn v_hides_the_full_text_bar_in_both_views() {
+        let mut state = loaded("survey.sav", 100, 24);
+        // The frame, the header, and the bar with its rule.
+        assert_eq!((state.bar_lines(), state.grid_rows()), (3, 17));
+        press(&mut state, &[Key::Char('v')]);
+        assert_eq!((state.bar_lines(), state.grid_rows()), (0, 21));
+        assert_eq!(state.variable_rows(), 21);
+        press(&mut state, &[Key::Char('i'), Key::Char('v')]);
+        assert_eq!((state.bar_lines(), state.variable_rows()), (3, 17));
+    }
+
+    /// The slot of a column on screen, and the screen column its text
+    /// starts at.
+    fn slot_of(state: &State, column: usize) -> (Slot, usize) {
+        let slot = (state.visible_columns().0.into_iter())
+            .find(|slot| slot.column == column)
+            .expect("the column is on screen");
+        (slot, 1 + state.gutter_width() + 3 + slot.x)
+    }
+
+    #[test]
+    fn keys_resize_the_cursors_column() {
+        let mut state = on_column("city");
+        let column = state.cursor_col;
+        let own = state.column_width(column);
+        press(&mut state, &[Key::Char(']')]);
+        assert_eq!(state.column_width(column), own + 4);
+        press(&mut state, &[Key::Char('['), Key::Char('[')]);
+        assert_eq!(state.column_width(column), own - 4);
+        // Never narrower than three characters.
+        press(&mut state, &[Key::Char('['); 10]);
+        assert_eq!(state.column_width(column), 3);
+        // The width holds in every mode, and for this column only.
+        press(&mut state, &[Key::Tab]);
+        assert_eq!(state.column_width(column), 3);
+        assert_eq!(
+            state.column_width(1),
+            state.columns[1].width(Mode::Codes),
+            "the others keep theirs"
+        );
+        press(&mut state, &[Key::Tab, Key::Tab]);
+
+        // `w` on a resized column gives it back its own width.
+        press(&mut state, &[Key::Char('w')]);
+        assert_eq!(state.column_width(column), own);
+        // `w` again: all the room beside the row numbers and the frozen
+        // first column, and the column shows whole.
+        press(&mut state, &[Key::Char('w')]);
+        let room = state.columns_width() - 1 - (state.column_width(0) + 3);
+        assert_eq!(state.column_width(column), room);
+        assert_eq!(slot_of(&state, column).0.width, room);
+        press(&mut state, &[Key::Char('w')]);
+        assert_eq!(state.column_width(column), own);
+    }
+
+    #[test]
+    fn dragging_a_columns_edge_in_the_header_resizes_it() {
+        let mut state = loaded("survey.sav", 100, 24);
+        let (slot, start) = slot_of(&state, 1);
+        let edge = start + slot.width;
+        // A press on the gap after the column takes hold of its edge and
+        // moves no cursor.
+        state.on_mouse(Mouse::Click, edge, 1);
+        assert_eq!(state.cursor_col, 0);
+        state.on_mouse(Mouse::Drag, edge + 6, 1);
+        assert_eq!(state.column_width(1), slot.width + 6);
+        // The pointer may leave the header line while dragging.
+        state.on_mouse(Mouse::Drag, edge - 2, 9);
+        assert_eq!(state.column_width(1), slot.width - 2);
+        state.on_mouse(Mouse::Drag, 0, 9);
+        assert_eq!(state.column_width(1), 3, "not narrower than that");
+        state.on_mouse(Mouse::Release, 0, 9);
+
+        // Let go: moving the pointer changes nothing more.
+        state.on_mouse(Mouse::Drag, edge + 20, 1);
+        assert_eq!(state.column_width(1), 3);
+        // A press inside a header or a cell is still a click.
+        let (_, start) = slot_of(&state, 2);
+        state.on_mouse(Mouse::Click, start, 1);
+        state.on_mouse(Mouse::Drag, start + 9, 1);
+        state.on_mouse(Mouse::Release, start + 9, 1);
+        assert_eq!(state.cursor_col, 2);
+        assert_eq!(state.column_width(2), state.columns[2].width(Mode::Labels));
+    }
+
+    #[test]
+    fn the_side_panels_resize_by_key_and_by_dragging_their_border() {
+        let mut state = loaded("survey.sav", 100, 24);
+        // With no panel open the keys only say so.
+        press(&mut state, &[Key::Char('+')]);
+        assert_eq!(state.notice.as_deref(), Some(NO_PANEL));
+
+        press(&mut state, &[Key::Enter]);
+        assert_eq!(state.panel_width(), 40);
+        press(&mut state, &[Key::Char('+')]);
+        assert_eq!(state.panel_width(), 44);
+        press(&mut state, &[Key::Char('-'); 20]);
+        assert_eq!(state.panel_width(), 24, "wide enough to read");
+        press(&mut state, &[Key::Char('+'); 30]);
+        assert_eq!(state.panel_width(), 76, "the grid keeps 24 columns");
+
+        // Drag the panel's left border to screen column 60.
+        state.on_mouse(Mouse::Click, 24, 8);
+        state.on_mouse(Mouse::Drag, 60, 3);
+        state.on_mouse(Mouse::Release, 60, 3);
+        assert_eq!(state.panel_width(), 40);
+        assert_eq!(state.cursor_col, 0, "the press picked no variable");
+        // The width is kept while the panel is closed.
+        press(&mut state, &[Key::Enter, Key::Enter, Key::Char('-')]);
+        assert_eq!(state.panel_width(), 36);
+
+        // The value table of Variable View has its own width.
+        press(&mut state, &[Key::Char('i'), Key::Char('-')]);
+        assert_eq!(state.notice.as_deref(), Some(NO_PANEL));
+        press(&mut state, &[Key::Enter]);
+        assert_eq!(state.detail_width(), 50);
+        press(&mut state, &[Key::Char('+')]);
+        assert_eq!(state.detail_width(), 54);
+        // The main view's right border, beside the table's, drags too.
+        state.on_mouse(Mouse::Click, 45, 8);
+        state.on_mouse(Mouse::Drag, 70, 8);
+        state.on_mouse(Mouse::Release, 70, 8);
+        assert_eq!(state.detail_width(), 30);
+        // Back in Data View the respondent panel still has its own.
+        press(&mut state, &[Key::Esc, Key::Esc]);
+        assert_eq!(state.panel_width(), 36);
+    }
+
+    #[test]
+    fn a_roomy_window_gets_a_margin_and_clicks_allow_for_it() {
+        let mut state = loaded("survey.sav", 100, 24);
+        assert_eq!(state.margin(), (0, 0));
+        let bare = slot_of(&state, 2).1;
+        state.margins = true;
+        state.resize(100, 24);
+        assert_eq!(state.margin(), (2, 1));
+        // Two lines and four columns fewer to lay out in.
+        assert_eq!(state.grid_rows(), 15);
+        assert_eq!(state.panel_rows(), 20);
+        // The same cell is two columns right and one line down.
+        state.on_mouse(Mouse::Click, bare + 2, 3 + 1);
+        assert_eq!((state.cursor_row, state.cursor_col), (1, 2));
+        // A press in the margin picks nothing new.
+        state.on_mouse(Mouse::Click, 0, 0);
+        assert_eq!((state.cursor_row, state.cursor_col), (1, 2));
+
+        // A small window keeps every cell for the table.
+        state.resize(59, 24);
+        assert_eq!(state.margin(), (0, 0));
+        state.resize(100, 15);
+        assert_eq!(state.margin(), (0, 0));
+        assert_eq!(state.grid_rows(), 8);
     }
 }

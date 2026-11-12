@@ -240,6 +240,9 @@ fn translate_mouse(event: &MouseEvent) -> Option<Mouse> {
         MouseEventKind::ScrollLeft => Mouse::ScrollLeft,
         MouseEventKind::ScrollRight => Mouse::ScrollRight,
         MouseEventKind::Down(MouseButton::Left) => Mouse::Click,
+        // Dragging resizes a column or the side panel.
+        MouseEventKind::Drag(MouseButton::Left) => Mouse::Drag,
+        MouseEventKind::Up(MouseButton::Left) => Mouse::Release,
         _ => return None,
     })
 }
@@ -368,15 +371,19 @@ mod mouse_tests {
     }
 
     #[test]
-    fn only_a_left_press_is_a_click() {
+    fn only_the_left_button_clicks_and_drags() {
         let none = KeyModifiers::NONE;
         let left = MouseEventKind::Down(MouseButton::Left);
         assert_eq!(translate_mouse(&event(left, none)), Some(Mouse::Click));
+        let drag = MouseEventKind::Drag(MouseButton::Left);
+        assert_eq!(translate_mouse(&event(drag, none)), Some(Mouse::Drag));
+        let up = MouseEventKind::Up(MouseButton::Left);
+        assert_eq!(translate_mouse(&event(up, none)), Some(Mouse::Release));
         for kind in [
-            MouseEventKind::Up(MouseButton::Left),
+            MouseEventKind::Up(MouseButton::Right),
             MouseEventKind::Down(MouseButton::Right),
             MouseEventKind::Moved,
-            MouseEventKind::Drag(MouseButton::Left),
+            MouseEventKind::Drag(MouseButton::Right),
         ] {
             assert_eq!(translate_mouse(&event(kind, none)), None);
         }

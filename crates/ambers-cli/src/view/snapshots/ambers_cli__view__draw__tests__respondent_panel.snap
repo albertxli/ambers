@@ -3,7 +3,7 @@ source: crates/ambers-cli/src/view/draw.rs
 expression: "screen(\"imperfect_labels.sav\", 110, 12,\n&[Key::Down, Key::Down, Key::Down, Key::Enter])"
 ---
 ╭ imperfect_labels.sav ──────────────────────────────────────────╮╭ Row 4 ───────────────────────────────────╮
-│   # │       id │ q1        scale              brand       city ││ id     4                Respondent ID    │
+│   # │       id │ q1      │ scale            │ brand     │ city ││ id     4                Respondent ID    │
 │   1 │        1 │ Agree     Not at all likely  Brand A     New …││ q1     7                Agreement        │
 │   2 │        2 │ Neutral   1                  Other [97]  Los …││ scale  3                Likelihood to r… │
 │   3 │        3 │ Disagree  2                  Other [98]  Spri…││ brand  1  Brand A       Brand used most  │
