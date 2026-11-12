@@ -35,6 +35,7 @@ const HELP: &[(&str, &str)] = &[
         "Ctrl+arrows, g G 0 $",
         "to the top, bottom, far left, far right",
     ),
+    ("", "(g G 0 $ work where the terminal keeps Ctrl+arrows)"),
     ("Home / End", "far left / far right"),
     ("1-9 …", "go to row (Enter keeps, Esc goes back)"),
     ("Tab", "next mode: Labels, Codes, Both"),
@@ -46,9 +47,8 @@ const HELP: &[(&str, &str)] = &[
     ("J / K", "scroll the side panel"),
     ("i", "Variable View and back"),
     ("d", "in Variable View: go to the variable's data"),
-    ("y", "copy the cell; with values open, the table"),
-    ("Y", "in Variable View: copy the cell"),
-    ("L", "copy the variable's full label"),
+    ("c", "copy the highlighted cell, in full"),
+    ("C or t", "copy the open side panel, for a spreadsheet"),
     ("q, Esc", "close the panel or view; quit"),
 ];
 
@@ -337,7 +337,10 @@ fn respondent_panel(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) 
         .border_type(BorderType::Rounded)
         .border_style(theme.frame)
         .title(Line::styled(title, theme.title))
-        .title_bottom(Line::styled(" J/K scroll ─ Enter close ", theme.dim))
+        .title_bottom(Line::styled(
+            " J/K scroll ─ C copy row ─ Enter close ",
+            theme.dim,
+        ))
         .render(area, buf);
     if state.rows == 0 {
         return;
@@ -405,7 +408,7 @@ fn counts_status(state: &State) -> String {
 
 /// One row per variable, as the codebook describes it: type, label,
 /// labelled values, valid and missing cases, and the label check. One
-/// cell is highlighted; `y` copies its full text.
+/// cell is highlighted; `c` copies its full text.
 fn variable_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
     let position = format!(
         " Var {}/{} ",
@@ -421,10 +424,10 @@ fn variable_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
     // unless the value table is open and shows the notice itself.
     let room = (area.width as usize).saturating_sub(right.width() + 3);
     let hints = [
-        " ↑↓←→ cell ─ Enter values ─ y copy cell ─ L copy label ─ d go to data ─ i / Esc back ",
-        " Enter values ─ y copy cell ─ L copy label ─ d data ─ i back ",
-        " Enter values ─ y copy ─ L label ─ i back ",
-        " Enter values ─ y copy ",
+        " ↑↓←→ cell ─ Enter values ─ c copy cell ─ d go to data ─ i / Esc back ",
+        " Enter values ─ c copy cell ─ d data ─ i back ",
+        " Enter values ─ c copy ─ i back ",
+        " Enter values ─ c copy ",
         "",
     ];
     let left = match &state.notice {
@@ -530,7 +533,7 @@ fn full_text_bar(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
     let wrapped = wrap(&full.replace('\n', ", "), text_width);
     let mut shown: Vec<String> = wrapped.lines().take(lines).map(str::to_string).collect();
     if wrapped.lines().count() > lines {
-        // More than fits: the last line says so. `y` still copies all of it.
+        // More than fits: the last line says so. `C` still copies all of it.
         let last = shown.last_mut().expect("at least one line is shown");
         *last = fit(&format!("{last} "), text_width.saturating_sub(1), false)
             .trim_end()
@@ -556,8 +559,8 @@ fn variable_detail(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
     // The longest hint that fits beside the notice.
     let room = (area.width as usize).saturating_sub(notice.width() + 3);
     let hints = [
-        " J/K scroll ─ y copy table ─ Enter close ",
-        " y copy table ",
+        " J/K scroll ─ C copy table ─ Enter close ",
+        " C copy table ",
         "",
     ];
     let hint = hints
@@ -1011,7 +1014,7 @@ mod tests {
                 Key::Enter,
                 Key::Char('J'),
                 Key::Char('J'),
-                Key::Char('y')
+                Key::Char('C')
             ]
         ));
     }

@@ -21,4 +21,4 @@ expression: text
 │ City                                                          ││                                                               │
 │                                                               ││                                                               │
 │                                                               ││                                                               │
-╰ Enter values ─ y copy ───────────── counts: 12 rows ─ Var 5/6 ╯╰ J/K scroll ─ y copy table ─ Enter close ──────────────────────╯
+╰ Enter values ─ c copy ─ i back ──── counts: 12 rows ─ Var 5/6 ╯╰ J/K scroll ─ C copy table ─ Enter close ──────────────────────╯

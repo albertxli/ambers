@@ -19,4 +19,4 @@ expression: "screen(\"survey.sav\", 80, 18, &[Key::Char('i'), Key::End])"
 │ (empty)                                                                      │
 │                                                                              │
 │                                                                              │
-╰ Enter values ─ y copy ─ L label ─ i back ──────── counts: 20 rows ─ Var 1/13 ╯
+╰ Enter values ─ c copy cell ─ d data ─ i back ──── counts: 20 rows ─ Var 1/13 ╯

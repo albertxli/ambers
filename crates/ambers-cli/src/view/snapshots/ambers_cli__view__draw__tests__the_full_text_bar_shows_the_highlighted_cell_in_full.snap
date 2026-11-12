@@ -19,4 +19,4 @@ expression: values
 │ 1=Male, 2=Female                                                             │
 │                                                                              │
 │                                                                              │
-╰ Enter values ─ y copy ─ L label ─ i back ──────── counts: 20 rows ─ Var 2/13 ╯
+╰ Enter values ─ c copy cell ─ d data ─ i back ──── counts: 20 rows ─ Var 2/13 ╯

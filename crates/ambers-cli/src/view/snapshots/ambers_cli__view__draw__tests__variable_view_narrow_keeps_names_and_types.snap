@@ -13,4 +13,4 @@ expression: "screen(\"survey.sav\", 70, 12, &[Key::Char('i')])"
 │  7  brand_a          categorical  Brands mentioned: A              │
 │  8  brand_b          categorical  Brands mentioned: B              │
 │  9  brand_c          categorical  Brands mentioned: C              │
-╰ Enter values ─ y copy ───────────────── counts: 20 rows ─ Var 1/13 ╯
+╰ Enter values ─ c copy ─ i back ──────── counts: 20 rows ─ Var 1/13 ╯

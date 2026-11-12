@@ -9,6 +9,7 @@ expression: "screen(\"survey.sav\", 80, 20, &[Key::Char('?')])"
 │ Ctrl+u / Ctrl+d        half a screen up / down                               │
 │ Shift+arrows, { } < >  50 rows or columns at once                            │
 │ Ctrl+arrows, g G 0 $   to the top, bottom, far left, far right               │
+│                        (g G 0 $ work where the terminal keeps Ctrl+arrows)   │
 │ Home / End             far left / far right                                  │
 │ 1-9 …                  go to row (Enter keeps, Esc goes back)                │
 │ Tab                    next mode: Labels, Codes, Both                        │
@@ -17,8 +18,7 @@ expression: "screen(\"survey.sav\", 80, 20, &[Key::Char('?')])"
 │ J / K                  scroll the side panel                                 │
 │ i                      Variable View and back                                │
 │ d                      in Variable View: go to the variable's data           │
-│ y                      copy the cell; with values open, the table            │
-│ Y                      in Variable View: copy the cell                       │
-│ L                      copy the variable's full label                        │
+│ c                      copy the highlighted cell, in full                    │
+│ C or t                 copy the open side panel, for a spreadsheet           │
 │ q, Esc                 close the panel or view; quit                         │
 ╰ any key closes ──────────────────────────────────────────────────────────────╯

@@ -1,6 +1,6 @@
 ---
 source: crates/ambers-cli/src/view/draw.rs
-expression: "screen(\"imperfect_labels.sav\", 130, 20,\n&[Key::Char('i'), Key::Down, Key::Down, Key::Enter, Key::Char('J'),\nKey::Char('J'), Key::Char('y')])"
+expression: "screen(\"imperfect_labels.sav\", 130, 20,\n&[Key::Char('i'), Key::Down, Key::Down, Key::Enter, Key::Char('J'),\nKey::Char('J'), Key::Char('C')])"
 ---
 ╭ imperfect_labels.sav ─ Variable View ─────────────────────────╮╭ scale ─ categorical ──────────────────────────────────────────╮
 │ #  Name   Type         Label                             Valu…││ Likelihood to recommend                                       │
@@ -21,4 +21,4 @@ expression: "screen(\"imperfect_labels.sav\", 130, 20,\n&[Key::Char('i'), Key::D
 │ Likelihood to recommend                                       ││    10  Extremely likely                 1      8.3%      8.3% │
 │                                                               ││    95  (no label, user-missing)         1      8.3%      8.3% │
 │                                                               ││                                                               │
-╰ Enter values ─ y copy ───────────── counts: 12 rows ─ Var 3/6 ╯╰ y copy table ───────────────────────── copied table (12 rows) ╯
+╰ Enter values ─ c copy ─ i back ──── counts: 12 rows ─ Var 3/6 ╯╰ C copy table ───────────────────────── copied table (12 rows) ╯

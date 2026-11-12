@@ -495,7 +495,7 @@ mod navigation_tests {
         assert_eq!(key(KeyCode::Left, ctrl), Some(Key::Home));
         assert_eq!(key(KeyCode::Right, ctrl), Some(Key::End));
         // The letter forms arrive as characters, with or without Shift.
-        for symbol in ['{', '}', '<', '>', '0', '$', 'L'] {
+        for symbol in ['{', '}', '<', '>', '0', '$', 'C'] {
             assert_eq!(key(KeyCode::Char(symbol), shift), Some(Key::Char(symbol)));
         }
     }

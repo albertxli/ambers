@@ -21,4 +21,4 @@ expression: numeric
 │ Age in years                                                  ││ 67.0                                    1      9.1%      8.3% │
 │                                                               ││ 70.0                                    1      9.1%      8.3% │
 │                                                               ││                                                               │
-╰ Enter values ─ y copy ───────────── counts: 12 rows ─ Var 6/6 ╯╰ J/K scroll ─ y copy table ─ Enter close ──────────────────────╯
+╰ Enter values ─ c copy ─ i back ──── counts: 12 rows ─ Var 6/6 ╯╰ J/K scroll ─ C copy table ─ Enter close ──────────────────────╯

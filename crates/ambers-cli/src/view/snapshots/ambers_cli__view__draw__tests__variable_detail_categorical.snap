@@ -21,4 +21,4 @@ expression: "screen(\"imperfect_labels.sav\", 130, 20,\n&[Key::Char('i'), Key::D
 │ Agreement                                                     ││                                                               │
 │                                                               ││                                                               │
 │                                                               ││                                                               │
-╰ Enter values ─ y copy ───────────── counts: 12 rows ─ Var 2/6 ╯╰ J/K scroll ─ y copy table ─ Enter close ──────────────────────╯
+╰ Enter values ─ c copy ─ i back ──── counts: 12 rows ─ Var 2/6 ╯╰ J/K scroll ─ C copy table ─ Enter close ──────────────────────╯

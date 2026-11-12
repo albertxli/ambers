@@ -97,8 +97,8 @@ Loading stops by itself when the data would take more than half of the memory yo
 | Tab | switch what cells show: **Labels**, **Codes**, **Both** (`1  Male`) |
 | Enter | side panel with the current respondent's answers: variable, code and label, variable label |
 | `f` | freeze / unfreeze the first variable while scrolling sideways |
-| `y` | copy the current cell to the clipboard |
-| `L` | copy the current variable's full label |
+| `c` | copy the current cell to the clipboard |
+| `C` or `t` | with the respondent panel open: copy that respondent, one line per variable (name, label, value), ready to paste into a spreadsheet |
 | `i` | Variable View and back |
 | `?` | list of keys |
 | `q`, Esc | close the panel or view; quit |
@@ -110,14 +110,13 @@ In Variable View (`i`), one row per variable with its type, label, labelled valu
 | arrows, click | move the highlighted cell; the same fast and edge keys work here, and the list scrolls sideways while `#` and Name stay put |
 | Enter | side panel with the variable's values: full label, format, and every value with its count and share |
 | `J` / `K`, wheel over the panel | scroll the value table |
-| `y` | copy the highlighted cell in full (the whole label, the whole value list); with the value table open, copy the table |
-| `Y` | copy the highlighted cell even when the value table is open |
-| `L` | copy the variable's full label, whatever is highlighted |
+| `c` | copy the highlighted cell in full (the whole label, the whole value list) |
+| `C` or `t` | with the value table open: copy the table as columns, ready to paste into a spreadsheet |
 | `d` | go to this variable in Data View |
 
 Under the list, a bar shows the highlighted cell's text in full, wrapped: the whole label or the whole value list, which the list itself has to cut.
 
-The letter forms of the fast and edge keys are there because some terminals do not pass Shift or Ctrl together with the arrow keys.
+The letter forms of the fast and edge keys are there because some terminals and multiplexers keep Shift or Ctrl with the arrow keys for themselves (VS Code's terminal keeps Ctrl+↑ / Ctrl+↓, for example). `g` `G` `0` `$` work everywhere.
 
 While the viewer is open it captures the mouse, so selecting text with the mouse needs Shift held down (in most terminals).
 

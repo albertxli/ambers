@@ -23,6 +23,8 @@ const FAST_STEP: usize = 50;
 const BAR_LINES: usize = 3;
 /// Fields of the variable list that never scroll sideways: `#` and Name.
 const FIXED_FIELDS: usize = 2;
+/// Said when the panel-copy key is pressed with no side panel open.
+const NO_PANEL: &str = "open the panel with Enter first";
 
 /// The fields of the variable list: title, and whether it is right-aligned.
 pub const VARIABLE_FIELDS: [(&str, bool); 8] = [
@@ -672,7 +674,6 @@ impl State {
             Key::End | Key::Char('$') => self.cursor_col = last_col,
             Key::Top | Key::Char('g') => self.cursor_row = 0,
             Key::Bottom | Key::Char('G') => self.cursor_row = last_row,
-            Key::Char('L') => self.copy_label(self.cursor_col),
             Key::Tab => self.mode = self.mode.next(),
             Key::Enter => {
                 self.panel_open = !self.panel_open;
@@ -683,7 +684,9 @@ impl State {
                 self.screen = Screen::Variables;
             }
             Key::Char('f') => self.frozen = !self.frozen,
-            Key::Char('y') => self.copy_data_cell(),
+            // `c` is the cell and `C` / `t` the open panel, in both views.
+            Key::Char('c') => self.copy_data_cell(),
+            Key::Char('C') | Key::Char('t') => self.copy_respondent(),
             Key::Char('?') => self.help = true,
             Key::Char('J') if self.panel_open => {
                 self.panel_top = (self.panel_top + 1).min(last_col);
@@ -739,7 +742,6 @@ impl State {
             Key::End | Key::FastRight | Key::Char('>') | Key::Char('$') => {
                 self.var_field = last_field;
             }
-            Key::Char('L') => self.copy_label(self.var_cursor),
             // The value table beside the list, like the respondent panel.
             Key::Enter if !self.columns.is_empty() => {
                 self.detail = match self.detail {
@@ -757,8 +759,8 @@ impl State {
                 self.detail = None;
                 self.follow_panel();
             }
-            Key::Char('y') if self.detail.is_some() => self.copy_table(),
-            Key::Char('y') | Key::Char('Y') => self.copy_variable_cell(),
+            Key::Char('c') => self.copy_variable_cell(),
+            Key::Char('C') | Key::Char('t') => self.copy_table(),
             Key::Char('?') => self.help = true,
             Key::Esc | Key::Char('q') if self.detail.is_some() => self.detail = None,
             Key::Esc | Key::Char('i') | Key::Char('q') => {
@@ -973,6 +975,9 @@ impl State {
     }
 
     // --- copy ---------------------------------------------------------------
+    //
+    // `c` copies the highlighted cell and `C` / `t` the open side panel, the
+    // same in both views.
 
     fn copy_text(&mut self, text: String, what: &str) {
         if text.is_empty() {
@@ -993,6 +998,7 @@ impl State {
     /// The open value table, as tab-separated columns.
     fn copy_table(&mut self) {
         let Some(detail) = &self.detail else {
+            self.notice = Some(NO_PANEL.to_string());
             return;
         };
         let (text, rows) = (detail.tsv(), detail.rows.len());
@@ -1000,16 +1006,39 @@ impl State {
         self.copy_text(text, &format!("table ({rows} {noun})"));
     }
 
-    /// A variable's label, from wherever the cursor is.
-    fn copy_label(&mut self, variable: usize) {
-        let Some(column) = self.columns.get(variable) else {
-            return;
-        };
-        if column.label.is_empty() {
-            self.notice = Some(format!("{} has no label", column.name));
+    /// The open respondent panel, as tab-separated columns: every variable
+    /// of the current row, not only those the panel has room for, with the
+    /// value as the current mode shows it.
+    fn copy_respondent(&mut self) {
+        if !self.panel_open {
+            self.notice = Some(NO_PANEL.to_string());
             return;
         }
-        let (text, what) = (column.label.clone(), format!("label of {}", column.name));
+        if self.rows == 0 || self.columns.is_empty() {
+            return self.copy_text(String::new(), "");
+        }
+        let mut text = String::from("Variable\tLabel\tValue");
+        for (index, column) in self.columns.iter().enumerate() {
+            let value = self.cell(self.cursor_row, index).text;
+            text.push('\n');
+            for (position, field) in [&column.name, &column.label, &value].iter().enumerate() {
+                if position > 0 {
+                    text.push('\t');
+                }
+                // A tab or line break inside a field would shift the columns.
+                text.extend(field.chars().map(|ch| match ch {
+                    '\t' | '\n' | '\r' => ' ',
+                    other => other,
+                }));
+            }
+        }
+        let variables = self.columns.len();
+        let noun = if variables == 1 {
+            "variable"
+        } else {
+            "variables"
+        };
+        let what = format!("row {} ({variables} {noun})", self.cursor_row + 1);
         self.copy_text(text, &what);
     }
 
@@ -1340,55 +1369,111 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn y_copies_the_highlighted_cell_in_full() {
+    fn c_copies_the_highlighted_cell_in_full() {
         let mut state = loaded("survey.sav", 100, 24);
         // gender's label.
-        press(&mut state, &[Key::Char('i'), Key::Down, Key::Char('y')]);
+        press(&mut state, &[Key::Char('i'), Key::Down, Key::Char('c')]);
         assert_eq!(state.take_copy().unwrap().text, "Gender");
         assert_eq!(state.notice.as_deref(), Some("copied label"));
         assert_eq!(state.take_copy(), None, "handed over once");
 
         // Its values, one per line; the notice goes with the next key.
-        press(&mut state, &[Key::Right, Key::Char('y')]);
+        press(&mut state, &[Key::Right, Key::Char('c')]);
         assert_eq!(state.take_copy().unwrap().text, "1=Male\n2=Female");
         assert_eq!(state.notice.as_deref(), Some("copied values"));
         press(&mut state, &[Key::Home]);
         assert_eq!(state.notice, None);
-        press(&mut state, &[Key::Char('y')]);
+        press(&mut state, &[Key::Char('c')]);
         assert_eq!(state.take_copy().unwrap().text, "gender");
 
         // Nothing to copy: say so, and leave the clipboard alone.
         let mut state = loaded("long_strings.sav", 100, 24);
-        press(&mut state, &[Key::Char('i'), Key::Char('y')]);
+        press(&mut state, &[Key::Char('i'), Key::Char('c')]);
         assert_eq!(state.take_copy(), None);
         assert_eq!(state.notice.as_deref(), Some("nothing to copy"));
     }
 
     #[test]
-    fn y_copies_the_open_table_and_shift_y_the_cell() {
-        let mut state = loaded("survey.sav", 120, 24);
+    fn shift_c_or_t_copies_the_open_table_and_c_still_the_cell() {
         // gender: 10 Male, 10 Female, nothing missing.
-        press(
-            &mut state,
-            &[Key::Char('i'), Key::Down, Key::Enter, Key::Char('y')],
-        );
-        assert_eq!(
-            state.take_copy().unwrap().text,
-            "Code\tLabel\tN\t% valid\t% total\n1.00\tMale\t10\t50.0%\t50.0%\n2.00\tFemale\t10\t50.0%\t50.0%"
-        );
-        assert_eq!(state.notice.as_deref(), Some("copied table (2 rows)"));
-        press(&mut state, &[Key::Char('Y')]);
-        assert_eq!(state.take_copy().unwrap().text, "Gender");
+        let table = "Code\tLabel\tN\t% valid\t% total\n1.00\tMale\t10\t50.0%\t50.0%\n2.00\tFemale\t10\t50.0%\t50.0%";
+        for key in ['C', 't'] {
+            let mut state = loaded("survey.sav", 120, 24);
+            press(
+                &mut state,
+                &[Key::Char('i'), Key::Down, Key::Enter, Key::Char(key)],
+            );
+            assert_eq!(state.take_copy().unwrap().text, table);
+            assert_eq!(state.notice.as_deref(), Some("copied table (2 rows)"));
+            // The cell key means the cell, panel or no panel.
+            press(&mut state, &[Key::Char('c')]);
+            assert_eq!(state.take_copy().unwrap().text, "Gender");
+        }
     }
 
     #[test]
-    fn y_copies_the_data_cell_as_shown() {
+    fn c_copies_the_data_cell_as_shown() {
         let mut state = loaded("survey.sav", 100, 24);
-        press(&mut state, &[Key::Right, Key::Char('y')]);
+        press(&mut state, &[Key::Right, Key::Char('c')]);
         assert_eq!(state.take_copy().unwrap().text, "Male");
         assert_eq!(state.notice.as_deref(), Some("copied cell"));
-        press(&mut state, &[Key::Tab, Key::Char('y')]);
+        press(&mut state, &[Key::Tab, Key::Char('c')]);
         assert_eq!(state.take_copy().unwrap().text, "1.00");
+    }
+
+    #[test]
+    fn shift_c_or_t_copies_the_open_respondent() {
+        for key in ['C', 't'] {
+            let mut state = loaded("survey.sav", 100, 24);
+            // Second respondent, panel open.
+            press(&mut state, &[Key::Down, Key::Enter, Key::Char(key)]);
+            let text = state.take_copy().unwrap().text;
+            let lines: Vec<&str> = text.lines().collect();
+            assert_eq!(lines[0], "Variable\tLabel\tValue");
+            // Every variable, not only those the panel has room for.
+            assert_eq!(lines.len(), 1 + state.columns.len());
+            assert_eq!(lines[2], "gender\tGender\tFemale");
+            assert!(lines.iter().all(|line| line.matches('\t').count() == 2));
+            assert_eq!(state.notice.as_deref(), Some("copied row 2 (13 variables)"));
+
+            // The value follows the mode, as on screen.
+            press(&mut state, &[Key::Tab, Key::Char(key)]);
+            let text = state.take_copy().unwrap().text;
+            assert_eq!(text.lines().nth(2), Some("gender\tGender\t2.00"));
+        }
+    }
+
+    #[test]
+    fn the_panel_keys_need_an_open_panel() {
+        for key in ['C', 't'] {
+            let mut state = loaded("survey.sav", 100, 24);
+            press(&mut state, &[Key::Char(key)]);
+            assert_eq!(state.take_copy(), None);
+            assert_eq!(
+                state.notice.as_deref(),
+                Some("open the panel with Enter first")
+            );
+            press(&mut state, &[Key::Char('i'), Key::Char(key)]);
+            assert_eq!(state.take_copy(), None);
+            assert_eq!(
+                state.notice.as_deref(),
+                Some("open the panel with Enter first")
+            );
+        }
+    }
+
+    #[test]
+    fn the_old_copy_keys_do_nothing() {
+        let mut state = loaded("survey.sav", 120, 24);
+        for key in ['y', 'Y', 'L'] {
+            press(&mut state, &[Key::Char(key)]);
+            assert_eq!(state.take_copy(), None, "{key} in Data View");
+        }
+        press(&mut state, &[Key::Char('i'), Key::Down, Key::Enter]);
+        for key in ['y', 'Y', 'L'] {
+            press(&mut state, &[Key::Char(key)]);
+            assert_eq!(state.take_copy(), None, "{key} in Variable View");
+        }
     }
 
     #[test]
@@ -1645,35 +1730,6 @@ pub(crate) mod tests {
             state.on_mouse(Mouse::ScrollRight, 30, 5);
         }
         assert_eq!(state.cursor_col, 12, "stops at the last column");
-    }
-
-    #[test]
-    fn shift_l_copies_the_label_from_anywhere() {
-        let mut state = loaded("survey.sav", 140, 30);
-        // Data View: the current column's variable.
-        press(&mut state, &[Key::Right, Key::Right, Key::Char('L')]);
-        assert_eq!(state.take_copy().unwrap().text, "Overall satisfaction");
-        assert_eq!(
-            state.notice.as_deref(),
-            Some("copied label of satisfaction")
-        );
-
-        // Variable View, whatever cell is highlighted.
-        press(
-            &mut state,
-            &[Key::Char('i'), Key::Down, Key::End, Key::Char('L')],
-        );
-        assert_eq!(state.take_copy().unwrap().text, "Age in years");
-
-        // With the values panel open, where y copies the table.
-        press(&mut state, &[Key::Enter, Key::Char('L')]);
-        assert_eq!(state.take_copy().unwrap().text, "Age in years");
-
-        // A variable without a label: say so, copy nothing.
-        let mut state = loaded("long_strings.sav", 100, 24);
-        press(&mut state, &[Key::Char('L')]);
-        assert_eq!(state.take_copy(), None);
-        assert_eq!(state.notice.as_deref(), Some("id has no label"));
     }
 
     #[test]
