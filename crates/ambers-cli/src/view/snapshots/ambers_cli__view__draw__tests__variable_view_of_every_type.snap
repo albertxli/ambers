@@ -22,4 +22,4 @@ expression: "screen(\"variable_types.sav\", 150, 21, &[Key::Char('i')])"
 │ 16  city       text                                                                                 6        2                                     │
 │ 17  when       date                                                                                 8        0                                     │
 │                                                                                                                                                    │
-╰ ↑↓ move ─ Enter details ─ y / Y copy label / values ─ i / Esc back ───────────────────────────────────────────────────── counts: 8 rows ─ Var 1/17 ╯
+╰ ↑↓←→ cell ─ Enter values ─ y copy cell ─ d go to data ─ i / Esc back ─────────────────────────────────────────────────── counts: 8 rows ─ Var 1/17 ╯

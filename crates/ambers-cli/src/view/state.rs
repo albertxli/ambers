@@ -8,8 +8,47 @@ use ambers_codebook::profile::{Profiler, ValueRow, VariableSummary};
 use arrow::datatypes::Schema;
 use arrow::record_batch::RecordBatch;
 
+use unicode_width::UnicodeWidthStr;
+
+use super::detail::{self, Detail};
 use super::format::{Cell, Column, Mode};
 use super::loader::Message;
+
+/// Rows moved by one notch of the mouse wheel.
+const WHEEL_ROWS: usize = 3;
+
+/// The fields of the variable list: title, and whether it is right-aligned.
+pub const VARIABLE_FIELDS: [(&str, bool); 8] = [
+    ("#", true),
+    ("Name", false),
+    ("Type", false),
+    ("Label", false),
+    ("Values", false),
+    ("N", true),
+    ("Missing", true),
+    ("Label check", false),
+];
+
+/// A mouse event the viewer acts on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mouse {
+    ScrollUp,
+    ScrollDown,
+    ScrollLeft,
+    ScrollRight,
+    /// The left button, pressed.
+    Click,
+}
+
+/// One field of the variable list on screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VariableField {
+    pub title: &'static str,
+    /// Offset from the left edge of the list, frame included.
+    pub x: usize,
+    pub width: usize,
+    pub right: bool,
+}
 
 /// A key press, already translated from the terminal's event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,9 +140,14 @@ pub struct State {
     pub panel_top: usize,
     pub var_cursor: usize,
     pub var_top: usize,
-    /// In Variable View: the details of the variable under the cursor are
-    /// open, scrolled this many value rows down.
-    pub detail: Option<usize>,
+    /// In Variable View: the highlighted field of the variable under the
+    /// cursor, an index into `VARIABLE_FIELDS`.
+    pub var_field: usize,
+    /// In Variable View: the value table of the variable under the cursor,
+    /// when it is open beside the list.
+    pub detail: Option<Detail>,
+    /// Value rows scrolled past in that table.
+    pub detail_scroll: usize,
     /// A one-line message for the border, cleared by the next key.
     pub notice: Option<String>,
 
@@ -133,6 +177,8 @@ impl State {
             unlabeled_variables: 0,
             copy: None,
             detail: None,
+            detail_scroll: 0,
+            var_field: 3,
             notice: None,
             columns,
             batches: Vec::new(),
@@ -193,6 +239,7 @@ impl State {
                     .count();
                 drop(profiler);
                 self.unlabeled_variables = unlabeled;
+                self.refresh_detail();
             }
             Message::Finished => {
                 let more = self.total_rows.is_none_or(|total| total > self.rows);
@@ -445,6 +492,7 @@ impl State {
             }
         };
         self.follow_cursor();
+        self.refresh_detail();
         quit
     }
 
@@ -516,6 +564,7 @@ impl State {
                 self.screen = Screen::Variables;
             }
             Key::Char('f') => self.frozen = !self.frozen,
+            Key::Char('y') => self.copy_data_cell(),
             Key::Char('?') => self.help = true,
             Key::Char('J') if self.panel_open => {
                 self.panel_top = (self.panel_top + 1).min(last_col);
@@ -545,10 +594,8 @@ impl State {
     }
 
     fn variables_key(&mut self, key: Key) {
-        if self.detail.is_some() {
-            return self.detail_key(key);
-        }
         let last = self.columns.len().saturating_sub(1);
+        let last_field = VARIABLE_FIELDS.len() - 1;
         let page = self.grid_rows().max(1);
         match key {
             Key::Up | Key::Char('k') => self.var_cursor = self.var_cursor.saturating_sub(1),
@@ -557,81 +604,264 @@ impl State {
             Key::PageDown => self.var_cursor = (self.var_cursor + page).min(last),
             Key::HalfUp => self.var_cursor = self.var_cursor.saturating_sub(page / 2),
             Key::HalfDown => self.var_cursor = (self.var_cursor + page / 2).min(last),
-            Key::Top | Key::Home | Key::Char('g') => self.var_cursor = 0,
-            Key::Bottom | Key::End | Key::Char('G') => self.var_cursor = last,
-            Key::Char('?') => self.help = true,
-            Key::Enter if !self.columns.is_empty() => self.detail = Some(0),
-            Key::Char('y') | Key::Char('Y') => self.copy_key(key),
-            Key::Esc | Key::Char('i') | Key::Char('q') => self.screen = Screen::Data,
-            _ => {}
-        }
-    }
-
-    /// Keys while a variable's details are open.
-    fn detail_key(&mut self, key: Key) {
-        let last = self.columns.len().saturating_sub(1);
-        // The value table scrolls; its last row can always be brought to the top.
-        let last_row = self.value_rows(self.var_cursor).len().saturating_sub(1);
-        let scroll = self.detail.unwrap_or(0);
-        let page = self.grid_rows().max(1);
-        match key {
-            Key::Up | Key::Char('k') => self.detail = Some(scroll.saturating_sub(1)),
-            Key::Down | Key::Char('j') => self.detail = Some((scroll + 1).min(last_row)),
-            Key::PageUp | Key::HalfUp => self.detail = Some(scroll.saturating_sub(page / 2)),
-            Key::PageDown | Key::HalfDown => {
-                self.detail = Some((scroll + page / 2).min(last_row));
+            Key::Top | Key::Char('g') => self.var_cursor = 0,
+            Key::Bottom | Key::Char('G') => self.var_cursor = last,
+            // The highlighted cell: the row number is not one.
+            Key::Left | Key::Char('h') => self.var_field = (self.var_field - 1).max(1),
+            Key::Right | Key::Char('l') => self.var_field = (self.var_field + 1).min(last_field),
+            Key::Home => self.var_field = 1,
+            Key::End => self.var_field = last_field,
+            // The value table beside the list, like the respondent panel.
+            Key::Enter if !self.columns.is_empty() => {
+                self.detail = match self.detail {
+                    Some(_) => None,
+                    None => Some(self.build_detail()),
+                };
+                self.detail_scroll = 0;
             }
-            Key::Top | Key::Home | Key::Char('g') => self.detail = Some(0),
-            Key::Bottom | Key::End | Key::Char('G') => self.detail = Some(last_row),
-            // The previous / next variable's details.
-            Key::Left | Key::Char('h') => {
-                self.var_cursor = self.var_cursor.saturating_sub(1);
-                self.detail = Some(0);
-            }
-            Key::Right | Key::Char('l') => {
-                self.var_cursor = (self.var_cursor + 1).min(last);
-                self.detail = Some(0);
-            }
+            Key::Char('J') if self.detail.is_some() => self.detail_scroll += 1,
+            Key::Char('K') => self.detail_scroll = self.detail_scroll.saturating_sub(1),
             // Go to this variable in Data View.
-            Key::Enter => {
+            Key::Char('d') if !self.columns.is_empty() => {
                 self.cursor_col = self.var_cursor;
                 self.screen = Screen::Data;
                 self.detail = None;
                 self.follow_panel();
             }
-            Key::Char('y') | Key::Char('Y') => self.copy_key(key),
+            Key::Char('y') if self.detail.is_some() => self.copy_table(),
+            Key::Char('y') | Key::Char('Y') => self.copy_variable_cell(),
             Key::Char('?') => self.help = true,
-            Key::Esc | Key::Char('q') | Key::Char('i') => self.detail = None,
+            Key::Esc | Key::Char('q') if self.detail.is_some() => self.detail = None,
+            Key::Esc | Key::Char('i') | Key::Char('q') => {
+                self.detail = None;
+                self.screen = Screen::Data;
+            }
             _ => {}
         }
     }
 
-    /// `y` copies the variable's full label, `Y` its labelled values as
-    /// `code=label` lines (the codebook's `values` text).
-    fn copy_key(&mut self, key: Key) {
-        let Some(column) = self.columns.get(self.var_cursor) else {
+    // --- mouse --------------------------------------------------------------
+
+    /// Apply a mouse event at screen cell (`x`, `y`). The wheel moves three
+    /// rows at a time; a click moves the cursor to the cell under it.
+    pub fn on_mouse(&mut self, mouse: Mouse, x: usize, y: usize) {
+        if self.help {
+            return;
+        }
+        self.notice = None;
+        match self.screen {
+            Screen::Data => self.data_mouse(mouse, x, y),
+            Screen::Variables => self.variables_mouse(mouse, x, y),
+        }
+        self.follow_cursor();
+        self.refresh_detail();
+    }
+
+    fn data_mouse(&mut self, mouse: Mouse, x: usize, y: usize) {
+        let last_row = self.rows.saturating_sub(1);
+        let last_col = self.columns.len().saturating_sub(1);
+        let column_before = self.cursor_col;
+        let panel_x = self.width.saturating_sub(self.panel_width());
+        if self.panel_open && x >= panel_x {
+            // Over the respondent panel: scroll it, or pick a variable.
+            match mouse {
+                Mouse::ScrollUp => self.panel_top = self.panel_top.saturating_sub(WHEEL_ROWS),
+                Mouse::ScrollDown => self.panel_top = (self.panel_top + WHEEL_ROWS).min(last_col),
+                Mouse::Click if (1..=self.panel_rows()).contains(&y) => {
+                    self.cursor_col = (self.panel_top + y - 1).min(last_col);
+                }
+                _ => {}
+            }
+            return;
+        }
+        match mouse {
+            Mouse::ScrollUp => self.cursor_row = self.cursor_row.saturating_sub(WHEEL_ROWS),
+            Mouse::ScrollDown => self.cursor_row = (self.cursor_row + WHEEL_ROWS).min(last_row),
+            Mouse::ScrollLeft => self.cursor_col = self.cursor_col.saturating_sub(1),
+            Mouse::ScrollRight => self.cursor_col = (self.cursor_col + 1).min(last_col),
+            Mouse::Click => {
+                // The grid starts below the frame and the header.
+                if y >= 2 && y - 2 < self.grid_rows() && self.top_row + y - 2 < self.rows {
+                    self.cursor_row = self.top_row + y - 2;
+                }
+                // Columns start after the frame and the row-number gutter.
+                let columns_x = 1 + self.gutter_width() + 3;
+                if let Some(slot) = (self.visible_columns().0.into_iter())
+                    .find(|slot| (columns_x + slot.x..columns_x + slot.x + slot.width).contains(&x))
+                {
+                    self.cursor_col = slot.column;
+                }
+            }
+        }
+        if self.cursor_col != column_before {
+            self.follow_panel();
+        }
+    }
+
+    fn variables_mouse(&mut self, mouse: Mouse, x: usize, y: usize) {
+        let last = self.columns.len().saturating_sub(1);
+        let last_field = VARIABLE_FIELDS.len() - 1;
+        let detail_x = self.width.saturating_sub(self.detail_width());
+        if self.detail.is_some() && x >= detail_x {
+            // Over the value table: scroll it.
+            match mouse {
+                Mouse::ScrollUp => {
+                    self.detail_scroll = self.detail_scroll.saturating_sub(WHEEL_ROWS)
+                }
+                Mouse::ScrollDown => self.detail_scroll += WHEEL_ROWS,
+                _ => {}
+            }
+            return;
+        }
+        match mouse {
+            Mouse::ScrollUp => self.var_cursor = self.var_cursor.saturating_sub(WHEEL_ROWS),
+            Mouse::ScrollDown => self.var_cursor = (self.var_cursor + WHEEL_ROWS).min(last),
+            Mouse::ScrollLeft => self.var_field = (self.var_field - 1).max(1),
+            Mouse::ScrollRight => self.var_field = (self.var_field + 1).min(last_field),
+            Mouse::Click => {
+                if y >= 2 && y - 2 < self.grid_rows() && self.var_top + y - 2 <= last {
+                    self.var_cursor = self.var_top + y - 2;
+                }
+                if let Some(field) = (self.variable_layout().iter())
+                    .position(|field| (field.x..field.x + field.width).contains(&x))
+                {
+                    self.var_field = field.max(1);
+                }
+            }
+        }
+    }
+
+    // --- Variable View ------------------------------------------------------
+
+    /// Width of the value table beside Variable View, frame included; 0
+    /// when it is closed.
+    pub fn detail_width(&self) -> usize {
+        if self.detail.is_none() {
+            return 0;
+        }
+        (self.width / 2)
+            .clamp(46, 96)
+            .min(self.width.saturating_sub(24))
+    }
+
+    /// Where each field of the variable list is drawn: its offset from the
+    /// left edge of the list and its width. Names are never cut.
+    pub fn variable_layout(&self) -> Vec<VariableField> {
+        let number = self.columns.len().to_string().len().max(1);
+        let name = (self.columns.iter().map(|column| column.name.width()))
+            .max()
+            .unwrap_or(4)
+            .max(4);
+        let count = crate::info::group_digits(self.counted_rows()).len().max(7);
+        let widths = [number, name, 11, 32, 30, count, count, 32];
+        let mut x = 2;
+        (VARIABLE_FIELDS.iter().zip(widths))
+            .map(|((title, right), width)| {
+                let field = VariableField {
+                    title,
+                    x,
+                    width,
+                    right: *right,
+                };
+                x += width + 2;
+                field
+            })
+            .collect()
+    }
+
+    /// The full text of one cell of the variable list: what is copied, and
+    /// what is drawn after shortening. Labelled values are one per line.
+    pub fn variable_cell(&self, variable: usize, field: usize) -> String {
+        let Some(column) = self.columns.get(variable) else {
+            return String::new();
+        };
+        let summary = || self.summary(variable);
+        match field {
+            0 => (variable + 1).to_string(),
+            1 => column.name.clone(),
+            2 => summary().variable_type.name().to_string(),
+            3 => column.label.clone(),
+            4 => {
+                let pairs: Vec<String> = (summary().values.iter())
+                    .map(|(code, label)| format!("{code}={label}"))
+                    .collect();
+                pairs.join("\n")
+            }
+            5 => summary().n_valid.to_string(),
+            6 => summary().n_missing.to_string(),
+            _ => self.label_check(variable),
+        }
+    }
+
+    /// The value table of the variable under the cursor.
+    fn build_detail(&self) -> Detail {
+        let variable = self.var_cursor;
+        let column = &self.columns[variable];
+        let categorical = self.summary(variable).variable_type.is_categorical();
+        let rows = if categorical {
+            detail::categorical(column, self.value_rows(variable))
+        } else {
+            detail::distinct(column, variable, &self.batches)
+        };
+        Detail {
+            variable,
+            rows_loaded: self.rows,
+            categorical,
+            rows,
+        }
+    }
+
+    /// Keep an open value table in step with the cursor and with loading,
+    /// and its scroll position inside the table.
+    fn refresh_detail(&mut self) {
+        let Some(detail) = &self.detail else {
             return;
         };
-        let (text, what) = if key == Key::Char('y') {
-            (column.label.clone(), "label".to_string())
-        } else {
-            let values = self.summary(self.var_cursor).values;
-            let lines: Vec<String> = (values.iter())
-                .map(|(code, label)| format!("{code}={label}"))
-                .collect();
-            let noun = if lines.len() == 1 { "value" } else { "values" };
-            (lines.join("\n"), format!("{} {noun}", lines.len()))
-        };
+        if detail.variable != self.var_cursor {
+            self.detail_scroll = 0;
+        }
+        if detail.variable != self.var_cursor || detail.rows_loaded != self.rows {
+            self.detail = Some(self.build_detail());
+        }
+        let rows = self.detail.as_ref().map_or(0, |detail| detail.rows.len());
+        self.detail_scroll = self.detail_scroll.min(rows.saturating_sub(1));
+    }
+
+    // --- copy ---------------------------------------------------------------
+
+    fn copy_text(&mut self, text: String, what: &str) {
         if text.is_empty() {
-            self.notice = Some(format!(
-                "{} has no {}",
-                column.name,
-                what.trim_start_matches("0 ")
-            ));
+            self.notice = Some("nothing to copy".to_string());
             return;
         }
         self.notice = Some(format!("copied {what}"));
         self.copy = Some(Copy { text });
+    }
+
+    /// The highlighted cell of the variable list, in full.
+    fn copy_variable_cell(&mut self) {
+        let text = self.variable_cell(self.var_cursor, self.var_field);
+        let what = VARIABLE_FIELDS[self.var_field].0.to_lowercase();
+        self.copy_text(text, &what);
+    }
+
+    /// The open value table, as tab-separated columns.
+    fn copy_table(&mut self) {
+        let Some(detail) = &self.detail else {
+            return;
+        };
+        let (text, rows) = (detail.tsv(), detail.rows.len());
+        let noun = if rows == 1 { "row" } else { "rows" };
+        self.copy_text(text, &format!("table ({rows} {noun})"));
+    }
+
+    /// The Data View cell under the cursor, in full, as it is shown.
+    fn copy_data_cell(&mut self) {
+        if self.rows == 0 || self.columns.is_empty() {
+            return self.copy_text(String::new(), "");
+        }
+        let text = self.cell(self.cursor_row, self.cursor_col).text;
+        self.copy_text(text, "cell");
     }
 }
 
@@ -822,68 +1052,254 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn variable_view_opens_details_and_jumps_to_the_variable() {
+    fn variable_view_moves_a_cell_cursor() {
         let mut state = loaded("survey.sav", 100, 24);
         press(&mut state, &[Key::Right, Key::Char('i')]);
-        assert_eq!((state.screen, state.var_cursor), (Screen::Variables, 1));
-        // Enter opens the details; Enter again goes to that variable's data.
-        press(&mut state, &[Key::Down, Key::Down, Key::Enter]);
-        assert_eq!((state.screen, state.detail), (Screen::Variables, Some(0)));
-        press(&mut state, &[Key::Enter]);
+        // Opens on the variable under the Data View cursor, on its label.
         assert_eq!(
-            (state.screen, state.cursor_col, state.detail),
-            (Screen::Data, 3, None)
+            (state.screen, state.var_cursor, state.var_field),
+            (Screen::Variables, 1, 3)
         );
-        // Leaving with Esc does not move the cursor.
-        press(&mut state, &[Key::Char('i'), Key::Bottom, Key::Esc]);
-        assert_eq!((state.screen, state.cursor_col), (Screen::Data, 3));
+        press(&mut state, &[Key::Down, Key::Right, Key::Right]);
+        assert_eq!((state.var_cursor, state.var_field), (2, 5));
+        // The row number is not a cell; the last field is the label check.
+        press(&mut state, &[Key::Home, Key::Left]);
+        assert_eq!(state.var_field, 1);
+        press(&mut state, &[Key::End, Key::Right]);
+        assert_eq!(state.var_field, 7);
+        press(&mut state, &[Key::Bottom]);
+        assert_eq!(state.var_cursor, 12);
+        // Leaving with Esc does not move the Data View cursor.
+        press(&mut state, &[Key::Esc]);
+        assert_eq!((state.screen, state.cursor_col), (Screen::Data, 1));
     }
 
     #[test]
-    fn details_scroll_step_between_variables_and_close() {
+    fn d_goes_to_the_variable_in_data_view() {
         let mut state = loaded("survey.sav", 100, 24);
-        // satisfaction (variable 3): a MISSING row and six codes.
+        press(
+            &mut state,
+            &[
+                Key::Char('i'),
+                Key::Down,
+                Key::Down,
+                Key::Down,
+                Key::Char('d'),
+            ],
+        );
+        assert_eq!((state.screen, state.cursor_col), (Screen::Data, 3));
+        assert!(state.detail.is_none());
+    }
+
+    #[test]
+    fn enter_opens_the_value_table_beside_the_list_and_it_follows_the_cursor() {
+        let mut state = loaded("survey.sav", 120, 24);
+        assert_eq!(state.detail_width(), 0);
+        // satisfaction (variable 3): a missing row and six codes.
         press(
             &mut state,
             &[Key::Char('i'), Key::Down, Key::Down, Key::Enter],
         );
-        assert_eq!(state.value_rows(2).len(), 7);
-        press(&mut state, &[Key::Down, Key::Down]);
-        assert_eq!(state.detail, Some(2));
-        press(&mut state, &[Key::Bottom, Key::Down]);
-        assert_eq!(state.detail, Some(6), "stops at the last value row");
-        // The next variable's details start at the top.
-        press(&mut state, &[Key::Right]);
-        assert_eq!((state.var_cursor, state.detail), (3, Some(0)));
-        press(&mut state, &[Key::Left, Key::Left, Key::Left, Key::Left]);
-        assert_eq!(state.var_cursor, 0);
-        // Esc closes the details, not Variable View.
+        let detail = state.detail.as_ref().unwrap();
+        assert_eq!(
+            (detail.variable, detail.categorical, detail.rows.len()),
+            (2, true, 7)
+        );
+        assert_eq!(state.detail_width(), 60);
+
+        // J / K scroll the table and stop at its last row.
+        press(&mut state, &[Key::Char('J'), Key::Char('J')]);
+        assert_eq!(state.detail_scroll, 2);
+        for _ in 0..10 {
+            press(&mut state, &[Key::Char('J')]);
+        }
+        assert_eq!(state.detail_scroll, 6);
+
+        // Moving to another variable shows that variable, from the top.
+        press(&mut state, &[Key::Down]);
+        let detail = state.detail.as_ref().unwrap();
+        assert_eq!(
+            (detail.variable, detail.categorical, state.detail_scroll),
+            (3, false, 0)
+        );
+
+        // Esc closes the table first, then Variable View; Enter toggles it.
         press(&mut state, &[Key::Esc]);
-        assert_eq!((state.screen, state.detail), (Screen::Variables, None));
+        assert_eq!(
+            (state.screen, state.detail.is_some()),
+            (Screen::Variables, false)
+        );
+        press(&mut state, &[Key::Enter, Key::Enter]);
+        assert!(state.detail.is_none());
     }
 
     #[test]
-    fn copying_the_label_and_the_values() {
+    fn text_and_numeric_variables_list_their_distinct_values() {
+        let mut state = loaded("variable_types.sav", 120, 24);
+        let open = |state: &mut State, name: &str| {
+            state.var_cursor = state.columns.iter().position(|c| c.name == name).unwrap();
+            state.detail = None;
+            state.on_key(Key::Enter);
+            let rows = &state.detail.as_ref().unwrap().rows;
+            rows.iter()
+                .map(|row| (row.code.clone(), row.n))
+                .collect::<Vec<_>>()
+        };
+        state.on_key(Key::Char('i'));
+        let text = |code: &str, n: u64| (code.to_string(), n);
+        assert_eq!(
+            open(&mut state, "city"),
+            [
+                text("(missing)", 2),
+                text("LA", 2),
+                text("NYC", 3),
+                text("Paris", 1)
+            ]
+        );
+        assert_eq!(
+            open(&mut state, "only1"),
+            [text("(missing)", 1), text("1", 7)]
+        );
+        assert_eq!(open(&mut state, "when").len(), 8);
+        // A categorical variable comes from the codebook: codes and labels.
+        assert_eq!(open(&mut state, "likert").len(), 6);
+    }
+
+    #[test]
+    fn an_open_value_table_keeps_up_with_loading() {
+        let mut state = loaded("survey.sav", 120, 24);
+        press(&mut state, &[Key::Char('i'), Key::Enter]);
+        let before = state.detail.clone().unwrap();
+        assert_eq!(before.rows_loaded, 20);
+        // Five more rows arrive: the table is rebuilt for 25.
+        let extra = state.batches[0].clone();
+        state.receive(Message::Batch(extra));
+        let after = state.detail.as_ref().unwrap();
+        assert_eq!(after.rows_loaded, 25);
+        assert_ne!(after.rows, before.rows);
+    }
+
+    #[test]
+    fn y_copies_the_highlighted_cell_in_full() {
         let mut state = loaded("survey.sav", 100, 24);
+        // gender's label.
         press(&mut state, &[Key::Char('i'), Key::Down, Key::Char('y')]);
         assert_eq!(state.take_copy().unwrap().text, "Gender");
         assert_eq!(state.notice.as_deref(), Some("copied label"));
         assert_eq!(state.take_copy(), None, "handed over once");
 
-        // From the details too; the notice goes with the next key.
-        press(&mut state, &[Key::Enter, Key::Char('Y')]);
+        // Its values, one per line; the notice goes with the next key.
+        press(&mut state, &[Key::Right, Key::Char('y')]);
         assert_eq!(state.take_copy().unwrap().text, "1=Male\n2=Female");
-        assert_eq!(state.notice.as_deref(), Some("copied 2 values"));
-        press(&mut state, &[Key::Down]);
+        assert_eq!(state.notice.as_deref(), Some("copied values"));
+        press(&mut state, &[Key::Home]);
         assert_eq!(state.notice, None);
+        press(&mut state, &[Key::Char('y')]);
+        assert_eq!(state.take_copy().unwrap().text, "gender");
 
         // Nothing to copy: say so, and leave the clipboard alone.
         let mut state = loaded("long_strings.sav", 100, 24);
         press(&mut state, &[Key::Char('i'), Key::Char('y')]);
         assert_eq!(state.take_copy(), None);
-        assert_eq!(state.notice.as_deref(), Some("id has no label"));
+        assert_eq!(state.notice.as_deref(), Some("nothing to copy"));
+    }
+
+    #[test]
+    fn y_copies_the_open_table_and_shift_y_the_cell() {
+        let mut state = loaded("survey.sav", 120, 24);
+        // gender: 10 Male, 10 Female, nothing missing.
+        press(
+            &mut state,
+            &[Key::Char('i'), Key::Down, Key::Enter, Key::Char('y')],
+        );
+        assert_eq!(
+            state.take_copy().unwrap().text,
+            "Code\tLabel\tN\t% valid\t% total\n1.00\tMale\t10\t50.0%\t50.0%\n2.00\tFemale\t10\t50.0%\t50.0%"
+        );
+        assert_eq!(state.notice.as_deref(), Some("copied table (2 rows)"));
         press(&mut state, &[Key::Char('Y')]);
-        assert_eq!(state.notice.as_deref(), Some("id has no values"));
+        assert_eq!(state.take_copy().unwrap().text, "Gender");
+    }
+
+    #[test]
+    fn y_copies_the_data_cell_as_shown() {
+        let mut state = loaded("survey.sav", 100, 24);
+        press(&mut state, &[Key::Right, Key::Char('y')]);
+        assert_eq!(state.take_copy().unwrap().text, "Male");
+        assert_eq!(state.notice.as_deref(), Some("copied cell"));
+        press(&mut state, &[Key::Tab, Key::Char('y')]);
+        assert_eq!(state.take_copy().unwrap().text, "1.00");
+    }
+
+    #[test]
+    fn the_wheel_scrolls_the_grid_and_a_click_selects_a_cell() {
+        // 13 lines: 10 data rows. Gutter: ` 123 │`, so columns start at x = 7.
+        let mut state = loaded("survey.sav", 100, 13);
+        state.on_mouse(Mouse::ScrollDown, 30, 5);
+        state.on_mouse(Mouse::ScrollDown, 30, 5);
+        assert_eq!(state.cursor_row, 6);
+        state.on_mouse(Mouse::ScrollUp, 30, 5);
+        assert_eq!(state.cursor_row, 3);
+        state.on_mouse(Mouse::ScrollRight, 30, 5);
+        state.on_mouse(Mouse::ScrollRight, 30, 5);
+        state.on_mouse(Mouse::ScrollLeft, 30, 5);
+        assert_eq!(state.cursor_col, 1);
+        for _ in 0..20 {
+            state.on_mouse(Mouse::ScrollDown, 30, 5);
+        }
+        assert_eq!(state.cursor_row, 19, "stops at the last row");
+
+        // Click the fourth data row (y = 2 is the first) on `gender`.
+        let mut state = loaded("survey.sav", 100, 13);
+        let gender = state.visible_columns().0[1];
+        state.on_mouse(Mouse::Click, 7 + gender.x, 5);
+        assert_eq!((state.cursor_row, state.cursor_col), (3, 1));
+        // A click on the header or the frame moves no row.
+        state.on_mouse(Mouse::Click, 7 + gender.x, 1);
+        state.on_mouse(Mouse::Click, 7 + gender.x, 12);
+        assert_eq!(state.cursor_row, 3);
+    }
+
+    #[test]
+    fn the_mouse_works_in_the_panels() {
+        // Over the respondent panel the wheel scrolls it; a click picks a variable.
+        let mut state = loaded("survey.sav", 100, 8);
+        press(&mut state, &[Key::Enter]);
+        let panel_x = 100 - state.panel_width();
+        state.on_mouse(Mouse::ScrollDown, panel_x + 5, 3);
+        assert_eq!((state.panel_top, state.cursor_row), (3, 0));
+        state.on_mouse(Mouse::Click, panel_x + 5, 2);
+        assert_eq!(state.cursor_col, 4);
+
+        // In Variable View: wheel over the list moves the cursor, over the
+        // value table it scrolls the table; a click selects a cell.
+        let mut state = loaded("survey.sav", 140, 24);
+        press(
+            &mut state,
+            &[Key::Char('i'), Key::Down, Key::Down, Key::Enter],
+        );
+        let table_x = 140 - state.detail_width();
+        state.on_mouse(Mouse::ScrollDown, table_x + 5, 10);
+        assert_eq!((state.detail_scroll, state.var_cursor), (3, 2));
+        state.on_mouse(Mouse::ScrollDown, 10, 10);
+        assert_eq!(state.var_cursor, 5);
+        let name = state.variable_layout()[1];
+        state.on_mouse(Mouse::Click, name.x, 2);
+        assert_eq!((state.var_cursor, state.var_field), (0, 1));
+        assert_eq!(
+            state.detail.as_ref().unwrap().variable,
+            0,
+            "the table follows"
+        );
+    }
+
+    #[test]
+    fn the_mouse_is_ignored_while_help_is_open() {
+        let mut state = loaded("survey.sav", 100, 24);
+        press(&mut state, &[Key::Char('?')]);
+        state.on_mouse(Mouse::ScrollDown, 30, 5);
+        assert!(state.help);
+        assert_eq!(state.cursor_row, 0);
     }
 
     #[test]

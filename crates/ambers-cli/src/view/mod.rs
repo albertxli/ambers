@@ -7,6 +7,8 @@
 //! - `draw` paints the state; `theme` holds the colours.
 //! - This module owns the terminal: setup, the event loop, teardown.
 
+mod clipboard;
+mod detail;
 mod draw;
 mod format;
 mod loader;
@@ -22,11 +24,15 @@ use std::time::Duration;
 use ambers::scanner::SavScanner;
 use anyhow::Result;
 use ratatui::DefaultTerminal;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+    KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
+use ratatui::crossterm::execute;
 
 pub use self::format::Mode;
 use self::loader::{BATCH_ROWS, Message};
-use self::state::{Key, Load, State};
+use self::state::{Key, Load, Mouse, State};
 use self::theme::Theme;
 pub use self::theme::ThemeName;
 
@@ -77,9 +83,21 @@ pub fn run(file: &Path, options: &Options) -> Result<()> {
     let no_color = std::env::var_os("NO_COLOR").is_some_and(|value| !value.is_empty());
     let theme = Theme::pick(options.theme, no_color);
 
+    // A panic must not leave the terminal reporting mouse movements as
+    // text. `ratatui::init` chains to this hook after restoring the screen.
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = execute!(io::stdout(), DisableMouseCapture);
+        previous(info);
+    }));
     // Raw mode and the alternate screen, with a panic hook that undoes both.
     let mut terminal = ratatui::init();
-    let result = event_loop(&mut terminal, &mut state, &receiver, &theme);
+    // The wheel scrolls and a click selects a cell. While this is on, the
+    // terminal's own text selection needs Shift held down.
+    let result = execute!(io::stdout(), EnableMouseCapture)
+        .map_err(Into::into)
+        .and_then(|()| event_loop(&mut terminal, &mut state, &receiver, &theme));
+    let _ = execute!(io::stdout(), DisableMouseCapture);
     ratatui::restore();
     result
 }
@@ -119,11 +137,15 @@ fn event_loop(
             state.resize(size.width, size.height);
             terminal.draw(|frame| draw::draw(frame, state, theme))?;
             redraw = false;
-            // After the frame, so the two do not interleave on the way out.
             if let Some(copy) = state.take_copy() {
-                let mut out = io::stdout().lock();
-                out.write_all(clipboard_sequence(&copy.text).as_bytes())?;
-                out.flush()?;
+                // The system's clipboard command, or failing that the
+                // terminal's escape sequence: written after the frame, so
+                // the two do not interleave on the way out.
+                if !clipboard::copy(&copy.text) {
+                    let mut out = io::stdout().lock();
+                    out.write_all(clipboard::escape_sequence(&copy.text).as_bytes())?;
+                    out.flush()?;
+                }
             }
         }
 
@@ -146,38 +168,32 @@ fn event_loop(
                     redraw = true;
                 }
             }
+            Event::Mouse(event) => {
+                if let Some(mouse) = translate_mouse(&event) {
+                    state.on_mouse(mouse, event.column as usize, event.row as usize);
+                    redraw = true;
+                }
+            }
             Event::Resize(..) => redraw = true,
             _ => {}
         }
     }
 }
 
-/// The escape sequence that asks the terminal to put `text` on the system
-/// clipboard (OSC 52). It needs no clipboard library and works over SSH;
-/// Windows Terminal and most current terminals honour it, the legacy
-/// Windows console ignores it.
-fn clipboard_sequence(text: &str) -> String {
-    format!("\x1b]52;c;{}\x07", base64(text.as_bytes()))
-}
-
-/// Standard base64 with padding.
-fn base64(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let group = (u32::from(chunk[0]) << 16)
-            | (u32::from(*chunk.get(1).unwrap_or(&0)) << 8)
-            | u32::from(*chunk.get(2).unwrap_or(&0));
-        for position in 0..4 {
-            if position <= chunk.len() {
-                let index = (group >> (18 - 6 * position)) & 0x3f;
-                encoded.push(ALPHABET[index as usize] as char);
-            } else {
-                encoded.push('=');
-            }
-        }
-    }
-    encoded
+/// A terminal mouse event as a viewer one. Shift turns the vertical wheel
+/// into a horizontal one, for mice without a tilt wheel.
+fn translate_mouse(event: &MouseEvent) -> Option<Mouse> {
+    let shift = event.modifiers.contains(KeyModifiers::SHIFT);
+    Some(match event.kind {
+        MouseEventKind::ScrollUp if shift => Mouse::ScrollLeft,
+        MouseEventKind::ScrollDown if shift => Mouse::ScrollRight,
+        MouseEventKind::ScrollUp => Mouse::ScrollUp,
+        MouseEventKind::ScrollDown => Mouse::ScrollDown,
+        MouseEventKind::ScrollLeft => Mouse::ScrollLeft,
+        MouseEventKind::ScrollRight => Mouse::ScrollRight,
+        MouseEventKind::Down(MouseButton::Left) => Mouse::Click,
+        _ => return None,
+    })
 }
 
 /// Ctrl+C. In raw mode it arrives as a key, not as a signal.
@@ -258,29 +274,52 @@ mod tests {
 }
 
 #[cfg(test)]
-mod clipboard_tests {
+mod mouse_tests {
     use super::*;
 
-    #[test]
-    fn base64_matches_the_standard_vectors() {
-        // RFC 4648, section 10.
-        for (plain, encoded) in [
-            ("", ""),
-            ("f", "Zg=="),
-            ("fo", "Zm8="),
-            ("foo", "Zm9v"),
-            ("foob", "Zm9vYg=="),
-            ("fooba", "Zm9vYmE="),
-            ("foobar", "Zm9vYmFy"),
-        ] {
-            assert_eq!(base64(plain.as_bytes()), encoded, "{plain:?}");
+    fn event(kind: MouseEventKind, modifiers: KeyModifiers) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column: 0,
+            row: 0,
+            modifiers,
         }
     }
 
     #[test]
-    fn the_clipboard_sequence_carries_utf8() {
-        assert_eq!(clipboard_sequence("Gender"), "\x1b]52;c;R2VuZGVy\x07");
-        // "é" is two bytes in UTF-8.
-        assert_eq!(clipboard_sequence("é"), "\x1b]52;c;w6k=\x07");
+    fn the_wheel_scrolls_and_shift_turns_it_sideways() {
+        let none = KeyModifiers::NONE;
+        let shift = KeyModifiers::SHIFT;
+        assert_eq!(
+            translate_mouse(&event(MouseEventKind::ScrollDown, none)),
+            Some(Mouse::ScrollDown)
+        );
+        assert_eq!(
+            translate_mouse(&event(MouseEventKind::ScrollUp, shift)),
+            Some(Mouse::ScrollLeft)
+        );
+        assert_eq!(
+            translate_mouse(&event(MouseEventKind::ScrollDown, shift)),
+            Some(Mouse::ScrollRight)
+        );
+        assert_eq!(
+            translate_mouse(&event(MouseEventKind::ScrollRight, none)),
+            Some(Mouse::ScrollRight)
+        );
+    }
+
+    #[test]
+    fn only_a_left_press_is_a_click() {
+        let none = KeyModifiers::NONE;
+        let left = MouseEventKind::Down(MouseButton::Left);
+        assert_eq!(translate_mouse(&event(left, none)), Some(Mouse::Click));
+        for kind in [
+            MouseEventKind::Up(MouseButton::Left),
+            MouseEventKind::Down(MouseButton::Right),
+            MouseEventKind::Moved,
+            MouseEventKind::Drag(MouseButton::Left),
+        ] {
+            assert_eq!(translate_mouse(&event(kind, none)), None);
+        }
     }
 }

@@ -82,18 +82,31 @@ A full-screen grid in the style of SPSS's Data View. The first screen appears at
 | Key | Action |
 |---|---|
 | arrows, `h` `j` `k` `l` | move one cell |
+| mouse | the wheel scrolls up and down, Shift+wheel (or a tilt wheel) sideways; a click selects the cell under it |
 | PgUp / PgDn, Ctrl+u / Ctrl+d | a screen, half a screen |
 | Home / End | first / last variable |
 | `g` / `G` | first / last loaded row |
 | digits | go to that row as you type; Enter keeps it, Esc goes back |
 | Tab | switch what cells show: **Labels**, **Codes**, **Both** (`1  Male`) |
-| Enter | panel with the current respondent's answers: variable, code and label, variable label |
-| `i` | Variable View: one row per variable with its type, label, labelled values, valid and missing counts |
-| Enter (in Variable View) | the variable's details: full label, format, and every value with its count and share; `←` `→` step through variables, Enter goes to that variable's data |
-| `y` / `Y` (in Variable View) | copy the full label / the `code=label` list to the clipboard |
+| Enter | side panel with the current respondent's answers: variable, code and label, variable label |
 | `f` | freeze / unfreeze the first variable while scrolling sideways |
+| `y` | copy the current cell to the clipboard |
+| `i` | Variable View and back |
 | `?` | list of keys |
 | `q`, Esc | close the panel or view; quit |
+
+In Variable View (`i`), one row per variable with its type, label, labelled values, valid and missing counts:
+
+| Key | Action |
+|---|---|
+| arrows, click | move the highlighted cell |
+| Enter | side panel with the variable's values: full label, format, and every value with its count and share |
+| `J` / `K`, wheel over the panel | scroll the value table |
+| `y` | copy the highlighted cell in full (the whole label, the whole value list); with the value table open, copy the table |
+| `Y` | copy the highlighted cell even when the value table is open |
+| `d` | go to this variable in Data View |
+
+While the viewer is open it captures the mouse, so selecting text with the mouse needs Shift held down (in most terminals).
 
 Files with incomplete labels are shown as they are, and the gaps are made visible:
 
@@ -106,10 +119,11 @@ Variable View describes each variable the way `ambers.codebook()` does, with the
 
 - **Type** is `categorical`, `numeric`, `text` or `date`. A numeric variable is categorical when it has value labels, belongs to a multiple-response set, or holds only 0 and 1; a string is `text` even with value labels.
 - **N** is the valid cases and **Missing** the system-missing ones (for strings, empty text too). Values declared user-missing count as valid.
-- The details list every code: labelled codes that never occur (count 0), codes in the data without a label, and the system-missing row.
+- The value table of a categorical variable lists every code: labelled codes that never occur (count 0), codes in the data without a label, and the system-missing row.
+- For a text, numeric or date variable the value table lists every distinct value with its count, the missing row first, then text from A to Z (symbols and digits before letters, ignoring case) and numbers and dates in ascending order. This goes beyond `ambers.codebook()`, which has one summary row for these types.
 - Counts cover the rows loaded so far and update while the file loads; the border says how many rows that is.
 
-Copying uses the terminal's clipboard escape sequence, which Windows Terminal and most current terminals support; the legacy Windows console does not.
+A copied value table is tab-separated with a header row (`Code`, `Label`, `N`, `% valid`, `% total`), so pasting into a spreadsheet fills one column per field. Copying goes through the system clipboard (`clip` on Windows, `pbcopy` on macOS, `wl-copy` / `xclip` / `xsel` on Linux); if none is available, the terminal's clipboard escape sequence is used, which some terminals ignore.
 
 ## Python
 
