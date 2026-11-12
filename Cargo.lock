@@ -66,6 +66,7 @@ dependencies = [
  "insta",
  "mimalloc",
  "ratatui",
+ "serde_json",
  "unicode-width",
 ]
 

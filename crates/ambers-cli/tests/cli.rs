@@ -336,3 +336,97 @@ fn view_rejects_an_unknown_mode() {
     assert_eq!(output.status.code(), Some(2));
     assert!(stderr(&output).contains("[possible values: labels, codes, both]"));
 }
+
+// ---------------------------------------------------------------------------
+// info --counts
+// ---------------------------------------------------------------------------
+
+/// The cells of the variables table's rows, by variable name.
+fn variable_rows(output: &str) -> std::collections::HashMap<String, Vec<String>> {
+    let (_summary, table) = output.split_once("╯\n").expect("no summary table");
+    table
+        .lines()
+        .filter_map(|line| line.strip_prefix("│ "))
+        .map(|line| {
+            line.split(['┆', '│'])
+                .map(|cell| cell.trim().to_string())
+                .collect::<Vec<_>>()
+        })
+        .map(|cells| (cells[1].clone(), cells))
+        .collect()
+}
+
+#[test]
+fn info_counts() {
+    insta::assert_snapshot!(ok_stdout(&[
+        "info",
+        "tests/data/imperfect_labels.sav",
+        "--counts"
+    ]));
+}
+
+#[test]
+fn info_shows_the_codebook_type_and_counts_refine_it() {
+    let file = "tests/data/variable_types.sav";
+    let plain = variable_rows(&ok_stdout(&["info", file, "--head", "17"]));
+    let counted = variable_rows(&ok_stdout(&["info", file, "--head", "17", "--counts"]));
+    // Decided by the metadata alone.
+    for (name, variable_type) in [
+        ("age", "numeric"),
+        ("mr_a", "categorical"),
+        ("likert", "categorical"),
+        ("city", "text"),
+        ("when", "date"),
+    ] {
+        assert_eq!(plain[name][2], variable_type, "{name}");
+        assert_eq!(counted[name][2], variable_type, "{name}");
+    }
+    // An unlabelled column of zeros and ones needs the data.
+    assert_eq!(plain["flag"][2], "numeric");
+    assert_eq!(counted["flag"][2], "categorical");
+    // Counts appear only on request: header and rows have two more cells.
+    assert_eq!(plain["Name"][..4], ["#", "Name", "Type", "Label"]);
+    assert!(!plain["Name"].contains(&"N".to_string()));
+    assert_eq!(counted["Name"][4..6], ["N", "Missing"]);
+}
+
+#[test]
+fn info_counts_match_the_codebook() {
+    // The numbers Python's am.codebook() reports for the same file.
+    let expected = std::fs::read_to_string(
+        repo_root().join("tests/data/expected/variable_types.sav.codebook.json"),
+    )
+    .unwrap();
+    let expected: serde_json::Value = serde_json::from_str(&expected).unwrap();
+    let counted = variable_rows(&ok_stdout(&[
+        "info",
+        "tests/data/variable_types.sav",
+        "--head",
+        "17",
+        "--counts",
+    ]));
+    for variable in expected["variables"].as_array().unwrap() {
+        let name = variable["variable"].as_str().unwrap();
+        let row = &counted[name];
+        assert_eq!(row[4], variable["n_valid"].to_string(), "{name} N");
+        assert_eq!(row[5], variable["n_missing"].to_string(), "{name} Missing");
+    }
+}
+
+#[test]
+fn info_counts_only_the_listed_variables_of_the_whole_file() {
+    let out = ok_stdout(&[
+        "info",
+        "tests/data/survey.sav",
+        "--counts",
+        "--head",
+        "2",
+        "--tail",
+        "1",
+    ]);
+    assert!(out.contains("│ Counted     │ 20 rows"), "{out}");
+    let rows = variable_rows(&out);
+    // id, gender, ..., weight: three variables, a gap row and the header.
+    assert_eq!(rows.len(), 5);
+    assert_eq!(rows["weight"][4..6], ["20", "0"]);
+}

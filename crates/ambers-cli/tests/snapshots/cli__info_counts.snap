@@ -1,0 +1,25 @@
+---
+source: crates/ambers-cli/tests/cli.rs
+expression: "ok_stdout(&[\"info\", \"tests/data/imperfect_labels.sav\", \"--counts\"])"
+---
+╭─────────────┬───────────────────────────────────────╮
+│ File        │ tests/data/imperfect_labels.sav       │
+│ Label       │ ambers imperfect value labels fixture │
+│ Shape       │ 12 rows × 6 columns                   │
+│ Size        │ 1.5 KB (1,533 bytes)                  │
+│ Compression │ bytecode                              │
+│ Encoding    │ UTF-8                                 │
+│ Created     │ 2026-11-12 02:09:48                   │
+│ Counted     │ 12 rows                               │
+│ Status      │ ok                                    │
+╰─────────────┴───────────────────────────────────────╯
+┌───┬───────┬─────────────┬─────────────────────────┬────┬─────────┐
+│ # ┆ Name  ┆ Type        ┆ Label                   ┆  N ┆ Missing │
+╞═══╪═══════╪═════════════╪═════════════════════════╪════╪═════════╡
+│ 1 ┆ id    ┆ numeric     ┆ Respondent ID           ┆ 12 ┆       0 │
+│ 2 ┆ q1    ┆ categorical ┆ Agreement               ┆ 11 ┆       1 │
+│ 3 ┆ scale ┆ categorical ┆ Likelihood to recommend ┆ 12 ┆       0 │
+│ 4 ┆ brand ┆ categorical ┆ Brand used most         ┆ 11 ┆       1 │
+│ 5 ┆ city  ┆ text        ┆ City                    ┆ 11 ┆       1 │
+│ 6 ┆ age   ┆ numeric     ┆ Age in years            ┆ 11 ┆       1 │
+└───┴───────┴─────────────┴─────────────────────────┴────┴─────────┘

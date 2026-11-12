@@ -32,7 +32,9 @@ enum Command {
     ///
     /// The summary's border is green when the file read cleanly, yellow when
     /// the reader recorded warnings, and red when the file could not be read.
-    /// By default the variable list shows the first 10 and the last 5.
+    /// By default the variable list shows the first 10 and the last 5, with
+    /// each variable's type as the codebook defines it (categorical, numeric,
+    /// text, date).
     Info {
         /// Path to a .sav or .zsav file
         file: PathBuf,
@@ -42,6 +44,13 @@ enum Command {
         /// List only the last N variables (with --head: the first and the last)
         #[arg(long, value_name = "N")]
         tail: Option<usize>,
+        /// Read the data to add N (valid cases) and Missing per variable
+        ///
+        /// Without it the type comes from the metadata alone, which is exact
+        /// except that an unlabelled variable holding only 0 and 1 shows as
+        /// numeric; with it, such a variable is categorical, as in the codebook.
+        #[arg(long)]
+        counts: bool,
         /// Also print the first N data rows of the first few columns
         #[arg(long, value_name = "N")]
         rows: Option<usize>,
@@ -93,11 +102,17 @@ where
             file,
             head,
             tail,
+            counts,
             rows,
         } => {
             // `anstream` strips the colour codes unless the stream is a terminal.
             let mut out = anstream::stdout().lock();
-            let options = info::Options { head, tail, rows };
+            let options = info::Options {
+                head,
+                tail,
+                counts,
+                rows,
+            };
             let result =
                 info::run(&mut out, &file, &options).and_then(|()| out.flush().map_err(Into::into));
             (file, result)

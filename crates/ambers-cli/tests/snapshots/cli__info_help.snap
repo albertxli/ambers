@@ -4,7 +4,7 @@ expression: "ok_stdout(&[\"info\", \"--help\"])"
 ---
 Print a file's summary and its variables
 
-The summary's border is green when the file read cleanly, yellow when the reader recorded warnings, and red when the file could not be read. By default the variable list shows the first 10 and the last 5.
+The summary's border is green when the file read cleanly, yellow when the reader recorded warnings, and red when the file could not be read. By default the variable list shows the first 10 and the last 5, with each variable's type as the codebook defines it (categorical, numeric, text, date).
 
 Usage: ambers info [OPTIONS] <FILE>
 
@@ -18,6 +18,11 @@ Options:
 
       --tail <N>
           List only the last N variables (with --head: the first and the last)
+
+      --counts
+          Read the data to add N (valid cases) and Missing per variable
+          
+          Without it the type comes from the metadata alone, which is exact except that an unlabelled variable holding only 0 and 1 shows as numeric; with it, such a variable is categorical, as in the codebook.
 
       --rows <N>
           Also print the first N data rows of the first few columns

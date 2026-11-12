@@ -9,7 +9,7 @@
 use anstyle::{AnsiColor, Style};
 use comfy_table::modifiers::UTF8_ROUND_CORNERS;
 use comfy_table::presets::UTF8_FULL_CONDENSED;
-use comfy_table::{Table, TableComponent};
+use comfy_table::{CellAlignment, Table, TableComponent};
 
 /// Labels longer than this are cut in the middle.
 const MAX_LABEL_CHARS: usize = 48;
@@ -64,11 +64,17 @@ pub fn summary_table(rows: &[(&str, String)], status: Status) -> String {
 }
 
 /// A grid table with a header row, as used for variables and data rows.
-pub fn grid_table(header: &[String], rows: Vec<Vec<String>>) -> String {
+/// The columns numbered in `right` are right-aligned (counts).
+pub fn grid_table(header: &[String], rows: Vec<Vec<String>>, right: &[usize]) -> String {
     let mut table = Table::new();
     table.load_preset(UTF8_FULL_CONDENSED).set_header(header);
     for row in rows {
         table.add_row(row);
+    }
+    for &column in right {
+        if let Some(column) = table.column_mut(column) {
+            column.set_cell_alignment(CellAlignment::Right);
+        }
     }
     table.to_string()
 }

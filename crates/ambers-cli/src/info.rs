@@ -1,13 +1,19 @@
 //! `ambers info`: a file summary and variable list from the metadata
-//! reader, plus an optional preview of the first data rows.
+//! reader. On request it also reads the data: `--counts` for valid and
+//! missing cases per variable, `--rows` for a preview of the first rows.
 
 use std::io::Write;
 use std::ops::Range;
 use std::path::Path;
 
+use std::collections::HashMap;
+
 use ambers::{Compression, SpssMetadata};
+use ambers_codebook::profile::{Profiler, VariableSummary};
+use ambers_codebook::types::TypeDetector;
 use anyhow::{Context, Result};
 use arrow::array::{Array, AsArray};
+use arrow::datatypes::Schema;
 use arrow::record_batch::RecordBatch;
 use arrow::util::display::{ArrayFormatter, FormatOptions};
 
@@ -25,22 +31,42 @@ pub struct Options {
     pub head: Option<usize>,
     /// List only the last N variables.
     pub tail: Option<usize>,
+    /// Read the data to count valid and missing cases per variable.
+    pub counts: bool,
     /// Also show the first N data rows.
     pub rows: Option<usize>,
 }
 
+/// What reading the data found for the listed variables.
+struct Counts {
+    /// By variable name.
+    summaries: HashMap<String, VariableSummary>,
+    rows: u64,
+}
+
 pub fn run(out: &mut impl Write, file: &Path, options: &Options) -> Result<()> {
     let size = std::fs::metadata(file)?.len();
-    let meta = ambers::read_sav_metadata(file)?;
-    // Read the rows before printing anything, so a file whose data cannot
-    // be read fails without a half-written report on stdout.
+    // Opening the scanner reads the dictionary only; no data yet.
+    let scanner = ambers::scan_sav(file)?;
+    let meta = scanner.metadata().clone();
+    let schema = scanner.schema();
+    drop(scanner);
+
+    let (first, last) = select_variables(meta.variable_names.len(), options.head, options.tail);
+    // Read everything before printing anything, so a file whose data
+    // cannot be read fails without a half-written report on stdout.
+    let counts = match options.counts {
+        true => Some(count(file, &meta, first.clone().chain(last.clone()))?),
+        false => None,
+    };
     let preview = match options.rows {
         Some(n) => Some(read_rows(file, &meta, n)?),
         None => None,
     };
 
-    writeln!(out, "{}", summary(file, size, &meta))?;
-    if let Some(table) = variables(&meta, options.head, options.tail) {
+    let counted = counts.as_ref().map(|counts| counts.rows);
+    writeln!(out, "{}", summary(file, size, &meta, counted))?;
+    if let Some(table) = variables(&meta, &schema, first, last, counts.as_ref()) {
         writeln!(out, "{table}")?;
     }
     if let Some(batch) = preview {
@@ -53,6 +79,26 @@ pub fn run(out: &mut impl Write, file: &Path, options: &Options) -> Result<()> {
     Ok(())
 }
 
+/// Read the whole file once, keeping only the listed variables, and
+/// profile them as the codebook does.
+fn count(file: &Path, meta: &SpssMetadata, listed: impl Iterator<Item = usize>) -> Result<Counts> {
+    let names: Vec<&str> = listed
+        .map(|index| meta.variable_names[index].as_str())
+        .collect();
+    let mut scanner = ambers::scan_sav(file)?;
+    scanner.select(&names)?;
+    let mut profiler = Profiler::new(meta, &scanner.schema());
+    while let Some(batch) = scanner.next_batch().context("cannot read the data rows")? {
+        profiler.update(&batch);
+    }
+    Ok(Counts {
+        rows: profiler.rows(),
+        summaries: (profiler.summaries().into_iter())
+            .map(|summary| (summary.name.clone(), summary))
+            .collect(),
+    })
+}
+
 /// The red summary printed in place of a report when the file cannot be read.
 pub fn error_summary(file: &Path, error: &anyhow::Error) -> String {
     let rows = [
@@ -63,7 +109,7 @@ pub fn error_summary(file: &Path, error: &anyhow::Error) -> String {
     render::summary_table(&rows, Status::Error)
 }
 
-fn summary(file: &Path, size: u64, meta: &SpssMetadata) -> String {
+fn summary(file: &Path, size: u64, meta: &SpssMetadata, counted: Option<u64>) -> String {
     let status = match meta.warnings.len() {
         0 => Status::Ok,
         n => Status::Warnings(n),
@@ -92,39 +138,68 @@ fn summary(file: &Path, size: u64, meta: &SpssMetadata) -> String {
         ("Compression", compression.to_string()),
         ("Encoding", meta.file_encoding.clone()),
         ("Created", meta.creation_time.clone()),
-        ("Status", status.text()),
     ]);
+    if let Some(counted) = counted {
+        // What N and Missing in the variables table cover.
+        rows.push(("Counted", format!("{} rows", group_digits(counted))));
+    }
+    rows.push(("Status", status.text()));
     rows.extend(meta.warnings.iter().map(|w| ("Warning", w.clone())));
     render::summary_table(&rows, status)
 }
 
 /// The variables table, or `None` when no variable is to be listed (an
 /// empty file, or `--head 0`).
-fn variables(meta: &SpssMetadata, head: Option<usize>, tail: Option<usize>) -> Option<String> {
-    let (first, last) = select_variables(meta.variable_names.len(), head, tail);
+///
+/// The type is the codebook's. Without `counts` it comes from the
+/// metadata alone, which is exact except for an unlabelled column holding
+/// only 0 and 1: that needs the data to be recognised as categorical.
+fn variables(
+    meta: &SpssMetadata,
+    schema: &Schema,
+    first: Range<usize>,
+    last: Range<usize>,
+    counts: Option<&Counts>,
+) -> Option<String> {
     if first.is_empty() && last.is_empty() {
         return None;
     }
     let gap = !first.is_empty() && !last.is_empty() && first.end < last.start;
+    let detector = TypeDetector::new(meta);
 
     let row = |index: usize| {
         let name = &meta.variable_names[index];
-        vec![
+        let counted = counts.and_then(|counts| counts.summaries.get(name));
+        let variable_type = match counted {
+            Some(summary) => summary.variable_type,
+            None => detector.detect(meta, name, schema.field(index).data_type(), None),
+        };
+        let mut row = vec![
             (index + 1).to_string(),
             // Names are identifiers: always shown in full.
             name.clone(),
-            meta.format(name).unwrap_or("").to_string(),
+            variable_type.name().to_string(),
             render::shorten_middle(meta.label(name).unwrap_or("")),
-        ]
+        ];
+        if let Some(summary) = counted {
+            row.push(group_digits(summary.n_valid));
+            row.push(group_digits(summary.n_missing));
+        }
+        row
     };
+    let mut header = vec!["#", "Name", "Type", "Label"];
+    if counts.is_some() {
+        header.extend(["N", "Missing"]);
+    }
     let mut rows: Vec<Vec<String>> = first.map(row).collect();
     if gap {
-        rows.push(vec!["...".to_string(); 4]);
+        rows.push(vec!["...".to_string(); header.len()]);
     }
     rows.extend(last.map(row));
 
-    let header = ["#", "Name", "Format", "Label"].map(String::from);
-    Some(render::grid_table(&header, rows))
+    let header: Vec<String> = header.into_iter().map(String::from).collect();
+    // Counts line up on the right.
+    Some(render::grid_table(&header, rows, &[4, 5]))
 }
 
 /// Which variables to list, as index ranges from the start and from the end
@@ -181,7 +256,7 @@ fn rows(batch: &RecordBatch) -> Result<String> {
             });
         }
     }
-    Ok(render::grid_table(&header, table))
+    Ok(render::grid_table(&header, table, &[]))
 }
 
 /// `1234567` -> `1,234,567`.
