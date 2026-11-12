@@ -44,6 +44,7 @@ If you already have the Python package, the same command is installed with it (`
 am info survey.sav                     # summary, then the first 10 and last 5 variables
 am info survey.sav --head 20           # only the first 20 variables
 am info survey.sav --head 5 --tail 5   # the first 5 and the last 5
+am info survey.sav --counts            # read the data: adds N and Missing per variable
 am info survey.sav --rows 10           # also the first 10 data rows
 ```
 
@@ -58,13 +59,15 @@ am info survey.sav --rows 10           # also the first 10 data rows
 │ Created     │ 2026-11-11 23:00:15             │
 │ Status      │ ok                              │
 ╰─────────────┴─────────────────────────────────╯
-┌───┬────────┬────────┬───────────────┐
-│ # ┆ Name   ┆ Format ┆ Label         │
-╞═══╪════════╪════════╪═══════════════╡
-│ 1 ┆ id     ┆ F8.0   ┆ Respondent ID │
-│ 2 ┆ gender ┆ F8.2   ┆ Gender        │
-└───┴────────┴────────┴───────────────┘
+┌───┬────────┬─────────────┬───────────────┬────┬─────────┐
+│ # ┆ Name   ┆ Type        ┆ Label         ┆  N ┆ Missing │
+╞═══╪════════╪═════════════╪═══════════════╪════╪═════════╡
+│ 1 ┆ id     ┆ numeric     ┆ Respondent ID ┆ 20 ┆       0 │
+│ 2 ┆ gender ┆ categorical ┆ Gender        ┆ 20 ┆       0 │
+└───┴────────┴─────────────┴───────────────┴────┴─────────┘
 ```
+
+**Type** is the codebook's: `categorical`, `numeric`, `text` or `date`. Without `--counts`, `info` reads only the file's dictionary, so it is instant on any file, and the type comes from the metadata alone (an unlabelled variable holding only 0 and 1 shows as `numeric`). With `--counts` it reads the data once for the listed variables and adds **N** (valid cases) and **Missing**, with the exact type; that took 1.6 seconds on a 5.4 GB file with 916 variables.
 
 In a terminal the summary's border is green when the file read cleanly, yellow when the reader recorded [warnings](https://github.com/albertxli/ambers/blob/main/docs/warnings_and_errors.md), and red when the file could not be read; the `Status` row says the same in text, so nothing is lost when the output is piped. Variable names are always shown in full; long labels keep their beginning and end.
 
@@ -73,24 +76,29 @@ In a terminal the summary's border is green when the file read cleanly, yellow w
 ```bash
 am view survey.sav                  # opens on value labels
 am view survey.sav --mode codes     # opens on stored codes
-am view big.sav --limit 200000      # load at most 200,000 rows (default 1,000,000)
+am view big.sav --limit 200000      # load at most 200,000 rows
+am view big.sav --memory 8          # load at most 8 GB of data
 am view survey.sav --theme terminal # use your terminal's colours (default: Dracula)
 ```
 
 A full-screen grid in the style of SPSS's Data View. The first screen appears at once and the rest of the file loads in the background.
 
+Loading stops by itself when the data would take more than half of the memory your machine has free at that moment (or the `--memory` you give), and the border says how many rows were loaded. The rows already loaded stay usable.
+
 | Key | Action |
 |---|---|
 | arrows, `h` `j` `k` `l` | move one cell |
-| mouse | the wheel scrolls up and down, Shift+wheel (or a tilt wheel) sideways; a click selects the cell under it |
+| mouse | the wheel scrolls up and down; Shift+wheel, Alt+wheel or a tilt wheel scrolls sideways; a click selects the cell under it |
 | PgUp / PgDn, Ctrl+u / Ctrl+d | a screen, half a screen |
-| Home / End | first / last variable |
-| `g` / `G` | first / last loaded row |
+| Shift+arrows, or `{` `}` `<` `>` | 50 rows or columns at once |
+| Ctrl+↑ / Ctrl+↓, or `g` / `G` | first / last loaded row |
+| Ctrl+← / Ctrl+→, or `0` / `$`, or Home / End | far left / far right |
 | digits | go to that row as you type; Enter keeps it, Esc goes back |
 | Tab | switch what cells show: **Labels**, **Codes**, **Both** (`1  Male`) |
 | Enter | side panel with the current respondent's answers: variable, code and label, variable label |
 | `f` | freeze / unfreeze the first variable while scrolling sideways |
 | `y` | copy the current cell to the clipboard |
+| `L` | copy the current variable's full label |
 | `i` | Variable View and back |
 | `?` | list of keys |
 | `q`, Esc | close the panel or view; quit |
@@ -99,12 +107,17 @@ In Variable View (`i`), one row per variable with its type, label, labelled valu
 
 | Key | Action |
 |---|---|
-| arrows, click | move the highlighted cell |
+| arrows, click | move the highlighted cell; the same fast and edge keys work here, and the list scrolls sideways while `#` and Name stay put |
 | Enter | side panel with the variable's values: full label, format, and every value with its count and share |
 | `J` / `K`, wheel over the panel | scroll the value table |
 | `y` | copy the highlighted cell in full (the whole label, the whole value list); with the value table open, copy the table |
 | `Y` | copy the highlighted cell even when the value table is open |
+| `L` | copy the variable's full label, whatever is highlighted |
 | `d` | go to this variable in Data View |
+
+Under the list, a bar shows the highlighted cell's text in full, wrapped: the whole label or the whole value list, which the list itself has to cut.
+
+The letter forms of the fast and edge keys are there because some terminals do not pass Shift or Ctrl together with the arrow keys.
 
 While the viewer is open it captures the mouse, so selecting text with the mouse needs Shift held down (in most terminals).
 
