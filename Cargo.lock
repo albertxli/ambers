@@ -49,9 +49,12 @@ name = "ambers-cli"
 version = "0.4.7"
 dependencies = [
  "ambers",
+ "anstream",
+ "anstyle",
  "anyhow",
  "arrow",
  "clap",
+ "comfy-table",
  "insta",
  "mimalloc",
 ]

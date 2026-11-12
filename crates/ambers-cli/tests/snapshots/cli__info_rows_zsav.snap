@@ -1,0 +1,39 @@
+---
+source: crates/ambers-cli/tests/cli.rs
+expression: "ok_stdout(&[\"info\", \"tests/data/survey.zsav\", \"--rows\", \"3\"])"
+---
+╭─────────────┬─────────────────────────────────╮
+│ File        │ tests/data/survey.zsav          │
+│ Label       │ ambers synthetic survey fixture │
+│ Shape       │ 20 rows × 13 columns            │
+│ Size        │ 3.0 KB (3,080 bytes)            │
+│ Compression │ zlib                            │
+│ Encoding    │ UTF-8                           │
+│ Created     │ 2026-11-11 23:00:15             │
+│ Status      │ ok                              │
+╰─────────────┴─────────────────────────────────╯
+┌────┬─────────────────┬────────────┬──────────────────────┐
+│ #  ┆ Name            ┆ Format     ┆ Label                │
+╞════╪═════════════════╪════════════╪══════════════════════╡
+│ 1  ┆ id              ┆ F8.0       ┆ Respondent ID        │
+│ 2  ┆ gender          ┆ F8.2       ┆ Gender               │
+│ 3  ┆ satisfaction    ┆ F8.2       ┆ Overall satisfaction │
+│ 4  ┆ age             ┆ F3.0       ┆ Age in years         │
+│ 5  ┆ income          ┆ F10.2      ┆ Annual income        │
+│ 6  ┆ city            ┆ A12        ┆ City of residence    │
+│ 7  ┆ brand_a         ┆ F8.2       ┆ Brands mentioned: A  │
+│ 8  ┆ brand_b         ┆ F8.2       ┆ Brands mentioned: B  │
+│ 9  ┆ brand_c         ┆ F8.2       ┆ Brands mentioned: C  │
+│ 10 ┆ interview_date  ┆ DATE11     ┆ Interview date       │
+│ 11 ┆ interview_start ┆ DATETIME23 ┆ Interview start      │
+│ 12 ┆ duration        ┆ TIME11     ┆ Interview length     │
+│ 13 ┆ weight          ┆ F8.2       ┆ Sampling weight      │
+└────┴─────────────────┴────────────┴──────────────────────┘
+┌─────┬────────┬──────────────┬──────┬─────────┬────────┬─────────┬─────────┐
+│ id  ┆ gender ┆ satisfaction ┆ age  ┆ income  ┆ city   ┆ brand_a ┆ brand_b │
+╞═════╪════════╪══════════════╪══════╪═════════╪════════╪═════════╪═════════╡
+│ 1.0 ┆ 1.0    ┆ 1.0          ┆ 18.0 ┆ 20000.0 ┆ Lisbon ┆ 0.0     ┆ 1.0     │
+│ 2.0 ┆ 2.0    ┆ 2.0          ┆ 21.0 ┆ 21500.5 ┆ Osaka  ┆ 1.0     ┆ 0.0     │
+│ 3.0 ┆ 1.0    ┆ 3.0          ┆ 24.0 ┆ 23001.0 ┆ Lima   ┆ 0.0     ┆ 0.0     │
+└─────┴────────┴──────────────┴──────┴─────────┴────────┴─────────┴─────────┘
+8 of 13 columns shown

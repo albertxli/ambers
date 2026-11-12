@@ -20,9 +20,12 @@ ambers-codebook = { path = "crates/ambers-codebook", version = "0.4.7", default-
 ambers-cli = { path = "crates/ambers-cli", version = "0.4.7", default-features = false }
 
 # Third party.
+anstream = "0.6"
+anstyle = "1"
 anyhow = "1"
 arrow = { version = "57", default-features = false }
 clap = { version = "4", features = ["derive"] }
+comfy-table = { version = "7", default-features = false }
 encoding_rs = "0.8"
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 indexmap = "2"

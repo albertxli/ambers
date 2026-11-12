@@ -22,9 +22,12 @@ path = "src/bin/am.rs"
 
 [dependencies]
 ambers = { workspace = true }
+anstream = { workspace = true }
+anstyle = { workspace = true }
 anyhow = { workspace = true }
-arrow = { workspace = true, features = ["prettyprint"] }
+arrow = { workspace = true }
 clap = { workspace = true }
+comfy-table = { workspace = true }
 mimalloc = { workspace = true }
 
 [dev-dependencies]

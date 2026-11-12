@@ -38,10 +38,35 @@ The `ambers` command needs no Python and no Rust. Download the archive for your 
 
 If you already have the Python package, the same command is installed with it (`uv tool install ambers` puts it on your PATH).
 
+`am` is a short alias for `ambers`; both are installed.
+
 ```bash
-ambers info survey.sav            # size, compression, encoding, rows, columns, variables
-ambers info survey.sav --head 10  # plus the first 10 rows
+am info survey.sav                     # summary, then the first 10 and last 5 variables
+am info survey.sav --head 20           # only the first 20 variables
+am info survey.sav --head 5 --tail 5   # the first 5 and the last 5
+am info survey.sav --rows 10           # also the first 10 data rows
 ```
+
+```text
+╭─────────────┬─────────────────────────────────╮
+│ File        │ survey.sav                      │
+│ Label       │ ambers synthetic survey fixture │
+│ Shape       │ 20 rows × 13 columns            │
+│ Size        │ 3.6 KB (3,640 bytes)            │
+│ Compression │ bytecode                        │
+│ Encoding    │ UTF-8                           │
+│ Created     │ 2026-11-11 23:00:15             │
+│ Status      │ ok                              │
+╰─────────────┴─────────────────────────────────╯
+┌───┬────────┬────────┬───────────────┐
+│ # ┆ Name   ┆ Format ┆ Label         │
+╞═══╪════════╪════════╪═══════════════╡
+│ 1 ┆ id     ┆ F8.0   ┆ Respondent ID │
+│ 2 ┆ gender ┆ F8.2   ┆ Gender        │
+└───┴────────┴────────┴───────────────┘
+```
+
+In a terminal the summary's border is green when the file read cleanly, yellow when the reader recorded [warnings](https://github.com/albertxli/ambers/blob/main/docs/warnings_and_errors.md), and red when the file could not be read; the `Status` row says the same in text, so nothing is lost when the output is piped. Variable names are always shown in full; long labels keep their beginning and end.
 
 ## Python
 

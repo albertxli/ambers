@@ -5,9 +5,12 @@
 //! the same code. This crate never depends on Python.
 //!
 //! Conventions: data goes to stdout, errors go to stderr. The exit code is
-//! 0 on success, 1 when a command fails, and 2 for a usage error.
+//! 0 on success, 1 when a command fails, and 2 for a usage error. Colour is
+//! used only when the stream is a terminal (and `NO_COLOR` is unset);
+//! everything colour says is also in the text.
 
 mod info;
+mod render;
 
 use std::ffi::OsString;
 use std::io::{self, Write};
@@ -24,13 +27,23 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Print a summary of a file: size, compression, encoding, rows, columns, variables
+    /// Print a file's summary and its variables
+    ///
+    /// The summary's border is green when the file read cleanly, yellow when
+    /// the reader recorded warnings, and red when the file could not be read.
+    /// By default the variable list shows the first 10 and the last 5.
     Info {
         /// Path to a .sav or .zsav file
         file: PathBuf,
-        /// Also print the first N rows of the first few columns
+        /// List only the first N variables
         #[arg(long, value_name = "N")]
         head: Option<usize>,
+        /// List only the last N variables (with --head: the first and the last)
+        #[arg(long, value_name = "N")]
+        tail: Option<usize>,
+        /// Also print the first N data rows of the first few columns
+        #[arg(long, value_name = "N")]
+        rows: Option<usize>,
     },
 }
 
@@ -55,18 +68,28 @@ where
         }
     };
 
-    let mut out = io::stdout().lock();
-    let result = match cli.command {
-        Command::Info { file, head } => info::run(&mut out, &file, head),
-    };
-    let result = result.and_then(|()| out.flush().map_err(Into::into));
+    // `anstream` strips the colour codes unless the stream is a terminal.
+    let mut out = anstream::stdout().lock();
+    let Command::Info {
+        file,
+        head,
+        tail,
+        rows,
+    } = cli.command;
+    let options = info::Options { head, tail, rows };
+    let result =
+        info::run(&mut out, &file, &options).and_then(|()| out.flush().map_err(Into::into));
 
     match result {
         Ok(()) => 0,
         // The reader of our output went away (`ambers info f.sav | head`): not an error.
         Err(err) if is_broken_pipe(&err) => 0,
         Err(err) => {
-            eprintln!("error: {err:#}");
+            let _ = writeln!(
+                anstream::stderr().lock(),
+                "{}",
+                info::error_summary(&file, &err)
+            );
             1
         }
     }

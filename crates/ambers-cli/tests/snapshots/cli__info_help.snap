@@ -1,0 +1,26 @@
+---
+source: crates/ambers-cli/tests/cli.rs
+expression: "ok_stdout(&[\"info\", \"--help\"])"
+---
+Print a file's summary and its variables
+
+The summary's border is green when the file read cleanly, yellow when the reader recorded warnings, and red when the file could not be read. By default the variable list shows the first 10 and the last 5.
+
+Usage: ambers info [OPTIONS] <FILE>
+
+Arguments:
+  <FILE>
+          Path to a .sav or .zsav file
+
+Options:
+      --head <N>
+          List only the first N variables
+
+      --tail <N>
+          List only the last N variables (with --head: the first and the last)
+
+      --rows <N>
+          Also print the first N data rows of the first few columns
+
+  -h, --help
+          Print help (see a summary with '-h')

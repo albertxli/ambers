@@ -143,8 +143,8 @@ jobs:
 
       - name: Smoke test
         run: |
-          target/${{ matrix.target }}/release/ambers info tests/data/survey.zsav
-          target/${{ matrix.target }}/release/am info tests/data/survey.zsav
+          target/${{ matrix.target }}/release/ambers info tests/data/survey.zsav --rows 3
+          target/${{ matrix.target }}/release/am info tests/data/survey.zsav --rows 3
 
       - name: Check the binary is standalone (Linux)
         if: runner.os == 'Linux'

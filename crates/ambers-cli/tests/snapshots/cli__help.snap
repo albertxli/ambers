@@ -7,7 +7,7 @@ Inspect SPSS .sav and .zsav files
 Usage: ambers <COMMAND>
 
 Commands:
-  info  Print a summary of a file: size, compression, encoding, rows, columns, variables
+  info  Print a file's summary and its variables
   help  Print this message or the help of the given subcommand(s)
 
 Options:

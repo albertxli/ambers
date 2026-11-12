@@ -2,24 +2,30 @@
 source: crates/ambers-cli/tests/cli.rs
 expression: "ok_stdout(&[\"info\", \"tests/data/survey.sav\"])"
 ---
-File:         tests/data/survey.sav
-Size:         3.6 KB (3,640 bytes)
-Format:       sav
-Compression:  bytecode
-Encoding:     UTF-8
-Created:      2026-11-11 23:00:15
-Label:        ambers synthetic survey fixture
-Rows:         20
-Columns:      13
-
-Variables (first 10 of 13):
-  id              F8.0    Respondent ID
-  gender          F8.2    Gender
-  satisfaction    F8.2    Overall satisfaction
-  age             F3.0    Age in years
-  income          F10.2   Annual income
-  city            A12     City of residence
-  brand_a         F8.2    Brands mentioned: A
-  brand_b         F8.2    Brands mentioned: B
-  brand_c         F8.2    Brands mentioned: C
-  interview_date  DATE11  Interview date
+╭─────────────┬─────────────────────────────────╮
+│ File        │ tests/data/survey.sav           │
+│ Label       │ ambers synthetic survey fixture │
+│ Shape       │ 20 rows × 13 columns            │
+│ Size        │ 3.6 KB (3,640 bytes)            │
+│ Compression │ bytecode                        │
+│ Encoding    │ UTF-8                           │
+│ Created     │ 2026-11-11 23:00:15             │
+│ Status      │ ok                              │
+╰─────────────┴─────────────────────────────────╯
+┌────┬─────────────────┬────────────┬──────────────────────┐
+│ #  ┆ Name            ┆ Format     ┆ Label                │
+╞════╪═════════════════╪════════════╪══════════════════════╡
+│ 1  ┆ id              ┆ F8.0       ┆ Respondent ID        │
+│ 2  ┆ gender          ┆ F8.2       ┆ Gender               │
+│ 3  ┆ satisfaction    ┆ F8.2       ┆ Overall satisfaction │
+│ 4  ┆ age             ┆ F3.0       ┆ Age in years         │
+│ 5  ┆ income          ┆ F10.2      ┆ Annual income        │
+│ 6  ┆ city            ┆ A12        ┆ City of residence    │
+│ 7  ┆ brand_a         ┆ F8.2       ┆ Brands mentioned: A  │
+│ 8  ┆ brand_b         ┆ F8.2       ┆ Brands mentioned: B  │
+│ 9  ┆ brand_c         ┆ F8.2       ┆ Brands mentioned: C  │
+│ 10 ┆ interview_date  ┆ DATE11     ┆ Interview date       │
+│ 11 ┆ interview_start ┆ DATETIME23 ┆ Interview start      │
+│ 12 ┆ duration        ┆ TIME11     ┆ Interview length     │
+│ 13 ┆ weight          ┆ F8.2       ┆ Sampling weight      │
+└────┴─────────────────┴────────────┴──────────────────────┘

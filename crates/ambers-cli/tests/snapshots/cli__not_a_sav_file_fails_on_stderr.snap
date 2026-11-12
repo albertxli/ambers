@@ -1,0 +1,10 @@
+---
+source: crates/ambers-cli/tests/cli.rs
+expression: stderr(&output)
+---
+╭────────┬───────────────────────────────────────────────────────────────────────╮
+│ File   │ Cargo.toml                                                            │
+│ Status │ error                                                                 │
+│ Error  │ invalid magic number: expected "$FL2" or "$FL3", found [91, 119, 111, │
+│        │ 114]                                                                  │
+╰────────┴───────────────────────────────────────────────────────────────────────╯
