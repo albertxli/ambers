@@ -66,7 +66,7 @@ enum Command {
         file: PathBuf,
         /// What cells show at the start; Tab cycles through all three
         #[arg(long, value_enum, default_value = "labels")]
-        mode: view::Mode,
+        mode: ModeArg,
         /// Load at most N rows (the rest of a larger file is not read)
         #[arg(long, value_name = "N")]
         limit: Option<usize>,
@@ -81,6 +81,28 @@ enum Command {
         #[arg(long, value_enum, default_value = "dracula")]
         theme: view::ThemeName,
     },
+}
+
+/// `--mode`: how cell values are shown. The command line's own copy of
+/// `ambers_dataset::Mode`, so that crate needs no argument parser.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum ModeArg {
+    /// The value label, or the value itself when it has none
+    Labels,
+    /// The stored value
+    Codes,
+    /// The stored value followed by its label
+    Both,
+}
+
+impl From<ModeArg> for view::Mode {
+    fn from(mode: ModeArg) -> view::Mode {
+        match mode {
+            ModeArg::Labels => view::Mode::Labels,
+            ModeArg::Codes => view::Mode::Codes,
+            ModeArg::Both => view::Mode::Both,
+        }
+    }
 }
 
 /// Run the CLI with the given arguments (the first is the program name) and
@@ -132,7 +154,7 @@ where
             theme,
         } => {
             let options = view::Options {
-                mode,
+                mode: mode.into(),
                 limit,
                 memory_gb: memory,
                 theme,

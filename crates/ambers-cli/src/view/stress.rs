@@ -15,10 +15,10 @@ use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
 use super::draw::draw;
-use super::format::Mode;
-use super::loader::{self, Message};
 use super::state::{Key, State};
 use super::theme::{Theme, ThemeName};
+use ambers_dataset::Mode;
+use ambers_dataset::loader::{self, Message};
 
 #[test]
 #[ignore = "measurement on a 5.4 GB private file; run by hand with --release"]
@@ -68,7 +68,7 @@ fn the_screen_stays_responsive_while_a_large_file_loads() {
         state.on_key(if frames % 2 == 0 { Key::Down } else { Key::Up });
         terminal.draw(|frame| draw(frame, &state, &theme)).unwrap();
         let took = frame.elapsed();
-        if state.rows > 0 {
+        if state.data.rows > 0 {
             first_screen.get_or_insert_with(|| started.elapsed());
         }
         frames += 1;
@@ -79,7 +79,7 @@ fn the_screen_stays_responsive_while_a_large_file_loads() {
     eprintln!(
         "rows loaded: {}; first rows on screen after {:.0?}; loaded in {:.1?}; \
          {frames} frames, {over_50ms} slower than 50 ms, slowest {:.0?}",
-        state.rows,
+        state.data.rows,
         first_screen.unwrap(),
         started.elapsed(),
         longest,
@@ -91,13 +91,13 @@ fn the_screen_stays_responsive_while_a_large_file_loads() {
     state.on_key(Key::Top);
     eprintln!(
         "values panel on {} ({} distinct values): {:.0?}",
-        state.columns[0].name,
+        state.data.columns[0].name,
         state.detail.as_ref().map_or(0, |detail| detail.rows.len()),
         step.elapsed()
     );
     let (mut slowest, mut slowest_name, mut total) =
         (Duration::ZERO, String::new(), Duration::ZERO);
-    for index in 0..state.columns.len() {
+    for index in 0..state.data.columns.len() {
         let step = Instant::now();
         state.on_key(Key::Down);
         terminal.draw(|frame| draw(frame, &state, &theme)).unwrap();
@@ -105,14 +105,14 @@ fn the_screen_stays_responsive_while_a_large_file_loads() {
         total += took;
         if took > slowest {
             slowest = took;
-            slowest_name = state.columns[index.min(state.columns.len() - 1)]
+            slowest_name = state.data.columns[index.min(state.data.columns.len() - 1)]
                 .name
                 .clone();
         }
     }
     eprintln!(
         "values panel, one step per variable: {} steps in {:.1?}, slowest {:.0?} (near {slowest_name})",
-        state.columns.len(),
+        state.data.columns.len(),
         total,
         slowest,
     );
@@ -143,11 +143,16 @@ fn typing_a_filter_stays_fast_on_a_large_file() {
     }
     let theme = Theme::pick(ThemeName::Dracula, false);
     let mut terminal = Terminal::new(TestBackend::new(200, 60)).unwrap();
-    eprintln!("{} rows, {} columns", state.rows, state.columns.len());
+    eprintln!(
+        "{} rows, {} columns",
+        state.data.rows,
+        state.data.columns.len()
+    );
 
     // One column of each kind: all-distinct numbers, labelled codes, text.
-    let find =
-        |wanted: &dyn Fn(&super::format::Column) -> bool| state.columns.iter().position(wanted);
+    let find = |wanted: &dyn Fn(&ambers_dataset::Column) -> bool| {
+        state.data.columns.iter().position(wanted)
+    };
     let plain = find(&|c| c.numeric && c.labels.is_empty());
     let labelled = find(&|c| c.numeric && c.labels.len() > 2);
     let text = find(&|c| !c.numeric && c.format.starts_with('A'));
@@ -173,7 +178,7 @@ fn typing_a_filter_stays_fast_on_a_large_file() {
         }
         eprintln!(
             "{kind} ({}), typing {typed:?}: {} per key, {} rows kept",
-            state.columns[column].name,
+            state.data.columns[column].name,
             keys.join(", "),
             state.shown_rows()
         );

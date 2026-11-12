@@ -56,18 +56,17 @@ version = "0.5.0"
 dependencies = [
  "ambers",
  "ambers-codebook",
+ "ambers-dataset",
  "anstream",
  "anstyle",
  "anyhow",
  "arrow",
  "clap",
  "comfy-table",
- "indexmap",
  "insta",
  "mimalloc",
  "ratatui",
  "serde_json",
- "sysinfo",
  "unicode-width",
 ]
 
@@ -79,6 +78,18 @@ dependencies = [
  "arrow",
  "indexmap",
  "serde_json",
+]
+
+[[package]]
+name = "ambers-dataset"
+version = "0.5.0"
+dependencies = [
+ "ambers",
+ "ambers-codebook",
+ "arrow",
+ "indexmap",
+ "sysinfo",
+ "unicode-width",
 ]
 
 [[package]]

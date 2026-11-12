@@ -14,12 +14,13 @@ use ratatui::widgets::{Block, BorderType, Clear, Widget};
 
 use unicode_width::UnicodeWidthStr;
 
-use super::detail::{RowKind, percent};
-use super::format::{Cell, Mode, fit};
 use super::state::{Load, Screen, State, VARIABLE_FIELDS};
+use super::text::fit;
 use super::theme::Theme;
 use crate::info::group_digits;
 use crate::render::wrap;
+use ambers_dataset::detail::{RowKind, percent};
+use ambers_dataset::{Cell, Mode};
 
 /// The keys, as listed by `?`.
 const HELP: &[(&str, &str)] = &[
@@ -163,7 +164,7 @@ fn data_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
     );
     put(buf, area, 1 + gutter + 2, header_y, "│", theme.frame);
     for slot in &slots {
-        let column = &state.columns[slot.column];
+        let column = &state.data.columns[slot.column];
         let name = fit(&column.name, slot.width, column.right_aligned(state.mode));
         let style = if slot.column == state.cursor_col {
             theme.header.patch(theme.cursor_row)
@@ -192,8 +193,8 @@ fn data_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
     }
 
     if state.shown_rows() == 0 {
-        let message = match &state.load {
-            _ if state.rows > 0 => "no row matches the filter",
+        let message = match &state.data.load {
+            _ if state.data.rows > 0 => "no row matches the filter",
             Load::Loading => "loading…",
             Load::Failed(_) => "the data could not be read",
             _ => "this file has no rows",
@@ -236,7 +237,7 @@ fn data_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
         }
 
         for slot in &slots {
-            let column = &state.columns[slot.column];
+            let column = &state.data.columns[slot.column];
             let cell = state.cell(row, slot.column);
             let text = fit(&cell.text, slot.width, column.right_aligned(state.mode));
             let on_cursor = row == state.cursor_row && slot.column == state.cursor_col;
@@ -254,7 +255,7 @@ fn data_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
     }
 
     // Under the grid: the highlighted cell in full, as the mode shows it.
-    if let Some(column) = state.columns.get(state.cursor_col) {
+    if let Some(column) = state.data.columns.get(state.cursor_col) {
         let heading = if column.label.is_empty() {
             column.name.clone()
         } else {
@@ -297,7 +298,7 @@ fn data_status_left<'a>(state: &State, theme: &Theme, room: usize) -> Line<'a> {
         pieces.push((format!(" {notice} "), theme.accent));
     } else if state.bar_lines() > 0 {
         // The bar above the border already names the variable.
-    } else if let Some(column) = state.columns.get(state.cursor_col) {
+    } else if let Some(column) = state.data.columns.get(state.cursor_col) {
         let label = if column.label.is_empty() {
             String::new()
         } else {
@@ -334,9 +335,12 @@ fn data_status_left<'a>(state: &State, theme: &Theme, room: usize) -> Line<'a> {
 /// The right of the bottom border. `roomy` adds the filter hint, which a
 /// narrow window has no room for.
 fn data_status_right<'a>(state: &State, theme: &Theme, roomy: bool) -> Line<'a> {
-    let rows = group_digits(state.rows as u64);
-    let total = state.total_rows.map(|total| group_digits(total as u64));
-    let loading = match (&state.load, total) {
+    let rows = group_digits(state.data.rows as u64);
+    let total = state
+        .data
+        .total_rows
+        .map(|total| group_digits(total as u64));
+    let loading = match (&state.data.load, total) {
         (Load::Loading, Some(total)) => {
             Some((format!(" loading {rows} of {total}… "), theme.accent))
         }
@@ -377,8 +381,8 @@ fn data_status_right<'a>(state: &State, theme: &Theme, roomy: bool) -> Line<'a> 
     spans.push(Span::styled("─", theme.frame));
     spans.push(Span::raw(format!(
         " Var {}/{} ",
-        (state.cursor_col + 1).min(state.columns.len()),
-        state.columns.len()
+        (state.cursor_col + 1).min(state.data.columns.len()),
+        state.data.columns.len()
     )));
     spans.push(Span::styled("─", theme.frame));
     let hint = if roomy {
@@ -465,7 +469,7 @@ fn respondent_panel(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) 
     // name, two spaces, value, two spaces, variable label.
     let inner = (area.width as usize).saturating_sub(2);
     let text_width = inner.saturating_sub(2);
-    let longest_name = (state.columns.iter().map(|c| c.name.chars().count()))
+    let longest_name = (state.data.columns.iter().map(|c| c.name.chars().count()))
         .max()
         .unwrap_or(0);
     let name_width = longest_name.min(18).min(text_width / 3);
@@ -477,7 +481,7 @@ fn respondent_panel(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) 
 
     for line in 0..state.panel_rows() {
         let index = state.panel_top + line;
-        let Some(column) = state.columns.get(index) else {
+        let Some(column) = state.data.columns.get(index) else {
             break;
         };
         let y = 1 + line;
@@ -513,7 +517,7 @@ fn respondent_panel(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) 
 /// loaded so far.
 fn counts_status(state: &State) -> String {
     let rows = group_digits(state.counted_rows());
-    match state.load {
+    match state.data.load {
         Load::Loading => format!(" counts: {rows} rows, loading… "),
         Load::Limit | Load::Memory => format!(" counts: first {rows} rows "),
         Load::Failed(_) => format!(" counts: {rows} rows read "),
@@ -527,8 +531,8 @@ fn counts_status(state: &State) -> String {
 fn variable_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
     let position = format!(
         " Var {}/{} ",
-        (state.var_cursor + 1).min(state.columns.len()),
-        state.columns.len()
+        (state.var_cursor + 1).min(state.data.columns.len()),
+        state.data.columns.len()
     );
     let right = Line::from(vec![
         Span::raw(counts_status(state)),
@@ -576,7 +580,7 @@ fn variable_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
         let title = fit(field.title, field.width, field.right);
         put(buf, area, field.x, header_y, &title, theme.header);
     }
-    if state.shown_variables() == 0 && !state.columns.is_empty() {
+    if state.shown_variables() == 0 && !state.data.columns.is_empty() {
         let message = "no variable has that in its name or label";
         put(buf, area, 2, header_y + 2, message, theme.dim);
         return;
@@ -634,7 +638,7 @@ fn variable_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
             );
         }
     }
-    if let Some(column) = state.columns.get(state.var_cursor) {
+    if let Some(column) = state.data.columns.get(state.var_cursor) {
         let (title, _) = VARIABLE_FIELDS[state.var_field];
         let heading = format!("{} · {title}", column.name);
         // Labelled values are one per line when copied; here they run on.
@@ -690,7 +694,8 @@ fn full_text_bar(
 /// The value table of the variable under the cursor, beside the list: its
 /// full label, its definition, and every value with its count and share.
 fn variable_detail(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
-    let (Some(detail), Some(column)) = (&state.detail, state.columns.get(state.var_cursor)) else {
+    let (Some(detail), Some(column)) = (&state.detail, state.data.columns.get(state.var_cursor))
+    else {
         return;
     };
     let summary = state.summary(state.var_cursor);
@@ -1045,17 +1050,17 @@ mod tests {
     #[test]
     fn loading_and_limit_are_reported() {
         let mut state = loaded("survey.sav", 100, 8);
-        state.total_rows = Some(2_300_000);
-        state.load = Load::Loading;
+        state.data.total_rows = Some(2_300_000);
+        state.data.load = Load::Loading;
         let loading = render(&state, 100, 8);
         assert!(loading.contains(" loading 20 of 2,300,000… "), "{loading}");
-        state.load = Load::Limit;
+        state.data.load = Load::Limit;
         let limit = render(&state, 100, 8);
         assert!(
             limit.contains(" first 20 of 2,300,000 rows (limit) "),
             "{limit}"
         );
-        state.load = Load::Failed("unexpected end of file".to_string());
+        state.data.load = Load::Failed("unexpected end of file".to_string());
         let failed = render(&state, 100, 8);
         assert!(
             failed.contains(" stopped at row 20: unexpected end of file "),
@@ -1202,17 +1207,17 @@ mod tests {
         let mut state = loaded("survey.sav", 120, 8);
         state.on_key(Key::Char('i'));
         assert!(render(&state, 120, 8).contains(" counts: 20 rows "));
-        state.load = Load::Loading;
+        state.data.load = Load::Loading;
         assert!(render(&state, 120, 8).contains(" counts: 20 rows, loading… "));
-        state.load = Load::Limit;
+        state.data.load = Load::Limit;
         assert!(render(&state, 120, 8).contains(" counts: first 20 rows "));
     }
 
     #[test]
     fn stopping_at_the_memory_budget_is_reported_with_the_way_out() {
         let mut state = loaded("survey.sav", 120, 8);
-        state.total_rows = Some(395_330);
-        state.load = Load::Memory;
+        state.data.total_rows = Some(395_330);
+        state.data.load = Load::Memory;
         let data = render(&state, 120, 8);
         assert!(
             data.contains(
@@ -1347,7 +1352,7 @@ mod tests {
     #[test]
     fn a_long_label_gets_the_room_the_border_has() {
         let mut state = loaded("survey.sav", 160, 10);
-        state.columns[0].label =
+        state.data.columns[0].label =
             "Q12. Thinking about the last time you visited, how satisfied were you overall?"
                 .to_string();
         // More than the old limit of 40 characters now shows.
@@ -1399,7 +1404,7 @@ mod tests {
     #[test]
     fn the_data_view_bar_shows_a_long_answer_in_full() {
         let mut state = loaded("survey.sav", 100, 16);
-        let city = (state.columns.iter())
+        let city = (state.data.columns.iter())
             .position(|column| column.name == "city")
             .unwrap();
         state.cursor_col = city;

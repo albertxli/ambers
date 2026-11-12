@@ -16,7 +16,7 @@ use arrow::datatypes::{
 };
 use arrow::temporal_conversions::{date32_to_datetime, timestamp_us_to_datetime};
 use indexmap::IndexMap;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_width::UnicodeWidthStr;
 
 /// Widest a column's content may be; longer text is cut with `…`.
 const MAX_WIDTH: usize = 30;
@@ -24,7 +24,7 @@ const MAX_WIDTH: usize = 30;
 const MAX_WIDTH_BOTH: usize = 40;
 
 /// How cell values are shown.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     /// The value label, or the value itself when it has none
     Labels,
@@ -298,37 +298,6 @@ fn one_line(text: &str) -> String {
         .collect()
 }
 
-/// Fit `text` into exactly `width` terminal columns: padded on the left or
-/// right, or cut with `…` when too long. Wide (CJK) characters count as two.
-pub fn fit(text: &str, width: usize, right: bool) -> String {
-    let text_width = text.width();
-    if text_width <= width {
-        let pad = " ".repeat(width - text_width);
-        return if right {
-            format!("{pad}{text}")
-        } else {
-            format!("{text}{pad}")
-        };
-    }
-    if width == 0 {
-        return String::new();
-    }
-    let mut cut = String::new();
-    let mut used = 0;
-    for ch in text.chars() {
-        let ch_width = ch.width().unwrap_or(0);
-        if used + ch_width > width - 1 {
-            break;
-        }
-        cut.push(ch);
-        used += ch_width;
-    }
-    cut.push('…');
-    used += 1;
-    cut.push_str(&" ".repeat(width - used));
-    cut
-}
-
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -501,17 +470,5 @@ pub(crate) mod tests {
         assert!(by_name("gender").right_aligned(Mode::Codes));
         assert!(!by_name("gender").right_aligned(Mode::Labels));
         assert!(!by_name("city").right_aligned(Mode::Codes));
-    }
-
-    #[test]
-    fn fit_pads_and_cuts() {
-        assert_eq!(fit("ab", 4, false), "ab  ");
-        assert_eq!(fit("ab", 4, true), "  ab");
-        assert_eq!(fit("abcdef", 4, false), "abc…");
-        assert_eq!(fit("abcd", 4, false), "abcd");
-        // Wide characters take two columns each.
-        assert_eq!(fit("満足度", 5, false), "満足…");
-        assert_eq!(fit("満足", 5, false), "満足 ");
-        assert_eq!(fit("abc", 0, false), "");
     }
 }

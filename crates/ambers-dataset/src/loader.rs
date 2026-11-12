@@ -1,5 +1,9 @@
 //! Reads the file on a background thread, so the first screen appears at
 //! once and the viewer stays responsive while the rest loads.
+//!
+//! The thread owns the scanner, and with it the open file: when loading
+//! ends the file is closed, so it can be moved or replaced while its rows
+//! are still being looked at.
 
 use std::fs::File;
 use std::io::BufReader;
@@ -37,6 +41,22 @@ pub enum End {
 }
 
 pub type Scanner = SavScanner<BufReader<File>>;
+
+/// The memory the loaded rows may take, in bytes: what the user asked for,
+/// or half of what the machine has available right now, so that opening a
+/// file larger than memory stops loading instead of exhausting it.
+/// `None` (no cap) only when the system does not report its memory.
+pub fn memory_budget(explicit_gb: Option<f64>) -> Option<u64> {
+    const GB: f64 = 1024.0 * 1024.0 * 1024.0;
+    match explicit_gb {
+        Some(gb) => Some((gb.max(0.0) * GB) as u64),
+        None => {
+            let mut system = sysinfo::System::new().ok()?;
+            system.refresh_memory();
+            Some(system.available_memory() / 2).filter(|&bytes| bytes > 0)
+        }
+    }
+}
 
 /// Open a file for loading: the scanner and the rows per batch it uses.
 ///
@@ -157,6 +177,26 @@ mod tests {
             load("survey.sav", None, Some(u64::MAX)),
             (20, 4, Some(End::Data), 20)
         );
+    }
+
+    #[test]
+    fn the_budget_is_what_was_asked_or_half_of_what_is_free() {
+        assert_eq!(memory_budget(Some(2.0)), Some(2 * 1024 * 1024 * 1024));
+        assert_eq!(memory_budget(Some(0.5)), Some(512 * 1024 * 1024));
+        // Detected: this machine reports its memory, and the budget is a
+        // positive share of it.
+        let detected = memory_budget(None).expect("the system reports its memory");
+        assert!(detected > 64 * 1024 * 1024, "{detected}");
+    }
+
+    #[test]
+    fn open_sizes_batches_from_the_file() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/data/survey.sav");
+        let (scanner, batch_rows) = open(&path, Some(7)).unwrap();
+        // 13 columns: the cap on rows per batch.
+        assert_eq!(batch_rows, 20_000);
+        assert_eq!(scanner.schema().fields().len(), 13);
+        assert!(open(Path::new("no/such/file.sav"), None).is_err());
     }
 
     #[test]

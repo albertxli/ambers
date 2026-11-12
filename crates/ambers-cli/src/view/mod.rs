@@ -8,14 +8,11 @@
 //! - This module owns the terminal: setup, the event loop, teardown.
 
 mod clipboard;
-mod detail;
 mod draw;
-mod filter;
-mod format;
-mod loader;
 mod state;
 #[cfg(test)]
 mod stress;
+mod text;
 mod theme;
 
 use std::io::{self, IsTerminal, Write};
@@ -31,11 +28,11 @@ use ratatui::crossterm::event::{
 };
 use ratatui::crossterm::execute;
 
-pub use self::format::Mode;
-use self::loader::Message;
 use self::state::{Key, Load, Mouse, State};
 use self::theme::Theme;
 pub use self::theme::ThemeName;
+pub use ambers_dataset::Mode;
+use ambers_dataset::loader::{self, Message};
 
 pub struct Options {
     /// The mode the grid starts in.
@@ -45,22 +42,6 @@ pub struct Options {
     /// Memory to load at most, in GB, if the user set a budget.
     pub memory_gb: Option<f64>,
     pub theme: ThemeName,
-}
-
-/// The memory the loaded rows may take, in bytes: what the user asked for,
-/// or half of what the machine has available right now, so that opening a
-/// file larger than memory stops loading instead of exhausting it.
-/// `None` (no cap) only when the system does not report its memory.
-fn memory_budget(explicit_gb: Option<f64>) -> Option<u64> {
-    const GB: f64 = 1024.0 * 1024.0 * 1024.0;
-    match explicit_gb {
-        Some(gb) => Some((gb.max(0.0) * GB) as u64),
-        None => {
-            let mut system = sysinfo::System::new().ok()?;
-            system.refresh_memory();
-            Some(system.available_memory() / 2).filter(|&bytes| bytes > 0)
-        }
-    }
 }
 
 /// The viewer was started with its input or output redirected.
@@ -96,7 +77,7 @@ pub fn run(file: &Path, options: &Options) -> Result<()> {
         options.limit,
         options.mode,
     );
-    let budget = memory_budget(options.memory_gb);
+    let budget = loader::memory_budget(options.memory_gb);
     let receiver = loader::spawn(scanner, state.profiler_handle(), budget);
     let no_color = std::env::var_os("NO_COLOR").is_some_and(|value| !value.is_empty());
     let theme = Theme::pick(options.theme, no_color);
@@ -144,7 +125,7 @@ fn event_loop(
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
                     loading = false;
-                    state.load = Load::Failed("the loader stopped unexpectedly".to_string());
+                    state.data.load = Load::Failed("the loader stopped unexpectedly".to_string());
                     redraw = true;
                 }
             }
@@ -455,26 +436,6 @@ mod handle_tests {
             handle(&mut state, press(KeyCode::Char('q'))),
             Handled::Quit
         ));
-    }
-
-    #[test]
-    fn the_budget_is_what_was_asked_or_half_of_what_is_free() {
-        assert_eq!(memory_budget(Some(2.0)), Some(2 * 1024 * 1024 * 1024));
-        assert_eq!(memory_budget(Some(0.5)), Some(512 * 1024 * 1024));
-        // Detected: this machine reports its memory, and the budget is a
-        // positive share of it.
-        let detected = memory_budget(None).expect("the system reports its memory");
-        assert!(detected > 64 * 1024 * 1024, "{detected}");
-    }
-
-    #[test]
-    fn loader_open_sizes_batches_from_the_file() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/data/survey.sav");
-        let (scanner, batch_rows) = loader::open(&path, Some(7)).unwrap();
-        // 13 columns: the cap on rows per batch.
-        assert_eq!(batch_rows, 20_000);
-        assert_eq!(scanner.schema().fields().len(), 13);
-        assert!(loader::open(Path::new("no/such/file.sav"), None).is_err());
     }
 }
 

@@ -1,0 +1,17 @@
+[package]
+name = "ambers-dataset"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "A loaded SPSS file ready to look at: background loading, row filters, cell formatting, value tables"
+# Not published: it serves the viewers in this repository.
+publish = false
+
+[dependencies]
+ambers = { workspace = true }
+ambers-codebook = { workspace = true }
+arrow = { workspace = true }
+indexmap = { workspace = true }
+sysinfo = { workspace = true }
+unicode-width = { workspace = true }

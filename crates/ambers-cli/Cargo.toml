@@ -23,16 +23,15 @@ path = "src/bin/am.rs"
 [dependencies]
 ambers = { workspace = true }
 ambers-codebook = { workspace = true }
+ambers-dataset = { workspace = true }
 anstream = { workspace = true }
 anstyle = { workspace = true }
 anyhow = { workspace = true }
 arrow = { workspace = true }
 clap = { workspace = true }
 comfy-table = { workspace = true }
-indexmap = { workspace = true }
 mimalloc = { workspace = true }
 ratatui = { workspace = true }
-sysinfo = { workspace = true }
 unicode-width = { workspace = true }
 
 [dev-dependencies]

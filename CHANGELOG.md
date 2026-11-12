@@ -11,6 +11,8 @@ All notable changes to ambers are documented in this file.
 - Viewer: the frame keeps a margin from the window's edge (dropped below 60 × 16), and the Dracula background is painted inside the rounded frames only, not as a sharp rectangle over the whole window
 - Viewer: the bottom border of Data View no longer repeats the variable's name and label while the full-text bar above it shows them
 
+- Rust: new internal crate `ambers-dataset` holds what a viewer knows about a file, with no user interface code: background loading with the memory budget, `Dataset` (rows, cells, cached types and counts, label checks, row filters), cell formatting, the filter grammar and value tables. The terminal viewer now sits on it; its behaviour is unchanged. It is the base for the browser viewer (`am open`) being built
+- Docs: `docs/decisions/` records significant decisions (workspace layout, generated API types, front-end assets in the sdist, the open Dracula palette, local server security, Vite with Bun)
 - Docs: the README's command-line section is now a short tour (install, `am info`, `am view`) that links to `docs/cli.md` for the details
 - Docs: the Windows install line now passes `-NoProfile`, so a PowerShell profile that fails to load (for example a prompt theme started from a Git Bash shell) no longer prints an error before the install
 

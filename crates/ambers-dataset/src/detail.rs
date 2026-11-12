@@ -252,8 +252,8 @@ pub fn distinct(column: &Column, index: usize, batches: &[RecordBatch]) -> Vec<D
 
 #[cfg(test)]
 mod tests {
-    use super::super::format::tests::fixture;
     use super::*;
+    use crate::format::tests::fixture;
 
     /// The distinct-value rows of one variable of a fixture, as
     /// (value, label, n) with the kind checked separately.

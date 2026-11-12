@@ -1,20 +1,23 @@
 //! The viewer's state and what each key does to it. Nothing here touches
 //! the terminal, so every behaviour is unit-tested; `draw` only reads it.
+//!
+//! The file itself (rows, cells, counts, filter matching) is a
+//! `Dataset` from `ambers-dataset`; this module adds what a screen needs:
+//! cursors, scrolling, panels, the filter bar being typed into.
 
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 
-use ambers::{SpssMetadata, Value};
-use ambers_codebook::profile::{Profiler, ValueRow, VariableSummary};
+use ambers::SpssMetadata;
+use ambers_codebook::profile::{Profiler, VariableSummary};
+use ambers_dataset::detail::Detail;
+use ambers_dataset::filter::{self, Candidates, Query};
+use ambers_dataset::loader::Message;
+use ambers_dataset::{Cell, Dataset, Mode, RowFilter};
 use arrow::datatypes::Schema;
-use arrow::record_batch::RecordBatch;
 
 use unicode_width::UnicodeWidthStr;
 
-use super::detail::{self, Detail};
-use super::filter::{self, Candidates, Matcher, Query};
-use super::format::{Cell, Column, Mode};
-use super::loader::{End, Message};
+pub use ambers_dataset::Load;
 
 /// Rows or columns moved by one notch of the mouse wheel.
 const WHEEL_ROWS: usize = 3;
@@ -117,18 +120,6 @@ pub enum Key {
     Char(char),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Load {
-    Loading,
-    Done,
-    /// Loading stopped at the row limit; the file has more rows.
-    Limit,
-    /// Loading stopped at the memory budget; the file has more rows.
-    Memory,
-    /// Loading failed part-way; the rows read so far are kept.
-    Failed(String),
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
     Data,
@@ -140,13 +131,6 @@ struct Goto {
     typed: String,
     /// Where the cursor was, to return to on Esc.
     origin: usize,
-}
-
-/// A row filter on one column: what was typed, made ready for matching.
-struct RowFilter {
-    column: usize,
-    text: String,
-    matcher: Matcher,
 }
 
 /// The filter bar while it is being typed into.
@@ -205,16 +189,8 @@ pub struct Slot {
 
 pub struct State {
     pub file_name: String,
-    pub columns: Vec<Column>,
-    batches: Vec<RecordBatch>,
-    batch_rows: usize,
-    /// Rows loaded so far.
-    pub rows: usize,
-    /// Rows in the file according to its header.
-    pub total_rows: Option<usize>,
-    /// Rows to load at most, when the user set a limit.
-    pub limit: Option<usize>,
-    pub load: Load,
+    /// The file: its columns, the rows loaded so far, counts and checks.
+    pub data: Dataset,
 
     pub mode: Mode,
     pub frozen: bool,
@@ -260,17 +236,6 @@ pub struct State {
     pub notice: Option<String>,
 
     goto: Option<Goto>,
-    /// The loader thread publishes a copy of its profiler (types and
-    /// counts) here after every batch.
-    profiler: Arc<Mutex<Profiler>>,
-    /// What drawing needs from the profiler, per variable, cached so that
-    /// no frame computes it: the codebook summary and the label check.
-    summaries: Vec<VariableSummary>,
-    label_checks: Vec<String>,
-    counted_rows: u64,
-    refreshed: Option<Instant>,
-    /// While loading, the cache is brought up to date this often.
-    pub refresh_every: Duration,
     copy: Option<Copy>,
     /// Widths the user gave to columns of Data View; `None` keeps the
     /// width from the metadata.
@@ -300,17 +265,11 @@ impl State {
         limit: Option<usize>,
         mode: Mode,
     ) -> State {
-        let columns = Column::from_metadata(meta, schema);
-        let mut state = State {
+        let data = Dataset::new(meta, schema, batch_rows, limit);
+        State {
             file_name,
-            profiler: Arc::new(Mutex::new(Profiler::new(meta, schema))),
-            summaries: Vec::new(),
-            label_checks: Vec::new(),
-            counted_rows: 0,
-            refreshed: None,
-            refresh_every: Duration::from_millis(250),
             copy: None,
-            column_widths: vec![None; columns.len()],
+            column_widths: vec![None; data.columns.len()],
             panel_size: None,
             detail_size: None,
             grab: None,
@@ -322,13 +281,7 @@ impl State {
             var_field: 3,
             var_left: FIXED_FIELDS,
             notice: None,
-            columns,
-            batches: Vec::new(),
-            batch_rows,
-            rows: 0,
-            total_rows: meta.number_rows.and_then(|n| usize::try_from(n).ok()),
-            limit,
-            load: Load::Loading,
+            data,
             mode,
             frozen: true,
             screen: Screen::Data,
@@ -349,57 +302,25 @@ impl State {
             goto: None,
             width: 80,
             height: 24,
-        };
-        state.refresh_codebook(true);
-        state
+        }
     }
 
     /// The slot the loader thread publishes its profiler into.
     pub fn profiler_handle(&self) -> Arc<Mutex<Profiler>> {
-        Arc::clone(&self.profiler)
-    }
-
-    /// A snapshot of the published profiler. The loader holds the lock
-    /// only to swap a copy in, so this does not wait on its counting.
-    fn profiler(&self) -> Profiler {
-        // A panic in the loader does not invalidate the tallies so far.
-        self.profiler
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
-    }
-
-    /// Whether the label audit covers a variable: numeric, with labels.
-    fn is_audited(&self, column: usize) -> bool {
-        self.columns[column].numeric && !self.columns[column].labels.is_empty()
+        self.data.profiler_handle()
     }
 
     // --- loading ----------------------------------------------------------
 
     pub fn receive(&mut self, message: Message) {
-        match message {
-            Message::Batch(batch) => {
-                let before = self.rows;
-                self.rows += batch.num_rows();
-                self.batches.push(batch);
-                self.admit(before..self.rows);
-                self.refresh_codebook(false);
-            }
-            Message::Finished(end) => {
-                let more = self.total_rows.is_none_or(|total| total > self.rows);
-                self.load = match end {
-                    End::MemoryBudget if more => Load::Memory,
-                    End::Data if more && self.limit.is_some_and(|limit| self.rows >= limit) => {
-                        Load::Limit
-                    }
-                    _ => Load::Done,
-                };
-                self.refresh_codebook(true);
-            }
-            Message::Failed(error) => {
-                self.load = Load::Failed(error);
-                self.refresh_codebook(true);
-            }
+        let arrived = self.data.receive(message);
+        if let Some(rows) = arrived.rows {
+            self.admit(rows);
+        }
+        // An open value table follows the counts, which are brought up to
+        // date a few times a second, not on every batch.
+        if arrived.refreshed {
+            self.refresh_detail();
         }
     }
 
@@ -411,102 +332,33 @@ impl State {
 
     /// The cell at a position among the rows shown.
     pub fn cell_in(&self, position: usize, column: usize, mode: Mode) -> Cell {
-        let row = self.row_at(position);
-        let batch = &self.batches[row / self.batch_rows];
-        self.columns[column].cell(batch.column(column), row % self.batch_rows, mode)
+        self.data.cell(self.row_at(position), column, mode)
     }
 
     // --- codebook: types, counts, label audit -----------------------------
+    //
+    // Cached in the dataset; drawing reads only the cache.
 
-    /// Bring the cached types, counts and label checks up to date with
-    /// what the loader has counted. While loading this happens a few times
-    /// a second at most (`refresh_every`), not on every batch; `force`
-    /// does it now. Drawing reads only the cache.
-    fn refresh_codebook(&mut self, force: bool) {
-        let due = self
-            .refreshed
-            .is_none_or(|at| at.elapsed() >= self.refresh_every);
-        if !(force || due) {
-            return;
-        }
-        let profiler = self.profiler();
-        self.counted_rows = profiler.rows();
-        self.summaries = profiler.summaries();
-        self.label_checks = (0..self.columns.len())
-            .map(|column| self.check_labels(&profiler, column))
-            .collect();
-        self.refreshed = Some(Instant::now());
-        self.refresh_detail();
-    }
-
-    /// Rows the counts cover. The loader counts a batch just before it
-    /// hands it over, and the cache is refreshed a few times a second, so
-    /// this can differ slightly from `rows` while loading.
+    /// Rows the counts cover; can differ slightly from the rows loaded
+    /// while a file loads.
     pub fn counted_rows(&self) -> u64 {
-        self.counted_rows
+        self.data.counted_rows()
     }
 
     /// The codebook's summary of one variable: type and counts.
     pub fn summary(&self, column: usize) -> &VariableSummary {
-        &self.summaries[column]
-    }
-
-    /// The codebook's value rows of one variable: `MISSING`, then a row
-    /// per code for a categorical variable.
-    pub fn value_rows(&self, column: usize) -> Vec<ValueRow> {
-        self.profiler().values(column)
+        self.data.summary(column)
     }
 
     /// How many variables hold values that have no label.
     pub fn unlabeled_variables(&self) -> usize {
-        (self.label_checks.iter())
-            .filter(|check| check.contains("unlabelled"))
-            .count()
+        self.data.unlabeled_variables()
     }
 
     /// The audit of one variable, for Variable View: `ok`, the unlabelled
     /// values, the duplicated labels, or empty when it is not audited.
     pub fn label_check(&self, column: usize) -> &str {
-        &self.label_checks[column]
-    }
-
-    fn check_labels(&self, profiler: &Profiler, column: usize) -> String {
-        if !self.is_audited(column) {
-            return String::new();
-        }
-        let labels = &self.columns[column].labels;
-        let many = profiler.overflowed(column);
-        // The codes that occur in the data.
-        let seen: Vec<Value> = (profiler.values(column).into_iter())
-            .filter(|row| row.n > 0)
-            .filter_map(|row| row.code)
-            .collect();
-        let mut findings = Vec::new();
-        if let Some(found) = ambers_codebook::validate::unlabeled_values(&seen, labels) {
-            let shown: Vec<String> = (found.values.iter().take(5))
-                .map(|value| value.to_string())
-                .collect();
-            let more = if found.values.len() > 5 { ", …" } else { "" };
-            let count = if many {
-                "many".to_string()
-            } else {
-                found.values.len().to_string()
-            };
-            findings.push(format!("{count} unlabelled: {}{more}", shown.join(", ")));
-        }
-        for duplicate in ambers_codebook::validate::duplicate_labels(labels) {
-            let codes: Vec<String> = duplicate.codes.iter().map(Value::to_string).collect();
-            findings.push(format!(
-                "duplicate: {} ({})",
-                duplicate.label,
-                codes.join(", ")
-            ));
-        }
-        if findings.is_empty() {
-            "ok".to_string()
-        } else {
-            findings.join("; ")
-        }
+        self.data.label_check(column)
     }
 
     // --- layout -----------------------------------------------------------
@@ -608,7 +460,7 @@ impl State {
     /// A column's width in Data View: the one the user set, or the one
     /// from the metadata for the current mode.
     pub fn column_width(&self, column: usize) -> usize {
-        self.column_widths[column].unwrap_or_else(|| self.columns[column].width(self.mode))
+        self.column_widths[column].unwrap_or_else(|| self.data.columns[column].width(self.mode))
     }
 
     /// The widest a column can be and still show whole: the room beside
@@ -629,7 +481,7 @@ impl State {
 
     /// `[` and `]`: the cursor's column, a few characters at a time.
     fn resize_column(&mut self, wider: bool) {
-        if self.columns.is_empty() {
+        if self.data.columns.is_empty() {
             return;
         }
         let current = self.column_width(self.cursor_col);
@@ -644,7 +496,7 @@ impl State {
     /// `w`: the cursor's column as wide as the screen allows, to read long
     /// text; again, back to its own width.
     fn toggle_wide(&mut self) {
-        if self.columns.is_empty() {
+        if self.data.columns.is_empty() {
             return;
         }
         let column = self.cursor_col;
@@ -655,7 +507,7 @@ impl State {
 
     /// Digits reserved for row numbers.
     pub fn gutter_width(&self) -> usize {
-        let largest = self.rows.max(self.total_rows.unwrap_or(0)).max(1);
+        let largest = self.data.rows.max(self.data.total_rows.unwrap_or(0)).max(1);
         largest.to_string().len().max(3)
     }
 
@@ -667,7 +519,7 @@ impl State {
     }
 
     fn frozen_active(&self) -> bool {
-        self.frozen && self.columns.len() > 1
+        self.frozen && self.data.columns.len() > 1
     }
 
     fn first_scrollable(&self) -> usize {
@@ -699,7 +551,7 @@ impl State {
             divider = (x < available).then_some(x);
             x += 1;
         }
-        for column in self.left_col.max(self.first_scrollable())..self.columns.len() {
+        for column in self.left_col.max(self.first_scrollable())..self.data.columns.len() {
             if !place(column, &mut x) {
                 break;
             }
@@ -885,7 +737,7 @@ impl State {
         }
         match goto.typed.parse::<usize>() {
             // The row with that number, or the next one a filter shows.
-            Ok(row) => self.cursor_row = self.position_of(row.clamp(1, self.rows.max(1)) - 1),
+            Ok(row) => self.cursor_row = self.position_of(row.clamp(1, self.data.rows.max(1)) - 1),
             // Everything was deleted: back to where we started.
             Err(_) => {
                 self.cursor_row = goto.origin;
@@ -898,7 +750,7 @@ impl State {
 
     fn data_key(&mut self, key: Key) -> bool {
         let last_row = self.shown_rows().saturating_sub(1);
-        let last_col = self.columns.len().saturating_sub(1);
+        let last_col = self.data.columns.len().saturating_sub(1);
         let page = self.grid_rows().max(1);
         let column_before = self.cursor_col;
         match key {
@@ -1026,7 +878,7 @@ impl State {
                 self.var_field = last_field;
             }
             // The value table beside the list, like the respondent panel.
-            Key::Enter if !self.columns.is_empty() => {
+            Key::Enter if !self.data.columns.is_empty() => {
                 self.detail = match self.detail {
                     Some(_) => None,
                     None => Some(self.build_detail()),
@@ -1036,7 +888,7 @@ impl State {
             Key::Char('J') if self.detail.is_some() => self.detail_scroll += 1,
             Key::Char('K') => self.detail_scroll = self.detail_scroll.saturating_sub(1),
             // Go to this variable in Data View.
-            Key::Char('d') if !self.columns.is_empty() => {
+            Key::Char('d') if !self.data.columns.is_empty() => {
                 self.cursor_col = self.var_cursor;
                 self.screen = Screen::Data;
                 self.detail = None;
@@ -1136,7 +988,7 @@ impl State {
 
     fn data_mouse(&mut self, mouse: Mouse, x: usize, y: usize) {
         let last_row = self.shown_rows().saturating_sub(1);
-        let last_col = self.columns.len().saturating_sub(1);
+        let last_col = self.data.columns.len().saturating_sub(1);
         let column_before = self.cursor_col;
         let panel_x = self.width.saturating_sub(self.panel_width());
         if self.panel_open && x >= panel_x {
@@ -1272,8 +1124,8 @@ impl State {
 
     /// The full width of each field of the variable list.
     fn variable_field_widths(&self) -> [usize; 8] {
-        let number = self.columns.len().to_string().len().max(1);
-        let name = (self.columns.iter().map(|column| column.name.width()))
+        let number = self.data.columns.len().to_string().len().max(1);
+        let name = (self.data.columns.iter().map(|column| column.name.width()))
             .max()
             .unwrap_or(4)
             .max(4);
@@ -1284,7 +1136,7 @@ impl State {
     /// The full text of one cell of the variable list: what is copied, and
     /// what is drawn after shortening. Labelled values are one per line.
     pub fn variable_cell(&self, variable: usize, field: usize) -> String {
-        let Some(column) = self.columns.get(variable) else {
+        let Some(column) = self.data.columns.get(variable) else {
             return String::new();
         };
         let summary = || self.summary(variable);
@@ -1307,20 +1159,7 @@ impl State {
 
     /// The value table of the variable under the cursor.
     fn build_detail(&self) -> Detail {
-        let variable = self.var_cursor;
-        let column = &self.columns[variable];
-        let categorical = self.summary(variable).variable_type.is_categorical();
-        let rows = if categorical {
-            detail::categorical(column, self.value_rows(variable))
-        } else {
-            detail::distinct(column, variable, &self.batches)
-        };
-        Detail {
-            variable,
-            rows_loaded: self.rows,
-            categorical,
-            rows,
-        }
+        self.data.detail(self.var_cursor)
     }
 
     /// Keep an open value table in step with the cursor and with loading,
@@ -1332,7 +1171,7 @@ impl State {
         if detail.variable != self.var_cursor {
             self.detail_scroll = 0;
         }
-        if detail.variable != self.var_cursor || detail.rows_loaded != self.rows {
+        if detail.variable != self.var_cursor || detail.rows_loaded != self.data.rows {
             self.detail = Some(self.build_detail());
         }
         let rows = self.detail.as_ref().map_or(0, |detail| detail.rows.len());
@@ -1346,7 +1185,7 @@ impl State {
 
     /// Rows shown: every loaded row, or those the filters keep.
     pub fn shown_rows(&self) -> usize {
-        self.visible.as_ref().map_or(self.rows, Vec::len)
+        self.visible.as_ref().map_or(self.data.rows, Vec::len)
     }
 
     /// The file row at a position among the rows shown.
@@ -1373,13 +1212,13 @@ impl State {
             Some(rows) => rows
                 .partition_point(|&shown| (shown as usize) < row)
                 .min(rows.len().saturating_sub(1)),
-            None => row.min(self.rows.saturating_sub(1)),
+            None => row.min(self.data.rows.saturating_sub(1)),
         }
     }
 
     /// Variables listed in Variable View: all, or those the search found.
     pub fn shown_variables(&self) -> usize {
-        (self.var_visible.as_ref()).map_or(self.columns.len(), Vec::len)
+        (self.var_visible.as_ref()).map_or(self.data.columns.len(), Vec::len)
     }
 
     /// The variable at a position in the list.
@@ -1420,41 +1259,9 @@ impl State {
         self.top_row = self.top_row.min(fits);
     }
 
-    /// What was typed for `column`, ready for matching. `Ok(None)` is an
-    /// empty filter; `Err` says what is missing.
-    fn matcher_for(
-        &self,
-        column: usize,
-        text: &str,
-    ) -> Result<Option<(Vec<filter::Parsed>, Matcher)>, String> {
-        match filter::parse(text)? {
-            Some(parsed) => {
-                let matcher = Matcher::new(&self.columns[column], &parsed)?;
-                Ok(Some((parsed, matcher)))
-            }
-            None => Ok(None),
-        }
-    }
-
     /// The rows every kept filter lets through; `None` without filters.
-    /// Each filter tests only the rows the ones before it kept.
     fn passing(&mut self) -> Option<Vec<u32>> {
-        let mut kept: Option<Vec<u32>> = None;
-        for filter in &mut self.filters {
-            let candidates = match &kept {
-                Some(rows) => Candidates::Rows(rows),
-                None => Candidates::Range(0..self.rows),
-            };
-            let rows = filter.matcher.select(
-                &self.columns[filter.column],
-                filter.column,
-                &self.batches,
-                self.batch_rows,
-                candidates,
-            );
-            kept = Some(rows);
-        }
-        kept
+        self.data.passing(&mut self.filters, 0..self.data.rows)
     }
 
     /// Rows that just arrived from the loader: test only those, so a
@@ -1463,21 +1270,7 @@ impl State {
         if self.visible.is_none() && self.filters.is_empty() {
             return;
         }
-        let mut kept: Option<Vec<u32>> = None;
-        for filter in &mut self.filters {
-            let candidates = match &kept {
-                Some(rows) => Candidates::Rows(rows),
-                None => Candidates::Range(range.clone()),
-            };
-            let rows = filter.matcher.select(
-                &self.columns[filter.column],
-                filter.column,
-                &self.batches,
-                self.batch_rows,
-                candidates,
-            );
-            kept = Some(rows);
-        }
+        let mut kept = self.data.passing(&mut self.filters, range.clone());
         let all = range.start as u32..range.end as u32;
         if let Some(Prompt {
             text,
@@ -1491,22 +1284,14 @@ impl State {
                     None => base.extend(all.clone()),
                 }
             }
-            let typed = filter::parse(text).ok().flatten();
-            let matcher =
-                typed.and_then(|parsed| Matcher::new(&self.columns[*column], &parsed).ok());
-            if let Some(mut matcher) = matcher {
+            // What is being typed, when it is a usable filter.
+            let typed = self.data.matcher(*column, text).ok().flatten();
+            if let Some((_, mut matcher)) = typed {
                 let candidates = match &kept {
                     Some(rows) => Candidates::Rows(rows),
                     None => Candidates::Range(range.clone()),
                 };
-                let rows = matcher.select(
-                    &self.columns[*column],
-                    *column,
-                    &self.batches,
-                    self.batch_rows,
-                    candidates,
-                );
-                kept = Some(rows);
+                kept = Some(self.data.select(&mut matcher, *column, candidates));
             }
         }
         if let Some(visible) = &mut self.visible {
@@ -1520,7 +1305,7 @@ impl State {
     /// `/` in Data View: type a filter for the cursor's column, or edit
     /// the one it has.
     fn open_filter(&mut self) {
-        if self.columns.is_empty() {
+        if self.data.columns.is_empty() {
             return;
         }
         let column = self.cursor_col;
@@ -1544,7 +1329,7 @@ impl State {
 
     /// `=` in Data View: keep the rows with this cell's value.
     fn filter_by_cell(&mut self) {
-        if self.shown_rows() == 0 || self.columns.is_empty() {
+        if self.shown_rows() == 0 || self.data.columns.is_empty() {
             return;
         }
         let column = self.cursor_col;
@@ -1556,7 +1341,7 @@ impl State {
         } else {
             format!("={value}")
         };
-        match self.matcher_for(column, &text) {
+        match self.data.matcher(column, &text) {
             Ok(Some((_, matcher))) => {
                 self.filters.retain(|filter| filter.column != column);
                 self.filters.push(RowFilter {
@@ -1616,13 +1401,14 @@ impl State {
             return;
         };
         let ready = match &prompt.target {
-            Target::Rows { column, .. } => self.matcher_for(*column, &prompt.text),
+            Target::Rows { column, .. } => self.data.matcher(*column, &prompt.text),
             Target::Variables => Ok(None),
         };
         match &mut prompt.target {
             Target::Variables => {
                 let typed = !prompt.text.trim().is_empty();
-                self.var_visible = typed.then(|| filter::variables(&self.columns, &prompt.text));
+                self.var_visible =
+                    typed.then(|| filter::variables(&self.data.columns, &prompt.text));
                 self.var_top = 0;
                 self.snap_variable();
             }
@@ -1668,15 +1454,9 @@ impl State {
                         let candidates = match (again, base.as_ref()) {
                             (Some(shown), _) => Candidates::Rows(shown),
                             (None, Some(base)) => Candidates::Rows(base),
-                            (None, None) => Candidates::Range(0..self.rows),
+                            (None, None) => Candidates::Range(0..self.data.rows),
                         };
-                        let rows = matcher.select(
-                            &self.columns[*column],
-                            *column,
-                            &self.batches,
-                            self.batch_rows,
-                            candidates,
-                        );
+                        let rows = self.data.select(&mut matcher, *column, candidates);
                         *narrowed = needle;
                         Some(rows)
                     }
@@ -1705,7 +1485,7 @@ impl State {
                 return;
             }
         };
-        match self.matcher_for(column, &text) {
+        match self.data.matcher(column, &text) {
             // Stay in the bar and say what is missing.
             Err(problem) => {
                 self.notice = Some(problem.clone());
@@ -1756,7 +1536,11 @@ impl State {
         let count = |n: usize| crate::info::group_digits(n as u64);
         match self.screen {
             Screen::Data => {
-                let rows = format!("{} of {} rows", count(self.shown_rows()), count(self.rows));
+                let rows = format!(
+                    "{} of {} rows",
+                    count(self.shown_rows()),
+                    count(self.data.rows)
+                );
                 if let Some(Prompt {
                     text,
                     target: Target::Rows { column, .. },
@@ -1764,7 +1548,7 @@ impl State {
                 }) = &self.prompt
                 {
                     return Some(Bar {
-                        left: format!("Filter {}: {text}▏", self.columns[*column].name),
+                        left: format!("Filter {}: {text}▏", self.data.columns[*column].name),
                         right: problem.clone().unwrap_or(rows),
                         typing: true,
                         problem: problem.is_some(),
@@ -1774,7 +1558,9 @@ impl State {
                     return None;
                 }
                 let filters: Vec<String> = (self.filters.iter())
-                    .map(|filter| format!("{}: {}", self.columns[filter.column].name, filter.text))
+                    .map(|filter| {
+                        format!("{}: {}", self.data.columns[filter.column].name, filter.text)
+                    })
                     .collect();
                 Some(Bar {
                     left: format!("Filter {}", filters.join(" │ ")),
@@ -1787,7 +1573,7 @@ impl State {
                 let found = format!(
                     "{} of {} variables",
                     count(self.shown_variables()),
-                    count(self.columns.len())
+                    count(self.data.columns.len())
                 );
                 if let Some(Prompt {
                     text,
@@ -1853,11 +1639,11 @@ impl State {
             self.notice = Some(NO_PANEL.to_string());
             return;
         }
-        if self.shown_rows() == 0 || self.columns.is_empty() {
+        if self.shown_rows() == 0 || self.data.columns.is_empty() {
             return self.copy_text(String::new(), "");
         }
         let mut text = String::from("Variable\tLabel\tValue");
-        for (index, column) in self.columns.iter().enumerate() {
+        for (index, column) in self.data.columns.iter().enumerate() {
             let value = self.cell(self.cursor_row, index).text;
             text.push('\n');
             for (position, field) in [&column.name, &column.label, &value].iter().enumerate() {
@@ -1871,7 +1657,7 @@ impl State {
                 }));
             }
         }
-        let variables = self.columns.len();
+        let variables = self.data.columns.len();
         let noun = if variables == 1 {
             "variable"
         } else {
@@ -1884,7 +1670,7 @@ impl State {
 
     /// The Data View cell under the cursor, in full, as it is shown.
     fn copy_data_cell(&mut self) {
-        if self.shown_rows() == 0 || self.columns.is_empty() {
+        if self.shown_rows() == 0 || self.data.columns.is_empty() {
             return self.copy_text(String::new(), "");
         }
         let text = self.cell(self.cursor_row, self.cursor_col).text;
@@ -1898,8 +1684,10 @@ pub(crate) mod tests {
     use std::fs::File;
     use std::io::BufReader;
     use std::path::Path;
+    use std::time::Duration;
 
     use ambers::scanner::SavScanner;
+    use ambers_dataset::loader::End;
 
     /// A state with every row of a fixture loaded, on a `width`×`height` screen.
     pub(crate) fn loaded(name: &str, width: u16, height: u16) -> State {
@@ -1920,8 +1708,8 @@ pub(crate) mod tests {
         state.margins = false;
         state.resize(width, height);
         // Tests look at the counts straight after a batch.
-        state.refresh_every = Duration::ZERO;
-        for message in super::super::loader::spawn(scanner, state.profiler_handle(), None) {
+        state.data.refresh_every = Duration::ZERO;
+        for message in ambers_dataset::loader::spawn(scanner, state.profiler_handle(), None) {
             state.receive(message);
         }
         state
@@ -1936,8 +1724,8 @@ pub(crate) mod tests {
     #[test]
     fn loading_finishes() {
         let state = loaded("survey.sav", 100, 24);
-        assert_eq!((state.rows, state.columns.len()), (20, 13));
-        assert_eq!(state.load, Load::Done);
+        assert_eq!((state.data.rows, state.data.columns.len()), (20, 13));
+        assert_eq!(state.data.load, Load::Done);
         assert_eq!(state.cell(1, 1).text, "Female");
     }
 
@@ -1945,10 +1733,10 @@ pub(crate) mod tests {
     fn stopping_at_the_limit_is_reported() {
         let mut state = loaded("survey.sav", 100, 24);
         // As if only 20 of a larger file were allowed.
-        state.limit = Some(20);
-        state.total_rows = Some(500);
+        state.data.limit = Some(20);
+        state.data.total_rows = Some(500);
         state.receive(Message::Finished(End::Data));
-        assert_eq!(state.load, Load::Limit);
+        assert_eq!(state.data.load, Load::Limit);
     }
 
     #[test]
@@ -2168,7 +1956,12 @@ pub(crate) mod tests {
     fn text_and_numeric_variables_list_their_distinct_values() {
         let mut state = loaded("variable_types.sav", 120, 24);
         let open = |state: &mut State, name: &str| {
-            state.var_cursor = state.columns.iter().position(|c| c.name == name).unwrap();
+            state.var_cursor = state
+                .data
+                .columns
+                .iter()
+                .position(|c| c.name == name)
+                .unwrap();
             state.detail = None;
             state.on_key(Key::Enter);
             let rows = &state.detail.as_ref().unwrap().rows;
@@ -2203,7 +1996,7 @@ pub(crate) mod tests {
         let before = state.detail.clone().unwrap();
         assert_eq!(before.rows_loaded, 20);
         // Five more rows arrive: the table is rebuilt for 25.
-        let extra = state.batches[0].clone();
+        let extra = state.data.batches()[0].clone();
         state.receive(Message::Batch(extra));
         let after = state.detail.as_ref().unwrap();
         assert_eq!(after.rows_loaded, 25);
@@ -2273,7 +2066,7 @@ pub(crate) mod tests {
             let lines: Vec<&str> = text.lines().collect();
             assert_eq!(lines[0], "Variable\tLabel\tValue");
             // Every variable, not only those the panel has room for.
-            assert_eq!(lines.len(), 1 + state.columns.len());
+            assert_eq!(lines.len(), 1 + state.data.columns.len());
             assert_eq!(lines[2], "gender\tGender\tFemale");
             assert!(lines.iter().all(|line| line.matches('\t').count() == 2));
             assert_eq!(state.notice.as_deref(), Some("copied row 2 (13 variables)"));
@@ -2393,7 +2186,12 @@ pub(crate) mod tests {
     fn types_and_counts_come_from_the_codebook() {
         let state = loaded("variable_types.sav", 100, 24);
         let summary = |name: &str| {
-            let column = state.columns.iter().position(|c| c.name == name).unwrap();
+            let column = state
+                .data
+                .columns
+                .iter()
+                .position(|c| c.name == name)
+                .unwrap();
             state.summary(column)
         };
         assert_eq!(summary("flag").variable_type.name(), "categorical");
@@ -2431,7 +2229,12 @@ pub(crate) mod tests {
         //   warning brand  1 duplicate label: 'Other' (codes: 97, 98)
         let state = loaded("imperfect_labels.sav", 100, 24);
         let check = |name: &str| {
-            let column = state.columns.iter().position(|c| c.name == name).unwrap();
+            let column = state
+                .data
+                .columns
+                .iter()
+                .position(|c| c.name == name)
+                .unwrap();
             state.label_check(column)
         };
         assert_eq!(check("q1"), "2 unlabelled: 7, 8");
@@ -2483,10 +2286,10 @@ pub(crate) mod tests {
         // file, so stack the same 20 rows until there are 200.
         let mut state = loaded("survey.sav", 100, 24);
         for _ in 0..36 {
-            let again = state.batches[0].clone();
+            let again = state.data.batches()[0].clone();
             state.receive(Message::Batch(again));
         }
-        assert_eq!(state.rows, 200);
+        assert_eq!(state.data.rows, 200);
         press(&mut state, &[Key::FastDown]);
         assert_eq!(state.cursor_row, 50);
         press(&mut state, &[Key::FastDown, Key::FastDown, Key::FastUp]);
@@ -2592,7 +2395,12 @@ pub(crate) mod tests {
     /// A state on survey.sav with the cursor on `column`.
     fn on_column(name: &str) -> State {
         let mut state = loaded("survey.sav", 100, 24);
-        state.cursor_col = state.columns.iter().position(|c| c.name == name).unwrap();
+        state.cursor_col = state
+            .data
+            .columns
+            .iter()
+            .position(|c| c.name == name)
+            .unwrap();
         state
     }
 
@@ -2836,7 +2644,7 @@ pub(crate) mod tests {
         press(&mut state, &[Key::Char('/')]);
         type_text(&mut state, "osa");
         // Rows 1-5 again, as rows 21-25: one more Osaka, while typing.
-        let extra = state.batches[0].clone();
+        let extra = state.data.batches()[0].clone();
         state.receive(Message::Batch(extra.clone()));
         assert_eq!(shown(&state), [2, 6, 10, 14, 18, 22]);
         // And with the filter kept, and a second one typed.
@@ -3018,7 +2826,7 @@ pub(crate) mod tests {
         assert_eq!(state.column_width(column), 3);
         assert_eq!(
             state.column_width(1),
-            state.columns[1].width(Mode::Codes),
+            state.data.columns[1].width(Mode::Codes),
             "the others keep theirs"
         );
         press(&mut state, &[Key::Tab, Key::Tab]);
@@ -3063,7 +2871,10 @@ pub(crate) mod tests {
         state.on_mouse(Mouse::Drag, start + 9, 1);
         state.on_mouse(Mouse::Release, start + 9, 1);
         assert_eq!(state.cursor_col, 2);
-        assert_eq!(state.column_width(2), state.columns[2].width(Mode::Labels));
+        assert_eq!(
+            state.column_width(2),
+            state.data.columns[2].width(Mode::Labels)
+        );
     }
 
     #[test]

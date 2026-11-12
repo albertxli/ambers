@@ -454,7 +454,7 @@ pub fn variables(columns: &[Column], text: &str) -> Vec<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::view::format::tests::fixture;
+    use crate::format::tests::fixture;
 
     /// The 1-based rows of `file` that `text` keeps in `variable`.
     fn rows(file: &str, variable: &str, text: &str) -> Vec<u32> {
