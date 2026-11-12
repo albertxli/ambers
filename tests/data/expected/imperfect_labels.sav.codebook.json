@@ -1,0 +1,479 @@
+{
+ "file": "imperfect_labels.sav",
+ "rows": 12,
+ "internal_types": {
+  "id": "numeric",
+  "q1": "single-select",
+  "scale": "single-select",
+  "brand": "single-select",
+  "city": "text",
+  "age": "numeric"
+ },
+ "variables": [
+  {
+   "variable": "id",
+   "variable_label": "Respondent ID",
+   "variable_type": "numeric",
+   "values": null,
+   "n_valid": 12,
+   "n_missing": 0,
+   "n_total": 12,
+   "n_unique": 12,
+   "n_labeled": null,
+   "n_unlabeled": null
+  },
+  {
+   "variable": "q1",
+   "variable_label": "Agreement",
+   "variable_type": "categorical",
+   "values": [
+    {
+     "value_code": 1.0,
+     "value_label": "Agree"
+    },
+    {
+     "value_code": 2.0,
+     "value_label": "Neutral"
+    },
+    {
+     "value_code": 3.0,
+     "value_label": "Disagree"
+    },
+    {
+     "value_code": 99.0,
+     "value_label": "Refused"
+    }
+   ],
+   "n_valid": 11,
+   "n_missing": 1,
+   "n_total": 12,
+   "n_unique": 6,
+   "n_labeled": 4,
+   "n_unlabeled": 2
+  },
+  {
+   "variable": "scale",
+   "variable_label": "Likelihood to recommend",
+   "variable_type": "categorical",
+   "values": [
+    {
+     "value_code": 0.0,
+     "value_label": "Not at all likely"
+    },
+    {
+     "value_code": 10.0,
+     "value_label": "Extremely likely"
+    }
+   ],
+   "n_valid": 12,
+   "n_missing": 0,
+   "n_total": 12,
+   "n_unique": 12,
+   "n_labeled": 2,
+   "n_unlabeled": 10
+  },
+  {
+   "variable": "brand",
+   "variable_label": "Brand used most",
+   "variable_type": "categorical",
+   "values": [
+    {
+     "value_code": 1.0,
+     "value_label": "Brand A"
+    },
+    {
+     "value_code": 2.0,
+     "value_label": "Brand B"
+    },
+    {
+     "value_code": 97.0,
+     "value_label": "Other"
+    },
+    {
+     "value_code": 98.0,
+     "value_label": "Other"
+    }
+   ],
+   "n_valid": 11,
+   "n_missing": 1,
+   "n_total": 12,
+   "n_unique": 4,
+   "n_labeled": 4,
+   "n_unlabeled": 0
+  },
+  {
+   "variable": "city",
+   "variable_label": "City",
+   "variable_type": "text",
+   "values": null,
+   "n_valid": 11,
+   "n_missing": 1,
+   "n_total": 12,
+   "n_unique": 11,
+   "n_labeled": null,
+   "n_unlabeled": null
+  },
+  {
+   "variable": "age",
+   "variable_label": "Age in years",
+   "variable_type": "numeric",
+   "values": null,
+   "n_valid": 11,
+   "n_missing": 1,
+   "n_total": 12,
+   "n_unique": 11,
+   "n_labeled": null,
+   "n_unlabeled": null
+  }
+ ],
+ "values": [
+  {
+   "variable": "id",
+   "variable_label": "Respondent ID",
+   "variable_type": "numeric",
+   "value_code": null,
+   "value_label": null,
+   "value_n": 12,
+   "n_valid": 12,
+   "pct_valid": 1.0,
+   "n_total": 12,
+   "pct_total": 1.0
+  },
+  {
+   "variable": "q1",
+   "variable_label": "Agreement",
+   "variable_type": "categorical",
+   "value_code": null,
+   "value_label": "MISSING",
+   "value_n": 1,
+   "n_valid": 1,
+   "pct_valid": null,
+   "n_total": 12,
+   "pct_total": 0.08333333333333333
+  },
+  {
+   "variable": "q1",
+   "variable_label": "Agreement",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": "Agree",
+   "value_n": 3,
+   "n_valid": 11,
+   "pct_valid": 0.2727272727272727,
+   "n_total": 12,
+   "pct_total": 0.25
+  },
+  {
+   "variable": "q1",
+   "variable_label": "Agreement",
+   "variable_type": "categorical",
+   "value_code": 2.0,
+   "value_label": "Neutral",
+   "value_n": 2,
+   "n_valid": 11,
+   "pct_valid": 0.18181818181818182,
+   "n_total": 12,
+   "pct_total": 0.16666666666666666
+  },
+  {
+   "variable": "q1",
+   "variable_label": "Agreement",
+   "variable_type": "categorical",
+   "value_code": 3.0,
+   "value_label": "Disagree",
+   "value_n": 2,
+   "n_valid": 11,
+   "pct_valid": 0.18181818181818182,
+   "n_total": 12,
+   "pct_total": 0.16666666666666666
+  },
+  {
+   "variable": "q1",
+   "variable_label": "Agreement",
+   "variable_type": "categorical",
+   "value_code": 7.0,
+   "value_label": null,
+   "value_n": 2,
+   "n_valid": 11,
+   "pct_valid": 0.18181818181818182,
+   "n_total": 12,
+   "pct_total": 0.16666666666666666
+  },
+  {
+   "variable": "q1",
+   "variable_label": "Agreement",
+   "variable_type": "categorical",
+   "value_code": 8.0,
+   "value_label": null,
+   "value_n": 1,
+   "n_valid": 11,
+   "pct_valid": 0.09090909090909091,
+   "n_total": 12,
+   "pct_total": 0.08333333333333333
+  },
+  {
+   "variable": "q1",
+   "variable_label": "Agreement",
+   "variable_type": "categorical",
+   "value_code": 99.0,
+   "value_label": "Refused",
+   "value_n": 1,
+   "n_valid": 11,
+   "pct_valid": 0.09090909090909091,
+   "n_total": 12,
+   "pct_total": 0.08333333333333333
+  },
+  {
+   "variable": "scale",
+   "variable_label": "Likelihood to recommend",
+   "variable_type": "categorical",
+   "value_code": 0.0,
+   "value_label": "Not at all likely",
+   "value_n": 1,
+   "n_valid": 12,
+   "pct_valid": 0.08333333333333333,
+   "n_total": 12,
+   "pct_total": 0.08333333333333333
+  },
+  {
+   "variable": "scale",
+   "variable_label": "Likelihood to recommend",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": null,
+   "value_n": 1,
+   "n_valid": 12,
+   "pct_valid": 0.08333333333333333,
+   "n_total": 12,
+   "pct_total": 0.08333333333333333
+  },
+  {
+   "variable": "scale",
+   "variable_label": "Likelihood to recommend",
+   "variable_type": "categorical",
+   "value_code": 2.0,
+   "value_label": null,
+   "value_n": 1,
+   "n_valid": 12,
+   "pct_valid": 0.08333333333333333,
+   "n_total": 12,
+   "pct_total": 0.08333333333333333
+  },
+  {
+   "variable": "scale",
+   "variable_label": "Likelihood to recommend",
+   "variable_type": "categorical",
+   "value_code": 3.0,
+   "value_label": null,
+   "value_n": 1,
+   "n_valid": 12,
+   "pct_valid": 0.08333333333333333,
+   "n_total": 12,
+   "pct_total": 0.08333333333333333
+  },
+  {
+   "variable": "scale",
+   "variable_label": "Likelihood to recommend",
+   "variable_type": "categorical",
+   "value_code": 4.0,
+   "value_label": null,
+   "value_n": 1,
+   "n_valid": 12,
+   "pct_valid": 0.08333333333333333,
+   "n_total": 12,
+   "pct_total": 0.08333333333333333
+  },
+  {
+   "variable": "scale",
+   "variable_label": "Likelihood to recommend",
+   "variable_type": "categorical",
+   "value_code": 5.0,
+   "value_label": null,
+   "value_n": 1,
+   "n_valid": 12,
+   "pct_valid": 0.08333333333333333,
+   "n_total": 12,
+   "pct_total": 0.08333333333333333
+  },
+  {
+   "variable": "scale",
+   "variable_label": "Likelihood to recommend",
+   "variable_type": "categorical",
+   "value_code": 6.0,
+   "value_label": null,
+   "value_n": 1,
+   "n_valid": 12,
+   "pct_valid": 0.08333333333333333,
+   "n_total": 12,
+   "pct_total": 0.08333333333333333
+  },
+  {
+   "variable": "scale",
+   "variable_label": "Likelihood to recommend",
+   "variable_type": "categorical",
+   "value_code": 7.0,
+   "value_label": null,
+   "value_n": 1,
+   "n_valid": 12,
+   "pct_valid": 0.08333333333333333,
+   "n_total": 12,
+   "pct_total": 0.08333333333333333
+  },
+  {
+   "variable": "scale",
+   "variable_label": "Likelihood to recommend",
+   "variable_type": "categorical",
+   "value_code": 8.0,
+   "value_label": null,
+   "value_n": 1,
+   "n_valid": 12,
+   "pct_valid": 0.08333333333333333,
+   "n_total": 12,
+   "pct_total": 0.08333333333333333
+  },
+  {
+   "variable": "scale",
+   "variable_label": "Likelihood to recommend",
+   "variable_type": "categorical",
+   "value_code": 9.0,
+   "value_label": null,
+   "value_n": 1,
+   "n_valid": 12,
+   "pct_valid": 0.08333333333333333,
+   "n_total": 12,
+   "pct_total": 0.08333333333333333
+  },
+  {
+   "variable": "scale",
+   "variable_label": "Likelihood to recommend",
+   "variable_type": "categorical",
+   "value_code": 10.0,
+   "value_label": "Extremely likely",
+   "value_n": 1,
+   "n_valid": 12,
+   "pct_valid": 0.08333333333333333,
+   "n_total": 12,
+   "pct_total": 0.08333333333333333
+  },
+  {
+   "variable": "scale",
+   "variable_label": "Likelihood to recommend",
+   "variable_type": "categorical",
+   "value_code": 95.0,
+   "value_label": null,
+   "value_n": 1,
+   "n_valid": 12,
+   "pct_valid": 0.08333333333333333,
+   "n_total": 12,
+   "pct_total": 0.08333333333333333
+  },
+  {
+   "variable": "brand",
+   "variable_label": "Brand used most",
+   "variable_type": "categorical",
+   "value_code": null,
+   "value_label": "MISSING",
+   "value_n": 1,
+   "n_valid": 1,
+   "pct_valid": null,
+   "n_total": 12,
+   "pct_total": 0.08333333333333333
+  },
+  {
+   "variable": "brand",
+   "variable_label": "Brand used most",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": "Brand A",
+   "value_n": 4,
+   "n_valid": 11,
+   "pct_valid": 0.36363636363636365,
+   "n_total": 12,
+   "pct_total": 0.3333333333333333
+  },
+  {
+   "variable": "brand",
+   "variable_label": "Brand used most",
+   "variable_type": "categorical",
+   "value_code": 2.0,
+   "value_label": "Brand B",
+   "value_n": 3,
+   "n_valid": 11,
+   "pct_valid": 0.2727272727272727,
+   "n_total": 12,
+   "pct_total": 0.25
+  },
+  {
+   "variable": "brand",
+   "variable_label": "Brand used most",
+   "variable_type": "categorical",
+   "value_code": 97.0,
+   "value_label": "Other",
+   "value_n": 2,
+   "n_valid": 11,
+   "pct_valid": 0.18181818181818182,
+   "n_total": 12,
+   "pct_total": 0.16666666666666666
+  },
+  {
+   "variable": "brand",
+   "variable_label": "Brand used most",
+   "variable_type": "categorical",
+   "value_code": 98.0,
+   "value_label": "Other",
+   "value_n": 2,
+   "n_valid": 11,
+   "pct_valid": 0.18181818181818182,
+   "n_total": 12,
+   "pct_total": 0.16666666666666666
+  },
+  {
+   "variable": "city",
+   "variable_label": "City",
+   "variable_type": "text",
+   "value_code": null,
+   "value_label": "MISSING",
+   "value_n": 1,
+   "n_valid": 1,
+   "pct_valid": null,
+   "n_total": 12,
+   "pct_total": 0.08333333333333333
+  },
+  {
+   "variable": "city",
+   "variable_label": "City",
+   "variable_type": "text",
+   "value_code": null,
+   "value_label": null,
+   "value_n": 11,
+   "n_valid": 11,
+   "pct_valid": 1.0,
+   "n_total": 12,
+   "pct_total": 0.9166666666666666
+  },
+  {
+   "variable": "age",
+   "variable_label": "Age in years",
+   "variable_type": "numeric",
+   "value_code": null,
+   "value_label": "MISSING",
+   "value_n": 1,
+   "n_valid": 1,
+   "pct_valid": null,
+   "n_total": 12,
+   "pct_total": 0.08333333333333333
+  },
+  {
+   "variable": "age",
+   "variable_label": "Age in years",
+   "variable_type": "numeric",
+   "value_code": null,
+   "value_label": null,
+   "value_n": 11,
+   "n_valid": 11,
+   "pct_valid": 1.0,
+   "n_total": 12,
+   "pct_total": 0.9166666666666666
+  }
+ ]
+}

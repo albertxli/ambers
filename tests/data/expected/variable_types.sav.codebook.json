@@ -1,0 +1,783 @@
+{
+ "file": "variable_types.sav",
+ "rows": 8,
+ "internal_types": {
+  "id": "numeric",
+  "age": "numeric",
+  "mr_a": "multi-select",
+  "mr_b": "multi-select",
+  "flag": "multi-select",
+  "only1": "numeric",
+  "Q7_1": "multi-select",
+  "Q7_2": "multi-select",
+  "Q7_3": "multi-select",
+  "Q7_4": "multi-select",
+  "agree": "single-select",
+  "response": "multi-select",
+  "Q1_health": "multi-select",
+  "likert": "single-select",
+  "unused": "single-select",
+  "city": "text",
+  "when": "date"
+ },
+ "variables": [
+  {
+   "variable": "id",
+   "variable_label": "",
+   "variable_type": "numeric",
+   "values": null,
+   "n_valid": 8,
+   "n_missing": 0,
+   "n_total": 8,
+   "n_unique": 8,
+   "n_labeled": null,
+   "n_unlabeled": null
+  },
+  {
+   "variable": "age",
+   "variable_label": "",
+   "variable_type": "numeric",
+   "values": null,
+   "n_valid": 7,
+   "n_missing": 1,
+   "n_total": 8,
+   "n_unique": 7,
+   "n_labeled": null,
+   "n_unlabeled": null
+  },
+  {
+   "variable": "mr_a",
+   "variable_label": "Media used: radio",
+   "variable_type": "categorical",
+   "values": [],
+   "n_valid": 8,
+   "n_missing": 0,
+   "n_total": 8,
+   "n_unique": 2,
+   "n_labeled": 0,
+   "n_unlabeled": 2
+  },
+  {
+   "variable": "mr_b",
+   "variable_label": "Media used: television",
+   "variable_type": "categorical",
+   "values": [],
+   "n_valid": 7,
+   "n_missing": 1,
+   "n_total": 8,
+   "n_unique": 2,
+   "n_labeled": 0,
+   "n_unlabeled": 2
+  },
+  {
+   "variable": "flag",
+   "variable_label": "Reached by phone",
+   "variable_type": "categorical",
+   "values": [],
+   "n_valid": 7,
+   "n_missing": 1,
+   "n_total": 8,
+   "n_unique": 2,
+   "n_labeled": 0,
+   "n_unlabeled": 2
+  },
+  {
+   "variable": "only1",
+   "variable_label": "",
+   "variable_type": "numeric",
+   "values": null,
+   "n_valid": 7,
+   "n_missing": 1,
+   "n_total": 8,
+   "n_unique": 7,
+   "n_labeled": null,
+   "n_unlabeled": null
+  },
+  {
+   "variable": "Q7_1",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "values": [
+    {
+     "value_code": 0.0,
+     "value_label": "No"
+    },
+    {
+     "value_code": 1.0,
+     "value_label": "Yes"
+    }
+   ],
+   "n_valid": 8,
+   "n_missing": 0,
+   "n_total": 8,
+   "n_unique": 2,
+   "n_labeled": 2,
+   "n_unlabeled": 0
+  },
+  {
+   "variable": "Q7_2",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "values": [
+    {
+     "value_code": 0.0,
+     "value_label": "No"
+    },
+    {
+     "value_code": 1.0,
+     "value_label": "Yes"
+    }
+   ],
+   "n_valid": 8,
+   "n_missing": 0,
+   "n_total": 8,
+   "n_unique": 2,
+   "n_labeled": 2,
+   "n_unlabeled": 0
+  },
+  {
+   "variable": "Q7_3",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "values": [],
+   "n_valid": 8,
+   "n_missing": 0,
+   "n_total": 8,
+   "n_unique": 1,
+   "n_labeled": 0,
+   "n_unlabeled": 1
+  },
+  {
+   "variable": "Q7_4",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "values": [
+    {
+     "value_code": 0.0,
+     "value_label": "No"
+    },
+    {
+     "value_code": 1.0,
+     "value_label": "Yes"
+    }
+   ],
+   "n_valid": 8,
+   "n_missing": 0,
+   "n_total": 8,
+   "n_unique": 2,
+   "n_labeled": 2,
+   "n_unlabeled": 0
+  },
+  {
+   "variable": "agree",
+   "variable_label": "Agrees with the statement",
+   "variable_type": "categorical",
+   "values": [
+    {
+     "value_code": 0.0,
+     "value_label": "Disagree"
+    },
+    {
+     "value_code": 1.0,
+     "value_label": "Agree"
+    }
+   ],
+   "n_valid": 7,
+   "n_missing": 1,
+   "n_total": 8,
+   "n_unique": 2,
+   "n_labeled": 2,
+   "n_unlabeled": 0
+  },
+  {
+   "variable": "response",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "values": [
+    {
+     "value_code": 0.0,
+     "value_label": "Not selected"
+    },
+    {
+     "value_code": 1.0,
+     "value_label": "Selected"
+    }
+   ],
+   "n_valid": 8,
+   "n_missing": 0,
+   "n_total": 8,
+   "n_unique": 2,
+   "n_labeled": 2,
+   "n_unlabeled": 0
+  },
+  {
+   "variable": "Q1_health",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "values": [
+    {
+     "value_code": 0.0,
+     "value_label": "Not selected"
+    },
+    {
+     "value_code": 1.0,
+     "value_label": "Health insurance"
+    }
+   ],
+   "n_valid": 8,
+   "n_missing": 0,
+   "n_total": 8,
+   "n_unique": 2,
+   "n_labeled": 2,
+   "n_unlabeled": 0
+  },
+  {
+   "variable": "likert",
+   "variable_label": "Overall rating",
+   "variable_type": "categorical",
+   "values": [
+    {
+     "value_code": 1.0,
+     "value_label": "Very poor"
+    },
+    {
+     "value_code": 2.0,
+     "value_label": "Poor"
+    },
+    {
+     "value_code": 3.0,
+     "value_label": "Fair"
+    },
+    {
+     "value_code": 4.0,
+     "value_label": "Good"
+    },
+    {
+     "value_code": 5.0,
+     "value_label": "Very good"
+    }
+   ],
+   "n_valid": 7,
+   "n_missing": 1,
+   "n_total": 8,
+   "n_unique": 5,
+   "n_labeled": 5,
+   "n_unlabeled": 0
+  },
+  {
+   "variable": "unused",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "values": [
+    {
+     "value_code": 1.0,
+     "value_label": "Yes"
+    },
+    {
+     "value_code": 2.0,
+     "value_label": "No"
+    }
+   ],
+   "n_valid": 0,
+   "n_missing": 8,
+   "n_total": 8,
+   "n_unique": 2,
+   "n_labeled": 2,
+   "n_unlabeled": 0
+  },
+  {
+   "variable": "city",
+   "variable_label": "",
+   "variable_type": "text",
+   "values": null,
+   "n_valid": 6,
+   "n_missing": 2,
+   "n_total": 8,
+   "n_unique": 6,
+   "n_labeled": null,
+   "n_unlabeled": null
+  },
+  {
+   "variable": "when",
+   "variable_label": "",
+   "variable_type": "date",
+   "values": null,
+   "n_valid": 8,
+   "n_missing": 0,
+   "n_total": 8,
+   "n_unique": 8,
+   "n_labeled": null,
+   "n_unlabeled": null
+  }
+ ],
+ "values": [
+  {
+   "variable": "id",
+   "variable_label": "",
+   "variable_type": "numeric",
+   "value_code": null,
+   "value_label": null,
+   "value_n": 8,
+   "n_valid": 8,
+   "pct_valid": 1.0,
+   "n_total": 8,
+   "pct_total": 1.0
+  },
+  {
+   "variable": "age",
+   "variable_label": "",
+   "variable_type": "numeric",
+   "value_code": null,
+   "value_label": "MISSING",
+   "value_n": 1,
+   "n_valid": 1,
+   "pct_valid": null,
+   "n_total": 8,
+   "pct_total": 0.125
+  },
+  {
+   "variable": "age",
+   "variable_label": "",
+   "variable_type": "numeric",
+   "value_code": null,
+   "value_label": null,
+   "value_n": 7,
+   "n_valid": 7,
+   "pct_valid": 1.0,
+   "n_total": 8,
+   "pct_total": 0.875
+  },
+  {
+   "variable": "mr_a",
+   "variable_label": "Media used: radio",
+   "variable_type": "categorical",
+   "value_code": 0.0,
+   "value_label": null,
+   "value_n": 4,
+   "n_valid": 8,
+   "pct_valid": 0.5,
+   "n_total": 8,
+   "pct_total": 0.5
+  },
+  {
+   "variable": "mr_a",
+   "variable_label": "Media used: radio",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": null,
+   "value_n": 4,
+   "n_valid": 8,
+   "pct_valid": 0.5,
+   "n_total": 8,
+   "pct_total": 0.5
+  },
+  {
+   "variable": "mr_b",
+   "variable_label": "Media used: television",
+   "variable_type": "categorical",
+   "value_code": null,
+   "value_label": "MISSING",
+   "value_n": 1,
+   "n_valid": 1,
+   "pct_valid": null,
+   "n_total": 8,
+   "pct_total": 0.125
+  },
+  {
+   "variable": "mr_b",
+   "variable_label": "Media used: television",
+   "variable_type": "categorical",
+   "value_code": 0.0,
+   "value_label": null,
+   "value_n": 3,
+   "n_valid": 7,
+   "pct_valid": 0.42857142857142855,
+   "n_total": 8,
+   "pct_total": 0.375
+  },
+  {
+   "variable": "mr_b",
+   "variable_label": "Media used: television",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": null,
+   "value_n": 4,
+   "n_valid": 7,
+   "pct_valid": 0.5714285714285714,
+   "n_total": 8,
+   "pct_total": 0.5
+  },
+  {
+   "variable": "flag",
+   "variable_label": "Reached by phone",
+   "variable_type": "categorical",
+   "value_code": null,
+   "value_label": "MISSING",
+   "value_n": 1,
+   "n_valid": 1,
+   "pct_valid": null,
+   "n_total": 8,
+   "pct_total": 0.125
+  },
+  {
+   "variable": "flag",
+   "variable_label": "Reached by phone",
+   "variable_type": "categorical",
+   "value_code": 0.0,
+   "value_label": null,
+   "value_n": 4,
+   "n_valid": 7,
+   "pct_valid": 0.5714285714285714,
+   "n_total": 8,
+   "pct_total": 0.5
+  },
+  {
+   "variable": "flag",
+   "variable_label": "Reached by phone",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": null,
+   "value_n": 3,
+   "n_valid": 7,
+   "pct_valid": 0.42857142857142855,
+   "n_total": 8,
+   "pct_total": 0.375
+  },
+  {
+   "variable": "only1",
+   "variable_label": "",
+   "variable_type": "numeric",
+   "value_code": null,
+   "value_label": "MISSING",
+   "value_n": 1,
+   "n_valid": 1,
+   "pct_valid": null,
+   "n_total": 8,
+   "pct_total": 0.125
+  },
+  {
+   "variable": "only1",
+   "variable_label": "",
+   "variable_type": "numeric",
+   "value_code": null,
+   "value_label": null,
+   "value_n": 7,
+   "n_valid": 7,
+   "pct_valid": 1.0,
+   "n_total": 8,
+   "pct_total": 0.875
+  },
+  {
+   "variable": "Q7_1",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "value_code": 0.0,
+   "value_label": "No",
+   "value_n": 4,
+   "n_valid": 8,
+   "pct_valid": 0.5,
+   "n_total": 8,
+   "pct_total": 0.5
+  },
+  {
+   "variable": "Q7_1",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": "Yes",
+   "value_n": 4,
+   "n_valid": 8,
+   "pct_valid": 0.5,
+   "n_total": 8,
+   "pct_total": 0.5
+  },
+  {
+   "variable": "Q7_2",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "value_code": 0.0,
+   "value_label": "No",
+   "value_n": 5,
+   "n_valid": 8,
+   "pct_valid": 0.625,
+   "n_total": 8,
+   "pct_total": 0.625
+  },
+  {
+   "variable": "Q7_2",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": "Yes",
+   "value_n": 3,
+   "n_valid": 8,
+   "pct_valid": 0.375,
+   "n_total": 8,
+   "pct_total": 0.375
+  },
+  {
+   "variable": "Q7_3",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": null,
+   "value_n": 8,
+   "n_valid": 8,
+   "pct_valid": 1.0,
+   "n_total": 8,
+   "pct_total": 1.0
+  },
+  {
+   "variable": "Q7_4",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "value_code": 0.0,
+   "value_label": "No",
+   "value_n": 5,
+   "n_valid": 8,
+   "pct_valid": 0.625,
+   "n_total": 8,
+   "pct_total": 0.625
+  },
+  {
+   "variable": "Q7_4",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": "Yes",
+   "value_n": 3,
+   "n_valid": 8,
+   "pct_valid": 0.375,
+   "n_total": 8,
+   "pct_total": 0.375
+  },
+  {
+   "variable": "agree",
+   "variable_label": "Agrees with the statement",
+   "variable_type": "categorical",
+   "value_code": null,
+   "value_label": "MISSING",
+   "value_n": 1,
+   "n_valid": 1,
+   "pct_valid": null,
+   "n_total": 8,
+   "pct_total": 0.125
+  },
+  {
+   "variable": "agree",
+   "variable_label": "Agrees with the statement",
+   "variable_type": "categorical",
+   "value_code": 0.0,
+   "value_label": "Disagree",
+   "value_n": 3,
+   "n_valid": 7,
+   "pct_valid": 0.42857142857142855,
+   "n_total": 8,
+   "pct_total": 0.375
+  },
+  {
+   "variable": "agree",
+   "variable_label": "Agrees with the statement",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": "Agree",
+   "value_n": 4,
+   "n_valid": 7,
+   "pct_valid": 0.5714285714285714,
+   "n_total": 8,
+   "pct_total": 0.5
+  },
+  {
+   "variable": "response",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "value_code": 0.0,
+   "value_label": "Not selected",
+   "value_n": 5,
+   "n_valid": 8,
+   "pct_valid": 0.625,
+   "n_total": 8,
+   "pct_total": 0.625
+  },
+  {
+   "variable": "response",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": "Selected",
+   "value_n": 3,
+   "n_valid": 8,
+   "pct_valid": 0.375,
+   "n_total": 8,
+   "pct_total": 0.375
+  },
+  {
+   "variable": "Q1_health",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "value_code": 0.0,
+   "value_label": "Not selected",
+   "value_n": 5,
+   "n_valid": 8,
+   "pct_valid": 0.625,
+   "n_total": 8,
+   "pct_total": 0.625
+  },
+  {
+   "variable": "Q1_health",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": "Health insurance",
+   "value_n": 3,
+   "n_valid": 8,
+   "pct_valid": 0.375,
+   "n_total": 8,
+   "pct_total": 0.375
+  },
+  {
+   "variable": "likert",
+   "variable_label": "Overall rating",
+   "variable_type": "categorical",
+   "value_code": null,
+   "value_label": "MISSING",
+   "value_n": 1,
+   "n_valid": 1,
+   "pct_valid": null,
+   "n_total": 8,
+   "pct_total": 0.125
+  },
+  {
+   "variable": "likert",
+   "variable_label": "Overall rating",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": "Very poor",
+   "value_n": 2,
+   "n_valid": 7,
+   "pct_valid": 0.2857142857142857,
+   "n_total": 8,
+   "pct_total": 0.25
+  },
+  {
+   "variable": "likert",
+   "variable_label": "Overall rating",
+   "variable_type": "categorical",
+   "value_code": 2.0,
+   "value_label": "Poor",
+   "value_n": 2,
+   "n_valid": 7,
+   "pct_valid": 0.2857142857142857,
+   "n_total": 8,
+   "pct_total": 0.25
+  },
+  {
+   "variable": "likert",
+   "variable_label": "Overall rating",
+   "variable_type": "categorical",
+   "value_code": 3.0,
+   "value_label": "Fair",
+   "value_n": 1,
+   "n_valid": 7,
+   "pct_valid": 0.14285714285714285,
+   "n_total": 8,
+   "pct_total": 0.125
+  },
+  {
+   "variable": "likert",
+   "variable_label": "Overall rating",
+   "variable_type": "categorical",
+   "value_code": 4.0,
+   "value_label": "Good",
+   "value_n": 0,
+   "n_valid": 7,
+   "pct_valid": 0.0,
+   "n_total": 8,
+   "pct_total": 0.0
+  },
+  {
+   "variable": "likert",
+   "variable_label": "Overall rating",
+   "variable_type": "categorical",
+   "value_code": 5.0,
+   "value_label": "Very good",
+   "value_n": 2,
+   "n_valid": 7,
+   "pct_valid": 0.2857142857142857,
+   "n_total": 8,
+   "pct_total": 0.25
+  },
+  {
+   "variable": "unused",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "value_code": null,
+   "value_label": "MISSING",
+   "value_n": 8,
+   "n_valid": 8,
+   "pct_valid": null,
+   "n_total": 8,
+   "pct_total": 1.0
+  },
+  {
+   "variable": "unused",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": "Yes",
+   "value_n": 0,
+   "n_valid": 0,
+   "pct_valid": null,
+   "n_total": 8,
+   "pct_total": 0.0
+  },
+  {
+   "variable": "unused",
+   "variable_label": "",
+   "variable_type": "categorical",
+   "value_code": 2.0,
+   "value_label": "No",
+   "value_n": 0,
+   "n_valid": 0,
+   "pct_valid": null,
+   "n_total": 8,
+   "pct_total": 0.0
+  },
+  {
+   "variable": "city",
+   "variable_label": "",
+   "variable_type": "text",
+   "value_code": null,
+   "value_label": "MISSING",
+   "value_n": 2,
+   "n_valid": 2,
+   "pct_valid": null,
+   "n_total": 8,
+   "pct_total": 0.25
+  },
+  {
+   "variable": "city",
+   "variable_label": "",
+   "variable_type": "text",
+   "value_code": null,
+   "value_label": null,
+   "value_n": 6,
+   "n_valid": 6,
+   "pct_valid": 1.0,
+   "n_total": 8,
+   "pct_total": 0.75
+  },
+  {
+   "variable": "when",
+   "variable_label": "",
+   "variable_type": "date",
+   "value_code": null,
+   "value_label": null,
+   "value_n": 8,
+   "n_valid": 8,
+   "pct_valid": 1.0,
+   "n_total": 8,
+   "pct_total": 1.0
+  }
+ ]
+}

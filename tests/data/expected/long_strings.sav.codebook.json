@@ -1,0 +1,97 @@
+{
+ "file": "long_strings.sav",
+ "rows": 3,
+ "internal_types": {
+  "id": "numeric",
+  "comment": "text",
+  "short": "text"
+ },
+ "variables": [
+  {
+   "variable": "id",
+   "variable_label": "",
+   "variable_type": "numeric",
+   "values": null,
+   "n_valid": 3,
+   "n_missing": 0,
+   "n_total": 3,
+   "n_unique": 3,
+   "n_labeled": null,
+   "n_unlabeled": null
+  },
+  {
+   "variable": "comment",
+   "variable_label": "Open-ended comment",
+   "variable_type": "text",
+   "values": null,
+   "n_valid": 2,
+   "n_missing": 1,
+   "n_total": 3,
+   "n_unique": 2,
+   "n_labeled": null,
+   "n_unlabeled": null
+  },
+  {
+   "variable": "short",
+   "variable_label": "",
+   "variable_type": "text",
+   "values": null,
+   "n_valid": 3,
+   "n_missing": 0,
+   "n_total": 3,
+   "n_unique": 3,
+   "n_labeled": null,
+   "n_unlabeled": null
+  }
+ ],
+ "values": [
+  {
+   "variable": "id",
+   "variable_label": "",
+   "variable_type": "numeric",
+   "value_code": null,
+   "value_label": null,
+   "value_n": 3,
+   "n_valid": 3,
+   "pct_valid": 1.0,
+   "n_total": 3,
+   "pct_total": 1.0
+  },
+  {
+   "variable": "comment",
+   "variable_label": "Open-ended comment",
+   "variable_type": "text",
+   "value_code": null,
+   "value_label": "MISSING",
+   "value_n": 1,
+   "n_valid": 1,
+   "pct_valid": null,
+   "n_total": 3,
+   "pct_total": 0.3333333333333333
+  },
+  {
+   "variable": "comment",
+   "variable_label": "Open-ended comment",
+   "variable_type": "text",
+   "value_code": null,
+   "value_label": null,
+   "value_n": 2,
+   "n_valid": 2,
+   "pct_valid": 1.0,
+   "n_total": 3,
+   "pct_total": 0.6666666666666666
+  },
+  {
+   "variable": "short",
+   "variable_label": "",
+   "variable_type": "text",
+   "value_code": null,
+   "value_label": null,
+   "value_n": 3,
+   "n_valid": 3,
+   "pct_valid": 1.0,
+   "n_total": 3,
+   "pct_total": 1.0
+  }
+ ]
+}

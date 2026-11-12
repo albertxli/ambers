@@ -15,4 +15,6 @@ pub mod export;
 pub mod html;
 pub mod import;
 pub mod model;
+pub mod profile;
+pub mod types;
 pub mod validate;

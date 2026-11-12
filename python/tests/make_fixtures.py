@@ -169,6 +169,83 @@ def imperfect_labels() -> tuple[pl.DataFrame, am.SpssMetadata]:
     return df, meta
 
 
+def variable_types() -> tuple[pl.DataFrame, am.SpssMetadata]:
+    """One variable for each way the codebook decides a variable's type.
+
+    The comment on each column says what ``am.codebook()`` makes of it and why
+    (see ``ambers/codebook/_types.py``).
+    """
+    no_yes = {0: "No", 1: "Yes"}
+    df = pl.DataFrame(
+        {
+            # numeric: no labels, many values
+            "id": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            "age": [18.0, 25.5, 31.0, None, 52.0, 67.0, 23.0, 38.0],
+            # categorical: members of an MR set, with no labels at all
+            "mr_a": [0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0],
+            "mr_b": [1.0, 1.0, 0.0, 0.0, 1.0, 0.0, None, 1.0],
+            # categorical: no labels, but the data is only 0 and 1, both present
+            "flag": [0.0, 1.0, 1.0, 0.0, None, 1.0, 0.0, 0.0],
+            # numeric: only ones, and nothing confirms it is an indicator
+            "only1": [1.0, 1.0, None, 1.0, 1.0, 1.0, 1.0, 1.0],
+            # categorical: Q7_3 has only ones and no labels; its siblings are 0/1 items
+            "Q7_1": [0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0],
+            "Q7_2": [1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0],
+            "Q7_3": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "Q7_4": [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0],
+            # categorical (single-select): an ordinary two-way question
+            "agree": [0.0, 1.0, 1.0, 0.0, 1.0, None, 0.0, 1.0],
+            # categorical: selected / not selected
+            "response": [0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0],
+            # categorical: a description on 1
+            "Q1_health": [1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0],
+            # categorical (single-select): a five-point scale, 4 never chosen
+            "likert": [1.0, 2.0, 3.0, 5.0, 5.0, 1.0, None, 2.0],
+            # categorical: labels but no data at all
+            "unused": pl.Series([None] * 8, dtype=pl.Float64),
+            # text: a string, even with value labels; "" counts as missing
+            "city": ["NYC", "LA", "", "Paris", "NYC", "LA", "", "NYC"],
+            # date
+            "when": [date(2024, 1, 1) + timedelta(days=i) for i in range(8)],
+        }
+    )
+    meta = am.SpssMetadata(
+        file_label="ambers variable types fixture",
+        variable_labels={
+            "mr_a": "Media used: radio",
+            "mr_b": "Media used: television",
+            "flag": "Reached by phone",
+            "agree": "Agrees with the statement",
+            "likert": "Overall rating",
+        },
+        variable_value_labels={
+            "Q7_1": no_yes,
+            "Q7_2": no_yes,
+            "Q7_4": no_yes,
+            "agree": {0: "Disagree", 1: "Agree"},
+            "response": {0: "Not selected", 1: "Selected"},
+            "Q1_health": {0: "Not selected", 1: "Health insurance"},
+            "likert": {1: "Very poor", 2: "Poor", 3: "Fair", 4: "Good", 5: "Very good"},
+            "unused": {1: "Yes", 2: "No"},
+            "city": {"NYC": "New York", "LA": "Los Angeles"},
+        },
+        variable_formats={
+            **{name: "F8.0" for name in df.columns if name not in ("age", "city", "when")},
+            "age": "F8.1",
+            "city": "A12",
+        },
+        mr_sets={
+            "media": {
+                "label": "Media used",
+                "type": "dichotomy",
+                "counted_value": "1",
+                "variables": ["mr_a", "mr_b"],
+            }
+        },
+    )
+    return df, meta
+
+
 # Each fixture: the function that builds it and the files it writes.
 FIXTURES = {
     "survey": (
@@ -177,6 +254,7 @@ FIXTURES = {
     ),
     "long_strings": (long_strings, [("long_strings.sav", {})]),
     "imperfect_labels": (imperfect_labels, [("imperfect_labels.sav", {})]),
+    "variable_types": (variable_types, [("variable_types.sav", {})]),
 }
 
 

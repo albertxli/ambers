@@ -34,6 +34,7 @@ mimalloc = "0.1"
 pyo3 = "0.26"
 ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
 rayon = "1"
+serde_json = "1"
 tempfile = "3"
 thiserror = "2"
 unicode-width = "0.2"

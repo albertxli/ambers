@@ -1,0 +1,516 @@
+{
+ "file": "survey.sav",
+ "rows": 20,
+ "internal_types": {
+  "id": "numeric",
+  "gender": "single-select",
+  "satisfaction": "single-select",
+  "age": "numeric",
+  "income": "numeric",
+  "city": "text",
+  "brand_a": "multi-select",
+  "brand_b": "multi-select",
+  "brand_c": "multi-select",
+  "interview_date": "date",
+  "interview_start": "date",
+  "duration": "date",
+  "weight": "numeric"
+ },
+ "variables": [
+  {
+   "variable": "id",
+   "variable_label": "Respondent ID",
+   "variable_type": "numeric",
+   "values": null,
+   "n_valid": 20,
+   "n_missing": 0,
+   "n_total": 20,
+   "n_unique": 20,
+   "n_labeled": null,
+   "n_unlabeled": null
+  },
+  {
+   "variable": "gender",
+   "variable_label": "Gender",
+   "variable_type": "categorical",
+   "values": [
+    {
+     "value_code": 1.0,
+     "value_label": "Male"
+    },
+    {
+     "value_code": 2.0,
+     "value_label": "Female"
+    }
+   ],
+   "n_valid": 20,
+   "n_missing": 0,
+   "n_total": 20,
+   "n_unique": 2,
+   "n_labeled": 2,
+   "n_unlabeled": 0
+  },
+  {
+   "variable": "satisfaction",
+   "variable_label": "Overall satisfaction",
+   "variable_type": "categorical",
+   "values": [
+    {
+     "value_code": 1.0,
+     "value_label": "Very dissatisfied"
+    },
+    {
+     "value_code": 2.0,
+     "value_label": "Dissatisfied"
+    },
+    {
+     "value_code": 3.0,
+     "value_label": "Neutral"
+    },
+    {
+     "value_code": 4.0,
+     "value_label": "Satisfied"
+    },
+    {
+     "value_code": 5.0,
+     "value_label": "Very satisfied"
+    },
+    {
+     "value_code": 99.0,
+     "value_label": "Refused"
+    }
+   ],
+   "n_valid": 18,
+   "n_missing": 2,
+   "n_total": 20,
+   "n_unique": 6,
+   "n_labeled": 6,
+   "n_unlabeled": 0
+  },
+  {
+   "variable": "age",
+   "variable_label": "Age in years",
+   "variable_type": "numeric",
+   "values": null,
+   "n_valid": 20,
+   "n_missing": 0,
+   "n_total": 20,
+   "n_unique": 20,
+   "n_labeled": null,
+   "n_unlabeled": null
+  },
+  {
+   "variable": "income",
+   "variable_label": "Annual income",
+   "variable_type": "numeric",
+   "values": null,
+   "n_valid": 20,
+   "n_missing": 0,
+   "n_total": 20,
+   "n_unique": 20,
+   "n_labeled": null,
+   "n_unlabeled": null
+  },
+  {
+   "variable": "city",
+   "variable_label": "City of residence",
+   "variable_type": "text",
+   "values": null,
+   "n_valid": 20,
+   "n_missing": 0,
+   "n_total": 20,
+   "n_unique": 20,
+   "n_labeled": null,
+   "n_unlabeled": null
+  },
+  {
+   "variable": "brand_a",
+   "variable_label": "Brands mentioned: A",
+   "variable_type": "categorical",
+   "values": [
+    {
+     "value_code": 0.0,
+     "value_label": "No"
+    },
+    {
+     "value_code": 1.0,
+     "value_label": "Yes"
+    }
+   ],
+   "n_valid": 20,
+   "n_missing": 0,
+   "n_total": 20,
+   "n_unique": 2,
+   "n_labeled": 2,
+   "n_unlabeled": 0
+  },
+  {
+   "variable": "brand_b",
+   "variable_label": "Brands mentioned: B",
+   "variable_type": "categorical",
+   "values": [
+    {
+     "value_code": 0.0,
+     "value_label": "No"
+    },
+    {
+     "value_code": 1.0,
+     "value_label": "Yes"
+    }
+   ],
+   "n_valid": 20,
+   "n_missing": 0,
+   "n_total": 20,
+   "n_unique": 2,
+   "n_labeled": 2,
+   "n_unlabeled": 0
+  },
+  {
+   "variable": "brand_c",
+   "variable_label": "Brands mentioned: C",
+   "variable_type": "categorical",
+   "values": [
+    {
+     "value_code": 0.0,
+     "value_label": "No"
+    },
+    {
+     "value_code": 1.0,
+     "value_label": "Yes"
+    }
+   ],
+   "n_valid": 20,
+   "n_missing": 0,
+   "n_total": 20,
+   "n_unique": 2,
+   "n_labeled": 2,
+   "n_unlabeled": 0
+  },
+  {
+   "variable": "interview_date",
+   "variable_label": "Interview date",
+   "variable_type": "date",
+   "values": null,
+   "n_valid": 20,
+   "n_missing": 0,
+   "n_total": 20,
+   "n_unique": 20,
+   "n_labeled": null,
+   "n_unlabeled": null
+  },
+  {
+   "variable": "interview_start",
+   "variable_label": "Interview start",
+   "variable_type": "date",
+   "values": null,
+   "n_valid": 20,
+   "n_missing": 0,
+   "n_total": 20,
+   "n_unique": 20,
+   "n_labeled": null,
+   "n_unlabeled": null
+  },
+  {
+   "variable": "duration",
+   "variable_label": "Interview length",
+   "variable_type": "date",
+   "values": null,
+   "n_valid": 20,
+   "n_missing": 0,
+   "n_total": 20,
+   "n_unique": 20,
+   "n_labeled": null,
+   "n_unlabeled": null
+  },
+  {
+   "variable": "weight",
+   "variable_label": "Sampling weight",
+   "variable_type": "numeric",
+   "values": null,
+   "n_valid": 20,
+   "n_missing": 0,
+   "n_total": 20,
+   "n_unique": 20,
+   "n_labeled": null,
+   "n_unlabeled": null
+  }
+ ],
+ "values": [
+  {
+   "variable": "id",
+   "variable_label": "Respondent ID",
+   "variable_type": "numeric",
+   "value_code": null,
+   "value_label": null,
+   "value_n": 20,
+   "n_valid": 20,
+   "pct_valid": 1.0,
+   "n_total": 20,
+   "pct_total": 1.0
+  },
+  {
+   "variable": "gender",
+   "variable_label": "Gender",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": "Male",
+   "value_n": 10,
+   "n_valid": 20,
+   "pct_valid": 0.5,
+   "n_total": 20,
+   "pct_total": 0.5
+  },
+  {
+   "variable": "gender",
+   "variable_label": "Gender",
+   "variable_type": "categorical",
+   "value_code": 2.0,
+   "value_label": "Female",
+   "value_n": 10,
+   "n_valid": 20,
+   "pct_valid": 0.5,
+   "n_total": 20,
+   "pct_total": 0.5
+  },
+  {
+   "variable": "satisfaction",
+   "variable_label": "Overall satisfaction",
+   "variable_type": "categorical",
+   "value_code": null,
+   "value_label": "MISSING",
+   "value_n": 2,
+   "n_valid": 2,
+   "pct_valid": null,
+   "n_total": 20,
+   "pct_total": 0.1
+  },
+  {
+   "variable": "satisfaction",
+   "variable_label": "Overall satisfaction",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": "Very dissatisfied",
+   "value_n": 4,
+   "n_valid": 18,
+   "pct_valid": 0.2222222222222222,
+   "n_total": 20,
+   "pct_total": 0.2
+  },
+  {
+   "variable": "satisfaction",
+   "variable_label": "Overall satisfaction",
+   "variable_type": "categorical",
+   "value_code": 2.0,
+   "value_label": "Dissatisfied",
+   "value_n": 3,
+   "n_valid": 18,
+   "pct_valid": 0.16666666666666666,
+   "n_total": 20,
+   "pct_total": 0.15
+  },
+  {
+   "variable": "satisfaction",
+   "variable_label": "Overall satisfaction",
+   "variable_type": "categorical",
+   "value_code": 3.0,
+   "value_label": "Neutral",
+   "value_n": 4,
+   "n_valid": 18,
+   "pct_valid": 0.2222222222222222,
+   "n_total": 20,
+   "pct_total": 0.2
+  },
+  {
+   "variable": "satisfaction",
+   "variable_label": "Overall satisfaction",
+   "variable_type": "categorical",
+   "value_code": 4.0,
+   "value_label": "Satisfied",
+   "value_n": 3,
+   "n_valid": 18,
+   "pct_valid": 0.16666666666666666,
+   "n_total": 20,
+   "pct_total": 0.15
+  },
+  {
+   "variable": "satisfaction",
+   "variable_label": "Overall satisfaction",
+   "variable_type": "categorical",
+   "value_code": 5.0,
+   "value_label": "Very satisfied",
+   "value_n": 0,
+   "n_valid": 18,
+   "pct_valid": 0.0,
+   "n_total": 20,
+   "pct_total": 0.0
+  },
+  {
+   "variable": "satisfaction",
+   "variable_label": "Overall satisfaction",
+   "variable_type": "categorical",
+   "value_code": 99.0,
+   "value_label": "Refused",
+   "value_n": 4,
+   "n_valid": 18,
+   "pct_valid": 0.2222222222222222,
+   "n_total": 20,
+   "pct_total": 0.2
+  },
+  {
+   "variable": "age",
+   "variable_label": "Age in years",
+   "variable_type": "numeric",
+   "value_code": null,
+   "value_label": null,
+   "value_n": 20,
+   "n_valid": 20,
+   "pct_valid": 1.0,
+   "n_total": 20,
+   "pct_total": 1.0
+  },
+  {
+   "variable": "income",
+   "variable_label": "Annual income",
+   "variable_type": "numeric",
+   "value_code": null,
+   "value_label": null,
+   "value_n": 20,
+   "n_valid": 20,
+   "pct_valid": 1.0,
+   "n_total": 20,
+   "pct_total": 1.0
+  },
+  {
+   "variable": "city",
+   "variable_label": "City of residence",
+   "variable_type": "text",
+   "value_code": null,
+   "value_label": null,
+   "value_n": 20,
+   "n_valid": 20,
+   "pct_valid": 1.0,
+   "n_total": 20,
+   "pct_total": 1.0
+  },
+  {
+   "variable": "brand_a",
+   "variable_label": "Brands mentioned: A",
+   "variable_type": "categorical",
+   "value_code": 0.0,
+   "value_label": "No",
+   "value_n": 10,
+   "n_valid": 20,
+   "pct_valid": 0.5,
+   "n_total": 20,
+   "pct_total": 0.5
+  },
+  {
+   "variable": "brand_a",
+   "variable_label": "Brands mentioned: A",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": "Yes",
+   "value_n": 10,
+   "n_valid": 20,
+   "pct_valid": 0.5,
+   "n_total": 20,
+   "pct_total": 0.5
+  },
+  {
+   "variable": "brand_b",
+   "variable_label": "Brands mentioned: B",
+   "variable_type": "categorical",
+   "value_code": 0.0,
+   "value_label": "No",
+   "value_n": 13,
+   "n_valid": 20,
+   "pct_valid": 0.65,
+   "n_total": 20,
+   "pct_total": 0.65
+  },
+  {
+   "variable": "brand_b",
+   "variable_label": "Brands mentioned: B",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": "Yes",
+   "value_n": 7,
+   "n_valid": 20,
+   "pct_valid": 0.35,
+   "n_total": 20,
+   "pct_total": 0.35
+  },
+  {
+   "variable": "brand_c",
+   "variable_label": "Brands mentioned: C",
+   "variable_type": "categorical",
+   "value_code": 0.0,
+   "value_label": "No",
+   "value_n": 15,
+   "n_valid": 20,
+   "pct_valid": 0.75,
+   "n_total": 20,
+   "pct_total": 0.75
+  },
+  {
+   "variable": "brand_c",
+   "variable_label": "Brands mentioned: C",
+   "variable_type": "categorical",
+   "value_code": 1.0,
+   "value_label": "Yes",
+   "value_n": 5,
+   "n_valid": 20,
+   "pct_valid": 0.25,
+   "n_total": 20,
+   "pct_total": 0.25
+  },
+  {
+   "variable": "interview_date",
+   "variable_label": "Interview date",
+   "variable_type": "date",
+   "value_code": null,
+   "value_label": null,
+   "value_n": 20,
+   "n_valid": 20,
+   "pct_valid": 1.0,
+   "n_total": 20,
+   "pct_total": 1.0
+  },
+  {
+   "variable": "interview_start",
+   "variable_label": "Interview start",
+   "variable_type": "date",
+   "value_code": null,
+   "value_label": null,
+   "value_n": 20,
+   "n_valid": 20,
+   "pct_valid": 1.0,
+   "n_total": 20,
+   "pct_total": 1.0
+  },
+  {
+   "variable": "duration",
+   "variable_label": "Interview length",
+   "variable_type": "date",
+   "value_code": null,
+   "value_label": null,
+   "value_n": 20,
+   "n_valid": 20,
+   "pct_valid": 1.0,
+   "n_total": 20,
+   "pct_total": 1.0
+  },
+  {
+   "variable": "weight",
+   "variable_label": "Sampling weight",
+   "variable_type": "numeric",
+   "value_code": null,
+   "value_label": null,
+   "value_n": 20,
+   "n_valid": 20,
+   "pct_valid": 1.0,
+   "n_total": 20,
+   "pct_total": 1.0
+  }
+ ]
+}
