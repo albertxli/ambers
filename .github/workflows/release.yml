@@ -182,6 +182,27 @@ jobs:
             tar czf $name.tar.gz $name
           fi
 
+      # The install scripts, given the archive just built instead of a download.
+      - name: Install script (macOS, Linux)
+        if: runner.os != 'Windows'
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          AMBERS_INSTALL_ARCHIVE=cli-dist/ambers-$version-${{ matrix.target }}.tar.gz \
+            AMBERS_INSTALL_DIR="$RUNNER_TEMP/ambers-bin" sh install.sh
+          "$RUNNER_TEMP/ambers-bin/am" info tests/data/survey.sav --head 0
+
+      - name: Install script (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.*)"' | Select-Object -First 1).Matches.Groups[1].Value
+          $env:AMBERS_INSTALL_ARCHIVE = "cli-dist/ambers-$version-${{ matrix.target }}.zip"
+          $env:AMBERS_INSTALL_DIR = "$env:RUNNER_TEMP\ambers-bin"
+          $env:AMBERS_NO_MODIFY_PATH = '1'
+          ./install.ps1
+          & "$env:RUNNER_TEMP\ambers-bin\am.exe" info tests/data/survey.sav --head 0
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       - uses: actions/upload-artifact@v4
         with:
           name: cli-${{ matrix.target }}

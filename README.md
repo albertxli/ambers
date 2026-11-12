@@ -34,9 +34,21 @@ cargo add ambers
 
 **Command line:**
 
-The `ambers` command needs no Python and no Rust. Download the archive for your platform from the [latest release](https://github.com/albertxli/ambers/releases/latest) (`ambers-<version>-x86_64-pc-windows-msvc.zip`, `-x86_64-unknown-linux-musl.tar.gz` or `-aarch64-apple-darwin.tar.gz`), unpack it, and run the binary inside.
+The `ambers` command is a single program that needs no Python and no Rust.
 
-If you already have the Python package, the same command is installed with it (`uv tool install ambers` puts it on your PATH).
+```bash
+# macOS and Linux
+curl -LsSf https://raw.githubusercontent.com/albertxli/ambers/main/install.sh | sh
+```
+
+```powershell
+# Windows
+powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/albertxli/ambers/main/install.ps1 | iex"
+```
+
+Either one downloads the program for your machine from the [latest release](https://github.com/albertxli/ambers/releases/latest) into `~/.local/bin` (Windows: `%LOCALAPPDATA%\ambers\bin`, added to your user PATH). No administrator rights are needed; run it again to update. Ready-made programs exist for Windows (64-bit), Linux (x86-64) and macOS (Apple Silicon); you can also download the archive from the release page and unpack it yourself.
+
+The Python package installs the same command, run through Python: `uv tool install ambers` puts it on your PATH, and in a project that has `uv add ambers` it is `uv run am`.
 
 `am` is a short alias for `ambers`; both are installed. What follows is a short tour; [cli.md](https://github.com/albertxli/ambers/blob/main/docs/cli.md) is the full guide to every command, option and key.
 

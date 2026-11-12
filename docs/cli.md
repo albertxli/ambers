@@ -4,8 +4,6 @@
 
 `am` is a short alias. Every example below works with either name.
 
-> This guide describes the current development version. `am view` and `am info --counts` are not in a published release yet; they arrive with the next one.
-
 - [Install](#install)
 - [Commands at a glance](#commands-at-a-glance)
 - [`am info`: summary and variables](#am-info-summary-and-variables)
@@ -21,24 +19,51 @@
 
 ## Install
 
-**Standalone program.** Download the archive for your platform from the [latest release](https://github.com/albertxli/ambers/releases/latest), unpack it, and run the program inside:
+**Standalone program.** One line installs it, with no administrator rights:
 
-| Platform | Archive |
+```bash
+# macOS and Linux
+curl -LsSf https://raw.githubusercontent.com/albertxli/ambers/main/install.sh | sh
+```
+
+```powershell
+# Windows
+powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/albertxli/ambers/main/install.ps1 | iex"
+```
+
+The script downloads the program for your machine from the [latest release](https://github.com/albertxli/ambers/releases/latest) and puts `ambers` and `am` in one folder:
+
+| | macOS and Linux | Windows |
+|---|---|---|
+| Installed to | `~/.local/bin` | `%LOCALAPPDATA%\ambers\bin` |
+| PATH | The script tells you the line to add if the folder is not on it | Added to your user PATH (new terminal windows see it) |
+| Update | Run the same line again | Run the same line again (close any open `am view` first) |
+| Remove | Delete `ambers` and `am` from that folder | Delete the folder |
+
+Settings, as environment variables: `AMBERS_VERSION` (a version instead of the latest, e.g. `0.5.0`), `AMBERS_INSTALL_DIR` (another folder), and on Windows `AMBERS_NO_MODIFY_PATH=1` (leave PATH alone).
+
+Ready-made programs exist for these machines. On others (Intel Macs, ARM Linux) the script says so; use the Python package there.
+
+| Platform | Archive on the release page |
 |---|---|
-| Windows | `ambers-<version>-x86_64-pc-windows-msvc.zip` |
-| Linux | `ambers-<version>-x86_64-unknown-linux-musl.tar.gz` |
-| macOS (Apple Silicon) | `ambers-<version>-aarch64-apple-darwin.tar.gz` |
+| Windows, 64-bit | `ambers-<version>-x86_64-pc-windows-msvc.zip` |
+| Linux, x86-64 | `ambers-<version>-x86_64-unknown-linux-musl.tar.gz` |
+| macOS, Apple Silicon | `ambers-<version>-aarch64-apple-darwin.tar.gz` |
 
-**With the Python package.** The same commands are installed with it:
+You can also download an archive yourself, unpack it, and run the program inside.
+
+**With the Python package.** The same commands come with it, run through Python:
 
 ```bash
 uv tool install ambers     # puts `ambers` and `am` on your PATH
+uv run am info file.sav    # in a project that has `uv add ambers`
+uvx --from ambers am info file.sav   # once, without installing
 ```
 
 Check that it works:
 
 ```bash
-am --version               # ambers 0.4.7
+am --version               # ambers 0.5.0
 am --help                  # the commands
 am info --help             # one command's options
 ```

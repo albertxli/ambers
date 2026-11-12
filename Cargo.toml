@@ -6,7 +6,7 @@ members = ["crates/*"]
 default-members = ["crates/ambers", "crates/ambers-codebook", "crates/ambers-cli"]
 
 [workspace.package]
-version = "0.4.7"
+version = "0.5.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/albertxli/ambers"
@@ -15,9 +15,9 @@ repository = "https://github.com/albertxli/ambers"
 # `{ workspace = true }` and add the features they need.
 [workspace.dependencies]
 # Internal crates. Keep these versions equal to [workspace.package] version.
-ambers = { path = "crates/ambers", version = "0.4.7", default-features = false }
-ambers-codebook = { path = "crates/ambers-codebook", version = "0.4.7", default-features = false }
-ambers-cli = { path = "crates/ambers-cli", version = "0.4.7", default-features = false }
+ambers = { path = "crates/ambers", version = "0.5.0", default-features = false }
+ambers-codebook = { path = "crates/ambers-codebook", version = "0.5.0", default-features = false }
+ambers-cli = { path = "crates/ambers-cli", version = "0.5.0", default-features = false }
 
 # Third party.
 anstream = "0.6"
