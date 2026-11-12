@@ -1,0 +1,14 @@
+# Decisions
+
+One short record per significant decision about how ambers is built: what was decided, what else was considered, and why. They explain the repository to someone reading it later; they are not user guides.
+
+Add a record when a decision changes the shape of the project (a new crate, a dependency that others build on, a format or protocol, a security rule, something deliberately not done). Do not edit an old record to reverse it: write a new one and mark the old one superseded.
+
+| # | Decision | Date |
+|---|---|---|
+| [0001](0001-cargo-workspace.md) | A Cargo workspace with one crate per concern | 2026-11-11 |
+| [0002](0002-generated-api-types.md) | API types for the browser are generated from Rust with `ts-rs` | 2026-11-12 |
+| [0003](0003-front-end-assets-in-sdist.md) | The built front end ships inside the Python sdist | 2026-11-12 |
+| [0004](0004-open-dracula-palette.md) | The open Dracula palette, not Dracula Pro | 2026-11-12 |
+| [0005](0005-local-server-security.md) | The browser viewer is served from `127.0.0.1` with a token and a Host check | 2026-11-12 |
+| [0006](0006-vite-spa-with-bun.md) | The front end is a Vite single-page app built with Bun, not Next.js | 2026-11-12 |
