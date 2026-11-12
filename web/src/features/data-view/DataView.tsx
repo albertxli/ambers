@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ApiFailure, api } from "../../api/client";
 import type { CellMode, DatasetInfo } from "../../api/client";
+import { Icon } from "../../components/Icon";
 import { count } from "../../lib/format";
 import { Grid, type Selection } from "./Grid";
 import { Inspector } from "./Inspector";
@@ -105,6 +106,10 @@ export function DataView({ dataset }: { dataset: string }) {
     <>
       <header className="topbar">
         <div className="file-identity">
+          <a className="viewer-back" href="#/files" aria-label="Back to the data files">
+            <Icon name="arrow-left" size={17} />
+            <span>Files</span>
+          </a>
           <div className="file-icon" aria-hidden="true">
             S
           </div>

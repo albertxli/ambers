@@ -4,13 +4,15 @@ expression: "ok_stdout(&[\"open\", \"--help\"])"
 ---
 Open a file in your browser
 
-Starts a small server on this machine (127.0.0.1 only), prints its address and opens it in the browser. The page asks only for the rows it shows, so a file of any size opens at once. If ambers is already serving, the file is opened there instead of starting a second server. Ctrl+C stops the server; it also stops by itself a few minutes after the last page is closed.
+Starts a small server on this machine (127.0.0.1 only), prints its address and opens it in the browser. The page asks only for the rows it shows, so a file of any size opens at once. Without a file, the page lists the data files of the folder to pick from. If ambers is already serving, the file is opened there instead of starting a second server. Ctrl+C stops the server; it also stops by itself a few minutes after the last page is closed.
 
-Usage: ambers open [OPTIONS] [FILE]
+Usage: ambers open [OPTIONS] [FILE|FOLDER]
 
 Arguments:
-  [FILE]
-          Path to a .sav or .zsav file
+  [FILE|FOLDER]
+          A .sav or .zsav file to open, or a folder to list
+          
+          With a folder, or with nothing (the current folder), the page lists the data files found there and opens the one you pick.
 
 Options:
       --port <PORT>

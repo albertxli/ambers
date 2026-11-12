@@ -18,6 +18,7 @@ pub mod api;
 mod assets;
 mod browser;
 pub mod instance;
+mod library;
 mod server;
 mod session;
 
@@ -29,6 +30,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use instance::Record;
+use library::Library;
 use server::App;
 
 /// The ambers version this server belongs to.
@@ -64,6 +66,9 @@ pub enum Error {
 pub struct Options {
     /// The file to open. `None` starts the server with no file.
     pub path: Option<PathBuf>,
+    /// The folder whose data files the launch page lists (with its
+    /// sub-folders). `None`: the page lists only files opened before.
+    pub root: Option<PathBuf>,
     /// The port to listen on. `None`: `DEFAULT_PORT`, or the next free
     /// one. `Some(0)`: any free port.
     pub port: Option<u16>,
@@ -88,6 +93,7 @@ impl Default for Options {
     fn default() -> Options {
         Options {
             path: None,
+            root: None,
             port: None,
             browser: false,
             limit: None,
@@ -180,16 +186,19 @@ fn file_path(path: &Path) -> Result<PathBuf, Error> {
 pub fn start(options: &Options) -> Result<Handle, Error> {
     let listener = bind(options.port)?;
     let port = listener.local_addr()?.port();
+    let roots: Vec<PathBuf> = options.root.iter().cloned().collect();
+    let library = Library::new(&roots, options.state_dir.clone());
     let app = Arc::new(App::new(
         new_token()?,
         port,
         options.limit,
         options.memory_gb,
+        library,
     ));
     // Before anything is announced: an unreadable file is an error now,
     // not a page that says so.
     let dataset = match &options.path {
-        Some(path) => Some(app.open(&file_path(path)?, None, None)?.id.clone()),
+        Some(path) => Some(app.open_named(&file_path(path)?, None, None)?.id.clone()),
         None => None,
     };
 
@@ -351,11 +360,19 @@ pub fn join(options: &Options) -> Result<Join, Error> {
         });
     }
 
-    let dataset = match &options.path {
+    // A file to open there, or else a folder for its launch page to list.
+    let named = match &options.path {
+        Some(path) => Some(file_path(path)?),
+        None => match &options.root {
+            Some(root) => Some(std::path::absolute(root)?),
+            None => None,
+        },
+    };
+    let dataset = match named {
         None => None,
         Some(path) => {
             let request = api::OpenRequest {
-                path: file_path(path)?.display().to_string(),
+                path: path.display().to_string(),
                 limit: options
                     .limit
                     .map(|limit| limit.min(u32::MAX as usize) as u32),
@@ -368,9 +385,9 @@ pub fn join(options: &Options) -> Result<Join, Error> {
                     .map_or(answer.body, |error| error.error);
                 return Err(Error::Refused(said));
             }
-            let info: api::DatasetInfo =
+            let opened: api::OpenAnswer =
                 serde_json::from_str(&answer.body).map_err(io::Error::other)?;
-            Some(info.id)
+            opened.dataset.map(|info| info.id)
         }
     };
     Ok(Join::Joined(address(

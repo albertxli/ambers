@@ -6,13 +6,18 @@
 
 import type { ApiError } from "./generated/ApiError";
 import type { DatasetInfo } from "./generated/DatasetInfo";
+import type { FileList } from "./generated/FileList";
+import type { FileRequest } from "./generated/FileRequest";
 import type { RowsPage } from "./generated/RowsPage";
 import type { RowsRequest } from "./generated/RowsRequest";
 import type { ServerInfo } from "./generated/ServerInfo";
+import type { StarRequest } from "./generated/StarRequest";
 import type { ValueTable } from "./generated/ValueTable";
 import type { Variables } from "./generated/Variables";
 
 export type { Cell } from "./generated/Cell";
+export type { FileEntry } from "./generated/FileEntry";
+export type { FileList } from "./generated/FileList";
 export type { CellMode } from "./generated/CellMode";
 export type { DatasetInfo } from "./generated/DatasetInfo";
 export type { Filter } from "./generated/Filter";
@@ -67,6 +72,12 @@ export const api = {
   rows: (id: string, request: RowsRequest) => post<RowsPage>(`/datasets/${id}/rows`, request),
   values: (id: string, variable: number, offset = 0, limit = 1000) =>
     call<ValueTable>(`/datasets/${id}/variables/${variable}/values?offset=${offset}&limit=${limit}`),
+  /** The data files the launch page may show and open. */
+  files: () => call<FileList>("/files"),
+  /** Open a listed file; the server refuses any other path. */
+  openFile: (path: string) => post<DatasetInfo>("/files/open", { path } satisfies FileRequest),
+  starFile: (path: string, starred: boolean) =>
+    post<void>("/files/star", { path, starred } satisfies StarRequest),
   /** Tells the server a page is still open; it stops when none is. */
   heartbeat: () => post<void>("/heartbeat", {}),
 };

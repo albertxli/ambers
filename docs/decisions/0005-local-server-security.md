@@ -13,6 +13,13 @@ Status: accepted
 4. The page loads nothing from outside: no CDN, no remote fonts or scripts.
 5. The server lists and opens only files under the folder it was started in, and files named on the command line. The page cannot ask for an arbitrary path.
 
+How the rules are carried out (2026-11-12):
+
+- The token is traded once, from the printed address, for an HttpOnly cookie named after the port (`ambers_2627`): cookies are not kept apart by port, so two servers must not share a name.
+- Opening a file by an arbitrary path (`POST /api/v1/open`) needs the token as a bearer header. A page's copy of the token is a cookie its scripts cannot read, so a page cannot send it: only the command line can name a path.
+- The page opens files through `POST /api/v1/files/open`, which first resolves the path (following `..` and links, and refusing a path to nothing) and then accepts it only if it is a data file under a listed folder, was named on a command line, or was opened before.
+- Who is asking is settled before a request body is read.
+
 ## Alternatives considered
 
 - **One static HTML file with the data inside, no server.** The earlier rule for a codebook viewer, and still right for a small codebook. It cannot work for data: a survey file can be several gigabytes, and the page must ask for only the rows on screen.

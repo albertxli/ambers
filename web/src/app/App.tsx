@@ -2,8 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { ApiFailure, api } from "../api/client";
+import { Launcher } from "../features/launcher/Launcher";
 import { type Route, datasetFromQuery, parseRoute, routeHash } from "./route";
-import { DATASET_VIEWS } from "./views";
+import { DATASET_VIEWS, DEFAULT_VIEW, FILES_VIEW } from "./views";
 
 /** How often the page tells the server it is still open. */
 const HEARTBEAT = 5000;
@@ -39,24 +40,26 @@ export function App() {
   const stopped = useHeartbeat();
   const server = useQuery({ queryKey: ["server"], queryFn: api.server });
 
-  // Without a dataset in the address: the one the server sent the browser
-  // to, or the first that is open.
-  const open = server.data?.datasets ?? [];
-  const asked = route.dataset ?? datasetFromQuery(window.location.search);
-  const dataset = asked ?? open[0]?.id ?? null;
+  // A dataset is shown when the address names one, or when the server
+  // sent the browser to one (`am open file.sav`). Otherwise: the files.
+  const files = route.view === FILES_VIEW;
+  const dataset = files ? null : (route.dataset ?? datasetFromQuery(window.location.search));
   useEffect(() => {
     if (dataset && route.dataset !== dataset) {
       window.history.replaceState(null, "", routeHash({ view: route.view, dataset }));
     }
   }, [dataset, route.dataset, route.view]);
 
-  const name = open.find((one) => one.id === dataset)?.name;
+  const name = server.data?.datasets.find((one) => one.id === dataset)?.name;
   useEffect(() => {
-    document.title = name ? `${name} · ambers` : "ambers";
-  }, [name]);
+    document.title = dataset ? `${name ?? "Data"} · ambers` : "Data files · ambers";
+  }, [dataset, name]);
 
   const view = DATASET_VIEWS.find((one) => one.id === route.view) ?? DATASET_VIEWS[0];
   const Screen = view?.component;
+  const open = (id: string) => {
+    window.location.hash = routeHash({ view: DEFAULT_VIEW, dataset: id });
+  };
 
   return (
     <main className="app-shell">
@@ -66,25 +69,7 @@ export function App() {
             The ambers server has stopped. Run <code>am open</code> again to continue.
           </div>
         )}
-        {dataset && Screen ? (
-          <Screen key={dataset} dataset={dataset} />
-        ) : server.isError ? (
-          <div className="notice is-error">
-            <h1>The server is not answering</h1>
-            <p>{server.error.message}</p>
-          </div>
-        ) : server.isPending ? (
-          <div className="notice">
-            <p>Connecting…</p>
-          </div>
-        ) : (
-          <div className="notice">
-            <h1>No file is open</h1>
-            <p>
-              Open one from a terminal: <code>am open survey.sav</code>
-            </p>
-          </div>
-        )}
+        {dataset && Screen ? <Screen key={dataset} dataset={dataset} /> : <Launcher onOpen={open} />}
       </section>
     </main>
   );

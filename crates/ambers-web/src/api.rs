@@ -263,6 +263,70 @@ pub struct OpenRequest {
     pub memory_gb: Option<f64>,
 }
 
+/// What `POST /api/v1/open` answers: the dataset, when a file was given.
+/// A folder is added to what the launch page lists, and opens nothing.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct OpenAnswer {
+    pub dataset: Option<DatasetInfo>,
+}
+
+/// A data file the launch page lists.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct FileEntry {
+    /// The file's full path: what to send back to open or star it.
+    pub path: String,
+    pub name: String,
+    /// The folder the file is in, relative to the folder being listed
+    /// (empty for that folder itself); a full path for a file elsewhere.
+    pub folder: String,
+    /// `SAV` or `ZSAV`.
+    pub format: String,
+    /// Size in bytes.
+    pub size: u64,
+    /// When the file was last changed, in seconds since 1970.
+    pub modified: Option<u64>,
+    /// Rows according to the file's header; `null` until it has been read,
+    /// and for a file whose header does not say.
+    pub rows: Option<u32>,
+    pub variables: Option<u32>,
+    /// The file label set in SPSS.
+    pub label: Option<String>,
+    /// The file's dictionary has been read (rows, variables, label).
+    pub described: bool,
+    /// Why the file cannot be read, when it cannot.
+    pub error: Option<String>,
+    pub starred: bool,
+    /// When the file was last opened here, in seconds since 1970.
+    pub opened: Option<u64>,
+    /// The id of the dataset, when the file is open now.
+    pub dataset: Option<String>,
+}
+
+/// `GET /api/v1/files`: the files the launch page may show and open.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct FileList {
+    /// The folders being listed.
+    pub roots: Vec<String>,
+    pub files: Vec<FileEntry>,
+    /// Files whose dictionary is still being read; ask again while not 0.
+    pub pending: u32,
+    /// The folders hold more data files than are listed.
+    pub truncated: bool,
+}
+
+/// `POST /api/v1/files/open`: open a listed file from the page.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct FileRequest {
+    pub path: String,
+}
+
+/// `POST /api/v1/files/star`
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct StarRequest {
+    pub path: String,
+    pub starred: bool,
+}
+
 /// The body of every error answer.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct ApiError {
@@ -310,6 +374,10 @@ mod tests {
         RowsPage::export_all(&config).unwrap();
         ValueTable::export_all(&config).unwrap();
         OpenRequest::export_all(&config).unwrap();
+        OpenAnswer::export_all(&config).unwrap();
+        FileList::export_all(&config).unwrap();
+        FileRequest::export_all(&config).unwrap();
+        StarRequest::export_all(&config).unwrap();
         ApiError::export_all(&config).unwrap();
         let wanted = files(fresh.path());
         assert!(wanted.len() >= 15, "{:?}", wanted.keys());

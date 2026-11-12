@@ -352,10 +352,12 @@ These are the checks of `ambers.validate()` (see [validate.md](validate.md)), ru
 
 ## `am open`: the file in your browser
 
-> In development. Today the page has a Data View: a grid of every row and variable that scrolls smoothly on files of any size, value labels / codes / both, resizable columns, and the selected cell shown in full with a Copy button. Filters, search and a Variable View are not there yet; `am view` has them. A binary built without the front end shows a basic page with a file's first rows instead, and says so when it starts.
+> In development. Today the page has a list of your data files and a Data View: a grid of every row and variable that scrolls smoothly on files of any size, value labels / codes / both, resizable columns, and the selected cell shown in full with a Copy button. Filters, search and a Variable View are not there yet; `am view` has them. A binary built without the front end shows a basic page with a file's first rows instead, and says so when it starts.
 
 ```bash
 am open survey.sav                 # serve the file and open it in the browser
+am open                            # list the data files of this folder to pick from
+am open ~/surveys                  # the same, for another folder
 am open survey.sav --no-browser    # only print the address
 am open big.sav --memory 8         # load at most 8 GB of data
 ```
@@ -369,6 +371,8 @@ am open big.sav --memory 8         # load at most 8 GB of data
 | `--memory GB` | half of the free memory | Stop loading when the data takes this much memory |
 
 `am open` starts a small server on your machine and prints an address like `http://127.0.0.1:2627/?token=…`. The page asks the server for the rows it shows, so a file of any size opens at once and the data never leaves the machine.
+
+**The files page.** Without a file, the page lists the `.sav` and `.zsav` files of the folder (and its sub-folders) with their rows and variables, and remembers the files you opened and starred. Search by name, label or folder, sort by name, rows or date, and click a file to open it; "Files" at the top of a file's view comes back. The page can only list and open files in that folder, files you named on the command line, and files you opened before: it cannot look elsewhere on the disk.
 
 **In the page.** Click a cell or move with the arrow keys; PgUp / PgDn, Home / End and Ctrl+arrows work as in a spreadsheet, and Ctrl+C copies the selected cell. Drag the right edge of a column's header to resize it; double-click the edge to reset it. The strip under the grid shows the selected cell in full. While a file loads, the grid already works and the status bar shows the progress.
 

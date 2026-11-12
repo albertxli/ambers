@@ -85,13 +85,18 @@ enum Command {
     ///
     /// Starts a small server on this machine (127.0.0.1 only), prints its
     /// address and opens it in the browser. The page asks only for the rows
-    /// it shows, so a file of any size opens at once. If ambers is already
+    /// it shows, so a file of any size opens at once. Without a file, the page
+    /// lists the data files of the folder to pick from. If ambers is already
     /// serving, the file is opened there instead of starting a second
     /// server. Ctrl+C stops the server; it also stops by itself a few
     /// minutes after the last page is closed.
     #[cfg(feature = "web")]
     Open {
-        /// Path to a .sav or .zsav file
+        /// A .sav or .zsav file to open, or a folder to list
+        ///
+        /// With a folder, or with nothing (the current folder), the page
+        /// lists the data files found there and opens the one you pick.
+        #[arg(value_name = "FILE|FOLDER")]
         file: Option<PathBuf>,
         /// Port to listen on (default: 2627, or the next free one after it)
         #[arg(long, value_name = "PORT")]
@@ -202,11 +207,16 @@ where
             limit,
             memory,
         } => {
-            // A folder is where the launch page will list files; until
-            // then it starts the server with no file open.
-            let file = file.filter(|path| !path.is_dir());
+            // The launch page lists the data files of a folder: the one
+            // given, or the one the command was run in.
+            let (file, folder) = match file {
+                Some(path) if path.is_dir() => (None, Some(path)),
+                other => (other, None),
+            };
+            let root = folder.or_else(|| std::env::current_dir().ok());
             let options = ambers_web::Options {
                 path: file.clone(),
+                root,
                 port,
                 browser: !no_browser,
                 limit,

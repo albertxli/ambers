@@ -7,7 +7,8 @@
 //! something, and wants the token it made at start.
 //! See `docs/decisions/0005-local-server-security.md`.
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
@@ -24,6 +25,7 @@ use tokio::sync::Notify;
 
 use crate::api::{self, API};
 use crate::assets;
+use crate::library::{Library, plain};
 use crate::session::{Session, VALUES_PAGE};
 
 /// Everything the routes share.
@@ -39,10 +41,18 @@ pub struct App {
     /// Loading limits for files opened without their own.
     limit: Option<usize>,
     memory_gb: Option<f64>,
+    /// The files the launch page may list and open.
+    pub library: Library,
 }
 
 impl App {
-    pub fn new(token: String, port: u16, limit: Option<usize>, memory_gb: Option<f64>) -> App {
+    pub fn new(
+        token: String,
+        port: u16,
+        limit: Option<usize>,
+        memory_gb: Option<f64>,
+        library: Library,
+    ) -> App {
         App {
             token,
             port,
@@ -52,31 +62,58 @@ impl App {
             stop: Notify::new(),
             limit,
             memory_gb,
+            library,
         }
     }
 
-    /// Open a file, or return the session that already has it.
+    /// Open a file, or return the session that already has it. Whether
+    /// the caller may open this file is the caller's to check.
     pub fn open(
         &self,
         path: &Path,
         limit: Option<usize>,
         memory_gb: Option<f64>,
     ) -> ambers::error::Result<Arc<Session>> {
-        // One name per file, however it was written on the command line.
-        let path = plain(&path.canonicalize().unwrap_or_else(|_| path.to_path_buf()));
-        let mut sessions = self.sessions.write().unwrap_or_else(|p| p.into_inner());
-        if let Some(open) = sessions.iter().find(|session| session.path == path) {
-            return Ok(Arc::clone(open));
-        }
-        let id = format!("d{}", self.next_id.fetch_add(1, Ordering::Relaxed));
-        let session = Session::open(
-            id,
-            &path,
-            limit.or(self.limit),
-            memory_gb.or(self.memory_gb),
-        )?;
-        sessions.push(Arc::clone(&session));
+        // One name per file, however it was written.
+        let path = plain(path);
+        let session = {
+            let mut sessions = self.sessions.write().unwrap_or_else(|p| p.into_inner());
+            if let Some(open) = sessions.iter().find(|session| session.path == path) {
+                Arc::clone(open)
+            } else {
+                let id = format!("d{}", self.next_id.fetch_add(1, Ordering::Relaxed));
+                let session = Session::open(
+                    id,
+                    &path,
+                    limit.or(self.limit),
+                    memory_gb.or(self.memory_gb),
+                )?;
+                sessions.push(Arc::clone(&session));
+                session
+            }
+        };
+        self.library.opened(&path);
         Ok(session)
+    }
+
+    /// Open a file named on a command line: the page may open it again.
+    pub fn open_named(
+        &self,
+        path: &Path,
+        limit: Option<usize>,
+        memory_gb: Option<f64>,
+    ) -> ambers::error::Result<Arc<Session>> {
+        let session = self.open(path, limit, memory_gb)?;
+        self.library.allow(path);
+        Ok(session)
+    }
+
+    /// What the launch page shows.
+    fn files(&self) -> api::FileList {
+        let open: HashMap<PathBuf, String> = (self.sessions().iter())
+            .map(|session| (session.path.clone(), session.id.clone()))
+            .collect();
+        self.library.list(&open)
     }
 
     fn sessions(&self) -> Vec<Arc<Session>> {
@@ -135,19 +172,6 @@ impl App {
     }
 }
 
-/// A canonical Windows path without its `\\?\` prefix, which is correct
-/// but not how anyone writes or reads a path.
-fn plain(path: &Path) -> std::path::PathBuf {
-    let text = path.to_string_lossy();
-    match text.strip_prefix(r"\\?\") {
-        Some(rest) => match rest.strip_prefix(r"UNC\") {
-            Some(share) => format!(r"\\{share}").into(),
-            None => rest.to_string().into(),
-        },
-        None => path.to_path_buf(),
-    }
-}
-
 /// An error answer: a status and a sentence, sent as JSON.
 pub struct Failure(pub StatusCode, pub String);
 
@@ -166,6 +190,9 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/server", get(server))
         .route("/heartbeat", post(heartbeat))
         .route("/open", post(open))
+        .route("/files", get(files))
+        .route("/files/open", post(open_file))
+        .route("/files/star", post(star_file))
         .route("/datasets", get(datasets))
         .route("/datasets/{id}", get(dataset).delete(close))
         .route("/datasets/{id}/variables", get(variables))
@@ -376,14 +403,15 @@ async fn values(
         .ok_or_else(|| Failure(StatusCode::NOT_FOUND, format!("no variable {index}")))
 }
 
-/// A second `am open` asks this server to open a file. Only for the
-/// command line: it must carry the token as a bearer header, which a page
-/// cannot, so a page cannot name an arbitrary path.
+/// A second `am open` asks this server to open a file, or to list a
+/// folder too. Only for the command line: it must carry the token as a
+/// bearer header, which a page cannot, so a page cannot name an arbitrary
+/// path.
 async fn open(
     State(app): State<Arc<App>>,
     headers: HeaderMap,
     body: String,
-) -> Result<Json<api::DatasetInfo>, Failure> {
+) -> Result<Json<api::OpenAnswer>, Failure> {
     // Who is asking is settled before the request is even read.
     if !bearer(&headers).is_some_and(|token| same(token, &app.token)) {
         return Err(Failure(
@@ -395,13 +423,62 @@ async fn open(
         .map_err(|error| Failure(StatusCode::BAD_REQUEST, error.to_string()))?;
     let limit = request.limit.map(|limit| limit as usize);
     let opened = off_thread(move || {
-        app.open(Path::new(&request.path), limit, request.memory_gb)
-            .map(|session| session.info())
+        let path = Path::new(&request.path);
+        if path.is_dir() {
+            app.library.add_root(path);
+            return Ok(None);
+        }
+        app.open_named(path, limit, request.memory_gb)
+            .map(|session| Some(session.info()))
     })
     .await?;
     opened
-        .map(Json)
+        .map(|dataset| Json(api::OpenAnswer { dataset }))
         .map_err(|error| Failure(StatusCode::UNPROCESSABLE_ENTITY, error.to_string()))
+}
+
+// --- the launch page's files ---------------------------------------------------
+
+async fn files(State(app): State<Arc<App>>) -> Result<Json<api::FileList>, Failure> {
+    Ok(Json(off_thread(move || app.files()).await?))
+}
+
+/// The page opens a file it was shown. Any other path is refused: the
+/// page cannot reach into the disk.
+async fn open_file(
+    State(app): State<Arc<App>>,
+    Json(request): Json<api::FileRequest>,
+) -> Result<Json<api::DatasetInfo>, Failure> {
+    let opened = off_thread(move || {
+        let path = Path::new(&request.path);
+        if !app.library.may_open(path) {
+            return Err(Failure(
+                StatusCode::FORBIDDEN,
+                "this file is not among the files ambers was started with".to_string(),
+            ));
+        }
+        app.open(path, None, None)
+            .map(|session| session.info())
+            .map_err(|error| Failure(StatusCode::UNPROCESSABLE_ENTITY, error.to_string()))
+    })
+    .await?;
+    opened.map(Json)
+}
+
+async fn star_file(
+    State(app): State<Arc<App>>,
+    Json(request): Json<api::StarRequest>,
+) -> Result<StatusCode, Failure> {
+    let starred =
+        off_thread(move || app.library.star(Path::new(&request.path), request.starred)).await?;
+    if starred {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(Failure(
+            StatusCode::FORBIDDEN,
+            "this file is not among the files ambers was started with".to_string(),
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -420,15 +497,6 @@ mod tests {
     }
 
     #[test]
-    fn a_path_is_shown_without_the_verbatim_prefix() {
-        let shown = |path: &str| plain(Path::new(path)).display().to_string();
-        assert_eq!(shown(r"\\?\C:\data\survey.sav"), r"C:\data\survey.sav");
-        assert_eq!(shown(r"\\?\UNC\nas\share\a.sav"), r"\\nas\share\a.sav");
-        assert_eq!(shown("/home/me/a.sav"), "/home/me/a.sav");
-        assert_eq!(shown(r"C:\data\a.sav"), r"C:\data\a.sav");
-    }
-
-    #[test]
     fn tokens_compare_whole() {
         assert!(same("abc123", "abc123"));
         assert!(!same("abc124", "abc123"));
@@ -438,7 +506,7 @@ mod tests {
 
     #[test]
     fn only_its_own_names_are_its_host() {
-        let app = App::new("t".to_string(), 4321, None, None);
+        let app = App::new("t".to_string(), 4321, None, None, Library::new(&[], None));
         assert!(app.own_host("127.0.0.1:4321"));
         assert!(app.own_host("localhost:4321"));
         // Another port, another name, or no port at all.

@@ -16,3 +16,6 @@ export interface DatasetView {
 export const DATASET_VIEWS: DatasetView[] = [{ id: "data", label: "Data", component: DataView }];
 
 export const DEFAULT_VIEW = "data";
+
+/** The address of the launch page: `#/files`. It is not a view of a dataset. */
+export const FILES_VIEW = "files";

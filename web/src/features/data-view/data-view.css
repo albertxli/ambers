@@ -27,6 +27,28 @@
   min-width: 0;
 }
 
+/* Back to the launch page. */
+.viewer-back {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  margin-right: 4px;
+  padding-right: 15px;
+  color: var(--text-muted);
+  border-right: 1px solid var(--selection);
+  font-size: 11px;
+}
+
+.viewer-back:hover {
+  color: var(--accent);
+}
+
+.file-identity > div:last-child {
+  min-width: 0;
+}
+
 .file-icon {
   flex: none;
   width: 34px;

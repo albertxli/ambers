@@ -534,6 +534,146 @@ fn an_unreadable_file_is_an_error_before_anything_is_served() {
     assert!(matches!(clash, Err(ambers_web::Error::PortTaken(taken)) if taken == port));
 }
 
+/// A folder with two data files and one in a sub-folder, and a server
+/// started on it with no file open.
+fn library() -> (tempfile::TempDir, Handle) {
+    let folder = tempfile::tempdir().unwrap();
+    fs::create_dir_all(folder.path().join("waves/2025")).unwrap();
+    for (from, to) in [
+        ("survey.sav", "survey.sav"),
+        ("variable_types.sav", "types.sav"),
+        ("survey.sav", "waves/2025/wave.sav"),
+    ] {
+        fs::copy(fixture(from), folder.path().join(to)).unwrap();
+    }
+    let handle = start(&Options {
+        root: Some(folder.path().to_path_buf()),
+        port: Some(0),
+        idle: None,
+        ..Options::default()
+    })
+    .unwrap();
+    (folder, handle)
+}
+
+/// The launch page's list, once every file has been described.
+fn listed(handle: &Handle) -> api::FileList {
+    let started = Instant::now();
+    loop {
+        let list: api::FileList = get(handle, "/api/v1/files");
+        if list.pending == 0 {
+            return list;
+        }
+        assert!(started.elapsed() < WAIT, "still describing files");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn the_launch_page_lists_the_folder_and_opens_from_it() {
+    let (folder, handle) = library();
+    assert_eq!(handle.dataset, None);
+    let list = listed(&handle);
+    assert_eq!(list.roots.len(), 1);
+    let names: Vec<(&str, &str)> = (list.files.iter())
+        .map(|file| (file.name.as_str(), file.folder.as_str()))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("survey.sav", ""),
+            ("types.sav", ""),
+            ("wave.sav", "waves/2025")
+        ]
+    );
+    let survey = &list.files[0];
+    assert_eq!((survey.rows, survey.variables), (Some(20), Some(13)));
+    assert_eq!(survey.format, "SAV");
+    assert!(survey.dataset.is_none() && survey.opened.is_none() && !survey.starred);
+
+    // The page (a cookie, no bearer) opens a file it was shown.
+    let cookie = format!("ambers_{}={}", handle.port(), handle.token());
+    let page = |path: &str, body: &str| {
+        let headers = [("Cookie", cookie.as_str())];
+        instance::request(handle.port(), "POST", path, &headers, Some(body), WAIT).unwrap()
+    };
+    let body = serde_json::to_string(&api::FileRequest {
+        path: survey.path.clone(),
+    })
+    .unwrap();
+    let opened = page("/api/v1/files/open", &body);
+    assert_eq!(opened.status, 200, "{}", opened.body);
+    let info: api::DatasetInfo = serde_json::from_str(&opened.body).unwrap();
+    assert_eq!((info.id.as_str(), info.name.as_str()), ("d1", "survey.sav"));
+
+    // It is then marked as open and as opened, and can be starred.
+    let star = serde_json::to_string(&api::StarRequest {
+        path: survey.path.clone(),
+        starred: true,
+    })
+    .unwrap();
+    assert_eq!(page("/api/v1/files/star", &star).status, 204);
+    let list = listed(&handle);
+    let survey = &list.files[0];
+    assert_eq!(survey.dataset.as_deref(), Some("d1"));
+    assert!(survey.opened.is_some() && survey.starred);
+
+    // A path the page was not shown is refused: outside the folder, by
+    // `..`, or not a data file.
+    let outside = fixture("survey.sav").display().to_string();
+    let around = (folder.path().join("..").join("x.sav"))
+        .display()
+        .to_string();
+    let manifest = fixture("../../Cargo.toml").display().to_string();
+    for path in [outside, around, manifest] {
+        let body = serde_json::to_string(&api::FileRequest { path: path.clone() }).unwrap();
+        let refused = page("/api/v1/files/open", &body);
+        assert_eq!(refused.status, 403, "{path}: {}", refused.body);
+        let star = serde_json::to_string(&api::StarRequest {
+            path,
+            starred: true,
+        })
+        .unwrap();
+        assert_eq!(page("/api/v1/files/star", &star).status, 403);
+    }
+    handle.stop();
+    handle.wait();
+}
+
+#[test]
+fn a_second_open_with_a_folder_adds_it_to_the_launch_page() {
+    let state = tempfile::tempdir().unwrap();
+    let (_folder, _unused) = library();
+    let first = tempfile::tempdir().unwrap();
+    let handle = start(&Options {
+        root: Some(first.path().to_path_buf()),
+        port: Some(0),
+        idle: None,
+        state_dir: Some(state.path().to_path_buf()),
+        ..Options::default()
+    })
+    .unwrap();
+    assert!(listed(&handle).files.is_empty());
+
+    // `am open` run again in a folder that has data files.
+    let second = Options {
+        root: Some(fixture("")),
+        state_dir: Some(state.path().to_path_buf()),
+        ..Options::default()
+    };
+    let expected = format!(
+        "http://127.0.0.1:{}/?token={}",
+        handle.port(),
+        handle.token()
+    );
+    assert_eq!(join(&second).unwrap(), Join::Joined(expected));
+    let list = listed(&handle);
+    assert_eq!(list.roots.len(), 2);
+    assert!(list.files.iter().any(|file| file.name == "survey.sav"));
+    handle.stop();
+    handle.wait();
+}
+
 /// Once a file has loaded, no handle to it is left: another program can
 /// open it with exclusive access, so it can be replaced or moved while
 /// its rows are still shown.
