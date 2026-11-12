@@ -6,15 +6,24 @@
 use std::path::Path;
 use std::process::{Command, Output};
 
-/// Run the built binary from the repo root, so fixture paths in the output
+/// Run a built binary from the repo root, so fixture paths in the output
 /// are the same on every machine.
-fn ambers(args: &[&str]) -> Output {
+fn run_bin(exe: &str, args: &[&str]) -> Output {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    Command::new(env!("CARGO_BIN_EXE_ambers"))
+    Command::new(exe)
         .args(args)
         .current_dir(repo_root)
         .output()
-        .expect("failed to run the ambers binary")
+        .expect("failed to run the binary")
+}
+
+fn ambers(args: &[&str]) -> Output {
+    run_bin(env!("CARGO_BIN_EXE_ambers"), args)
+}
+
+/// The short alias binary.
+fn am(args: &[&str]) -> Output {
+    run_bin(env!("CARGO_BIN_EXE_am"), args)
 }
 
 fn stdout(output: &Output) -> String {
@@ -121,4 +130,29 @@ fn unknown_command_is_a_usage_error() {
     assert_eq!(output.status.code(), Some(2));
     assert_eq!(stdout(&output), "");
     insta::assert_snapshot!(stderr(&output));
+}
+
+#[test]
+fn am_is_the_same_program() {
+    for args in [
+        &["info", "tests/data/survey.sav"][..],
+        &["info", "tests/data/does_not_exist.sav"][..],
+        &["--version"][..],
+    ] {
+        let (long, short) = (ambers(args), am(args));
+        assert_eq!(long.status.code(), short.status.code(), "{args:?}");
+        assert_eq!(stdout(&long), stdout(&short), "{args:?}");
+        assert_eq!(stderr(&long), stderr(&short), "{args:?}");
+    }
+}
+
+#[test]
+fn am_usage_names_the_alias() {
+    let help = stdout(&am(&["--help"]));
+    assert!(help.contains("Usage: am <COMMAND>"), "{help}");
+    // Apart from that one word the help is identical.
+    assert_eq!(
+        help.replace("Usage: am ", "Usage: ambers "),
+        ok_stdout(&["--help"])
+    );
 }

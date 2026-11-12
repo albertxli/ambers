@@ -118,18 +118,22 @@ jobs:
         run: cargo build --release -p ambers-cli --target ${{ matrix.target }}
 
       - name: Smoke test
-        run: target/${{ matrix.target }}/release/ambers info tests/data/survey.zsav --head 3
+        run: |
+          target/${{ matrix.target }}/release/ambers info tests/data/survey.zsav
+          target/${{ matrix.target }}/release/am info tests/data/survey.zsav
 
       - name: Check the binary is standalone (Linux)
         if: runner.os == 'Linux'
         run: |
-          if readelf -d target/${{ matrix.target }}/release/ambers | grep NEEDED; then
+          if readelf -d target/${{ matrix.target }}/release/ambers target/${{ matrix.target }}/release/am | grep NEEDED; then
             echo "::error::the Linux binary needs shared libraries"; exit 1
           fi
 
       - name: Check the binary is standalone (Windows)
         if: runner.os == 'Windows'
-        run: python scripts/check_cli_imports.py target/${{ matrix.target }}/release/ambers.exe
+        run: |
+          python scripts/check_cli_imports.py target/${{ matrix.target }}/release/ambers.exe
+          python scripts/check_cli_imports.py target/${{ matrix.target }}/release/am.exe
 
       - name: Check the binary is standalone (macOS)
         if: runner.os == 'macOS'
@@ -147,10 +151,10 @@ jobs:
           cp README.md LICENSE cli-dist/$name/
           cd cli-dist
           if [ "$RUNNER_OS" = Windows ]; then
-            cp ../target/${{ matrix.target }}/release/ambers.exe $name/
+            cp ../target/${{ matrix.target }}/release/ambers.exe ../target/${{ matrix.target }}/release/am.exe $name/
             7z a -bso0 $name.zip $name
           else
-            cp ../target/${{ matrix.target }}/release/ambers $name/
+            cp ../target/${{ matrix.target }}/release/ambers ../target/${{ matrix.target }}/release/am $name/
             tar czf $name.tar.gz $name
           fi
 
@@ -194,7 +198,7 @@ jobs:
           for a in dist-cli/*.tar.gz; do tar xzf "$a" -C dist-cli; done
           for a in dist-cli/*.zip; do unzip -q "$a" -d dist-cli; done
           for d in dist-cli/ambers-*/; do
-            for b in "$d"ambers "$d"ambers.exe; do
+            for b in "$d"ambers "$d"ambers.exe "$d"am "$d"am.exe; do
               if [ -f "$b" ]; then cp "$b" "cli-bin/$(basename "$d")-$(basename "$b")"; fi
             done
           done

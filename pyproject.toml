@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 ambers = "ambers._cli:main"
+am = "ambers._cli:main"
 
 [tool.maturin]
 module-name = "ambers._ambers"

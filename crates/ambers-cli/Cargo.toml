@@ -15,6 +15,11 @@ name = "ambers_cli"
 name = "ambers"
 path = "src/main.rs"
 
+# Short alias: `am info file.sav`.
+[[bin]]
+name = "am"
+path = "src/bin/am.rs"
+
 [dependencies]
 ambers = { workspace = true }
 anyhow = { workspace = true }

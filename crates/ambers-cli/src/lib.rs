@@ -11,19 +11,12 @@ mod info;
 
 use std::ffi::OsString;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 
 #[derive(Parser)]
-// `bin_name` is fixed so usage text reads `ambers` however the program was
-// started (`ambers.exe`, the wheel's entry point script, a renamed binary).
-#[command(
-    name = "ambers",
-    bin_name = "ambers",
-    version,
-    about = "Inspect SPSS .sav and .zsav files"
-)]
+#[command(name = "ambers", version, about = "Inspect SPSS .sav and .zsav files")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -48,7 +41,12 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
-    let cli = match Cli::try_parse_from(args) {
+    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    let parsed = Cli::command()
+        .bin_name(program_name(args.first()))
+        .try_get_matches_from(args)
+        .and_then(|matches| Cli::from_arg_matches(&matches));
+    let cli = match parsed {
         Ok(cli) => cli,
         Err(err) => {
             // Help and version go to stdout with code 0; usage errors to stderr with 2.
@@ -71,6 +69,20 @@ where
             eprintln!("error: {err:#}");
             1
         }
+    }
+}
+
+/// The name shown in usage text: `am` when started through the short alias,
+/// `ambers` otherwise (`ambers.exe`, the wheel's entry point script, a
+/// renamed binary), so help reads the same on every platform.
+fn program_name(argv0: Option<&OsString>) -> &'static str {
+    let stem = argv0
+        .map(Path::new)
+        .and_then(Path::file_stem)
+        .and_then(|stem| stem.to_str());
+    match stem {
+        Some(stem) if stem.eq_ignore_ascii_case("am") => "am",
+        _ => "ambers",
     }
 }
 
