@@ -292,3 +292,47 @@ fn am_usage_names_the_alias() {
         ok_stdout(&["--help"])
     );
 }
+
+// ---------------------------------------------------------------------------
+// view: what can be checked without a terminal
+// ---------------------------------------------------------------------------
+
+#[test]
+fn view_refuses_to_run_without_a_terminal() {
+    // The test harness captures the output, so this is the piped case.
+    let output = ambers(&["view", "tests/data/survey.sav"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stdout(&output), "");
+    assert_eq!(
+        stderr(&output),
+        "error: view needs an interactive terminal\n"
+    );
+}
+
+#[test]
+fn view_reports_an_unreadable_file_like_info() {
+    let output = ambers(&["view", "tests/data/does_not_exist.sav"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stdout(&output), "");
+    let report = stderr(&output);
+    assert!(
+        report.contains("│ File   │ tests/data/does_not_exist.sav"),
+        "{report}"
+    );
+    assert!(report.contains("│ Status │ error"), "{report}");
+
+    let not_sav = ambers(&["view", "Cargo.toml"]);
+    assert_eq!(stderr(&not_sav), stderr(&ambers(&["info", "Cargo.toml"])));
+}
+
+#[test]
+fn view_help() {
+    insta::assert_snapshot!(ok_stdout(&["view", "--help"]));
+}
+
+#[test]
+fn view_rejects_an_unknown_mode() {
+    let output = ambers(&["view", "tests/data/survey.sav", "--mode", "pretty"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("[possible values: labels, codes, both]"));
+}

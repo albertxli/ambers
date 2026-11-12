@@ -185,7 +185,7 @@ fn rows(batch: &RecordBatch) -> Result<String> {
 }
 
 /// `1234567` -> `1,234,567`.
-fn group_digits(n: u64) -> String {
+pub(crate) fn group_digits(n: u64) -> String {
     let digits = n.to_string();
     let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
     for (i, ch) in digits.chars().enumerate() {

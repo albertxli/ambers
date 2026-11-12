@@ -1,0 +1,14 @@
+---
+source: crates/ambers-cli/src/view/draw.rs
+expression: "screen(\"survey.sav\", 100, 10, &[Key::Char('1'), Key::Char('8')])"
+---
+╭ survey.sav ──────────────────────────────────────────────────────────────────────────────────────╮
+│   # │       id │ gender  satisfaction       age      income  city          brand_a  brand_b  bra…│
+│  12 │       12 │ Female  Dissatisfied        51    36505.50  Not answered  Yes      No       No  │
+│  13 │       13 │ Male    Neutral             54    38006.00  Lisbon        No       Yes      Yes │
+│  14 │       14 │ Female  .                   57    39506.50  Osaka         Yes      No       No  │
+│  15 │       15 │ Male    Refused             60    41007.00  Lima          No       No       No  │
+│  16 │       16 │ Female  Very dissatisfied   63    42507.50  Not answered  Yes      Yes      No  │
+│  17 │       17 │ Male    Dissatisfied        66    44008.00  Lisbon        No       No       Yes │
+│  18 │       18 │ Female  Neutral             19   999999.00  Osaka         Yes      No       No  │
+╰ Labels ─ Go to row: 18▏─────────────────────────────────────────── Row 18/20 ─ Var 1/13 ─ ? help ╯

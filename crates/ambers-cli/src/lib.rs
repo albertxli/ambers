@@ -11,6 +11,7 @@
 
 mod info;
 mod render;
+mod view;
 
 use std::ffi::OsString;
 use std::io::{self, Write};
@@ -45,6 +46,25 @@ enum Command {
         #[arg(long, value_name = "N")]
         rows: Option<usize>,
     },
+    /// Browse a file's data in a full-screen grid
+    ///
+    /// Like SPSS's Data View: move with the arrow keys, press Tab to switch
+    /// between value labels, stored codes and both, Enter for one
+    /// respondent's answers, i for the variable list, ? for every key.
+    /// Needs an interactive terminal.
+    View {
+        /// Path to a .sav or .zsav file
+        file: PathBuf,
+        /// What cells show at the start; Tab cycles through all three
+        #[arg(long, value_enum, default_value = "labels")]
+        mode: view::Mode,
+        /// Load at most N rows (the rest of a larger file is not read)
+        #[arg(long, value_name = "N", default_value_t = 1_000_000)]
+        limit: usize,
+        /// Colours
+        #[arg(long, value_enum, default_value = "dracula")]
+        theme: view::ThemeName,
+    },
 }
 
 /// Run the CLI with the given arguments (the first is the program name) and
@@ -68,22 +88,41 @@ where
         }
     };
 
-    // `anstream` strips the colour codes unless the stream is a terminal.
-    let mut out = anstream::stdout().lock();
-    let Command::Info {
-        file,
-        head,
-        tail,
-        rows,
-    } = cli.command;
-    let options = info::Options { head, tail, rows };
-    let result =
-        info::run(&mut out, &file, &options).and_then(|()| out.flush().map_err(Into::into));
+    let (file, result) = match cli.command {
+        Command::Info {
+            file,
+            head,
+            tail,
+            rows,
+        } => {
+            // `anstream` strips the colour codes unless the stream is a terminal.
+            let mut out = anstream::stdout().lock();
+            let options = info::Options { head, tail, rows };
+            let result =
+                info::run(&mut out, &file, &options).and_then(|()| out.flush().map_err(Into::into));
+            (file, result)
+        }
+        Command::View {
+            file,
+            mode,
+            limit,
+            theme,
+        } => {
+            let options = view::Options { mode, limit, theme };
+            let result = view::run(&file, &options);
+            (file, result)
+        }
+    };
 
     match result {
         Ok(()) => 0,
         // The reader of our output went away (`ambers info f.sav | head`): not an error.
         Err(err) if is_broken_pipe(&err) => 0,
+        // Nothing is wrong with the file, so no file report: just say why.
+        Err(err) if err.is::<view::NotATerminal>() => {
+            let _ = writeln!(anstream::stderr().lock(), "error: {err}");
+            1
+        }
         Err(err) => {
             let _ = writeln!(
                 anstream::stderr().lock(),

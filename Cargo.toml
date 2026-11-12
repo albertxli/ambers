@@ -32,9 +32,11 @@ indexmap = "2"
 insta = "1"
 mimalloc = "0.1"
 pyo3 = "0.26"
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
 rayon = "1"
 tempfile = "3"
 thiserror = "2"
+unicode-width = "0.2"
 
 [profile.release]
 lto = "fat"

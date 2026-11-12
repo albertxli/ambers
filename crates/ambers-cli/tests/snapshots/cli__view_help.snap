@@ -1,0 +1,41 @@
+---
+source: crates/ambers-cli/tests/cli.rs
+expression: "ok_stdout(&[\"view\", \"--help\"])"
+---
+Browse a file's data in a full-screen grid
+
+Like SPSS's Data View: move with the arrow keys, press Tab to switch between value labels, stored codes and both, Enter for one respondent's answers, i for the variable list, ? for every key. Needs an interactive terminal.
+
+Usage: ambers view [OPTIONS] <FILE>
+
+Arguments:
+  <FILE>
+          Path to a .sav or .zsav file
+
+Options:
+      --mode <MODE>
+          What cells show at the start; Tab cycles through all three
+
+          Possible values:
+          - labels: The value label, or the value itself when it has none
+          - codes:  The stored value
+          - both:   The stored value followed by its label
+          
+          [default: labels]
+
+      --limit <N>
+          Load at most N rows (the rest of a larger file is not read)
+          
+          [default: 1000000]
+
+      --theme <THEME>
+          Colours
+
+          Possible values:
+          - dracula:  The Dracula palette, the same in every terminal
+          - terminal: Your terminal's own colours
+          
+          [default: dracula]
+
+  -h, --help
+          Print help (see a summary with '-h')

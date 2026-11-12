@@ -1,0 +1,20 @@
+---
+source: crates/ambers-cli/src/view/draw.rs
+expression: "screen(\"imperfect_labels.sav\", 100, 16, &[])"
+---
+╭ imperfect_labels.sav ────────────────────────────────────────────────────────────────────────────╮
+│   # │       id │ q1        scale              brand       city              age                  │
+│   1 │        1 │ Agree     Not at all likely  Brand A     New York         18.0                  │
+│   2 │        2 │ Neutral   1                  Other [97]  Los Angeles      25.5                  │
+│   3 │        3 │ Disagree  2                  Other [98]  Springfield      31.0                  │
+│   4 │        4 │ 7         3                  Brand A     New York         44.0                  │
+│   5 │        5 │ Agree     4                  Brand B                      52.0                  │
+│   6 │        6 │ Refused   5                  Other [97]  Paris            67.0                  │
+│   7 │        7 │ .         6                  Brand B     Los Angeles         .                  │
+│   8 │        8 │ 8         7                  Other [98]  New York         23.0                  │
+│   9 │        9 │ Neutral   8                  Brand A     Los Angeles      38.0                  │
+│  10 │       10 │ Disagree  9                  .           Lyon             41.0                  │
+│  11 │       11 │ 7         Extremely likely   Brand B     New York         59.0                  │
+│  12 │       12 │ Agree     95                 Brand A     Los Angeles      70.0                  │
+│                                                                                                  │
+╰ Labels ─ id: Respondent ID ─ ⚠ 2 vars with unlabelled values ─────── Row 1/12 ─ Var 1/6 ─ ? help ╯

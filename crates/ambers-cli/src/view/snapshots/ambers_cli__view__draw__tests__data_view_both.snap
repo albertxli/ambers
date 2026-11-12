@@ -1,0 +1,18 @@
+---
+source: crates/ambers-cli/src/view/draw.rs
+expression: "screen(\"survey.sav\", 100, 14, &[Key::Tab, Key::Tab])"
+---
+╭ survey.sav ──────────────────────────────────────────────────────────────────────────────────────╮
+│   # │       id │ gender       satisfaction             age      income  city              brand_a│
+│   1 │        1 │ 1.00 Male    1.00  Very dissatisfied   18    20000.00  Lisbon            0.00 No│
+│   2 │        2 │ 2.00 Female  2.00  Dissatisfied        21    21500.50  Osaka             1.00 Y…│
+│   3 │        3 │ 1.00 Male    3.00  Neutral             24    23001.00  Lima              0.00 No│
+│   4 │        4 │ 2.00 Female  4.00  Satisfied           27    24501.50  N/A Not answered  1.00 Y…│
+│   5 │        5 │ 1.00 Male    99.00 Refused             30    26002.00  Lisbon            0.00 No│
+│   6 │        6 │ 2.00 Female  1.00  Very dissatisfied   33    27502.50  Osaka             1.00 Y…│
+│   7 │        7 │ 1.00 Male    .                         36    29003.00  Lima              0.00 No│
+│   8 │        8 │ 2.00 Female  3.00  Neutral             39    30503.50  N/A Not answered  1.00 Y…│
+│   9 │        9 │ 1.00 Male    4.00  Satisfied           42   999999.00  Lisbon            0.00 No│
+│  10 │       10 │ 2.00 Female  99.00 Refused             45    33504.50  Osaka             1.00 Y…│
+│  11 │       11 │ 1.00 Male    1.00  Very dissatisfied   48    35005.00  Lima              0.00 No│
+╰ Both ─ id: Respondent ID ────────────────────────────────────────── Row 1/20 ─ Var 1/13 ─ ? help ╯

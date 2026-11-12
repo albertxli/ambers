@@ -68,6 +68,38 @@ am info survey.sav --rows 10           # also the first 10 data rows
 
 In a terminal the summary's border is green when the file read cleanly, yellow when the reader recorded [warnings](https://github.com/albertxli/ambers/blob/main/docs/warnings_and_errors.md), and red when the file could not be read; the `Status` row says the same in text, so nothing is lost when the output is piped. Variable names are always shown in full; long labels keep their beginning and end.
 
+### Browse the data: `am view`
+
+```bash
+am view survey.sav                  # opens on value labels
+am view survey.sav --mode codes     # opens on stored codes
+am view big.sav --limit 200000      # load at most 200,000 rows (default 1,000,000)
+am view survey.sav --theme terminal # use your terminal's colours (default: Dracula)
+```
+
+A full-screen grid in the style of SPSS's Data View. The first screen appears at once and the rest of the file loads in the background.
+
+| Key | Action |
+|---|---|
+| arrows, `h` `j` `k` `l` | move one cell |
+| PgUp / PgDn, Ctrl+u / Ctrl+d | a screen, half a screen |
+| Home / End | first / last variable |
+| `g` / `G` | first / last loaded row |
+| digits | go to that row as you type; Enter keeps it, Esc goes back |
+| Tab | switch what cells show: **Labels**, **Codes**, **Both** (`1  Male`) |
+| Enter | panel with the current respondent's answers: variable, code and label, variable label |
+| `i` | Variable View: type, width, decimals, label, values, missing, measure, role; Enter jumps to that variable |
+| `f` | freeze / unfreeze the first variable while scrolling sideways |
+| `?` | list of keys |
+| `q`, Esc | close the panel or view; quit |
+
+Files with incomplete labels are shown as they are, and the gaps are made visible:
+
+- A value with no label, in a variable that has labels, shows the value itself in the warning colour.
+- When two codes share a label, Labels mode shows `Other [97]` and `Other [98]`.
+- Values declared user-missing are dimmed; system-missing is `.`.
+- The border reports how many variables hold unlabelled values, and Variable View has a **Label check** column per variable (`ok`, `2 unlabelled: 7, 8`, `duplicate: Other (97, 98)`). These are the same checks as `ambers.validate()`, run on the rows loaded so far.
+
 ## Python
 
 ```python
