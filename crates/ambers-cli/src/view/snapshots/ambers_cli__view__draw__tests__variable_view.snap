@@ -3,14 +3,14 @@ source: crates/ambers-cli/src/view/draw.rs
 expression: "screen(\"imperfect_labels.sav\", 150, 12, &[Key::Char('i'), Key::Down])"
 ---
 ╭ imperfect_labels.sav ─ Variable View ──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ #  Name   Type      Width  Dec  Label                         Values                      Label check                       Missing       Measure  │
-│ 1  id     Numeric       8    0  Respondent ID                                                                                             scale    │
-│ 2  q1     Numeric       8    0  Agreement                     4: 1=Agree, 2=Neutral, 3=…  2 unlabelled: 7, 8                99            scale    │
-│ 3  scale  Numeric       8    0  Likelihood to recommend       2: 0=Not at all likely, 1…  10 unlabelled: 1, 2, 3, 4, 5, …   90 thru 99    scale    │
-│ 4  brand  Numeric       8    0  Brand used most               4: 1=Brand A, 2=Brand B, …  duplicate: Other (97, 98)                       scale    │
-│ 5  city   String       20    0  City                          2: NYC=New York, LA=Los A…                                                  nominal  │
-│ 6  age    Numeric       8    1  Age in years                                                                                              scale    │
+│ #  Name   Type         Label                             Values                                N  Missing  Label check                             │
+│ 1  id     numeric      Respondent ID                                                          12        0                                          │
+│ 2  q1     categorical  Agreement                         1=Agree, 2=Neutral, 3=Disagre…       11        1  2 unlabelled: 7, 8                      │
+│ 3  scale  categorical  Likelihood to recommend           0=Not at all likely, 10=Extre…       12        0  10 unlabelled: 1, 2, 3, 4, 5, …         │
+│ 4  brand  categorical  Brand used most                   1=Brand A, 2=Brand B, 97=Othe…       11        1  duplicate: Other (97, 98)               │
+│ 5  city   text         City                                                                   11        1                                          │
+│ 6  age    numeric      Age in years                                                           11        1                                          │
 │                                                                                                                                                    │
 │                                                                                                                                                    │
 │                                                                                                                                                    │
-╰ ↑↓ move ─ Enter go to variable ─ i / Esc back ──────────────────────────────────────────────────────────────────────────────────────────── Var 2/6 ╯
+╰ ↑↓ move ─ Enter details ─ y / Y copy label / values ─ i / Esc back ───────────────────────────────────────────────────── counts: 12 rows ─ Var 2/6 ╯

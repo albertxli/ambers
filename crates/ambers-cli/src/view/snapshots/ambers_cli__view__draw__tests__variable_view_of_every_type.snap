@@ -1,0 +1,25 @@
+---
+source: crates/ambers-cli/src/view/draw.rs
+expression: "screen(\"variable_types.sav\", 150, 21, &[Key::Char('i')])"
+---
+╭ variable_types.sav ─ Variable View ────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  #  Name       Type         Label                             Values                                N  Missing  Label check                        │
+│  1  id         numeric                                                                              8        0                                     │
+│  2  age        numeric                                                                              7        1                                     │
+│  3  mr_a       categorical  Media used: radio                                                       8        0                                     │
+│  4  mr_b       categorical  Media used: television                                                  7        1                                     │
+│  5  flag       categorical  Reached by phone                                                        7        1                                     │
+│  6  only1      numeric                                                                              7        1                                     │
+│  7  Q7_1       categorical                                    0=No, 1=Yes                           8        0  ok                                 │
+│  8  Q7_2       categorical                                    0=No, 1=Yes                           8        0  ok                                 │
+│  9  Q7_3       categorical                                                                          8        0                                     │
+│ 10  Q7_4       categorical                                    0=No, 1=Yes                           8        0  ok                                 │
+│ 11  agree      categorical  Agrees with the statement         0=Disagree, 1=Agree                   7        1  ok                                 │
+│ 12  response   categorical                                    0=Not selected, 1=Selected            8        0  ok                                 │
+│ 13  Q1_health  categorical                                    0=Not selected, 1=Health insu…        8        0  ok                                 │
+│ 14  likert     categorical  Overall rating                    1=Very poor, 2=Poor, 3=Fair, …        7        1  ok                                 │
+│ 15  unused     categorical                                    1=Yes, 2=No                           0        8  ok                                 │
+│ 16  city       text                                                                                 6        2                                     │
+│ 17  when       date                                                                                 8        0                                     │
+│                                                                                                                                                    │
+╰ ↑↓ move ─ Enter details ─ y / Y copy label / values ─ i / Esc back ───────────────────────────────────────────────────── counts: 8 rows ─ Var 1/17 ╯

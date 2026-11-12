@@ -12,10 +12,13 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Clear, Widget};
 
+use unicode_width::UnicodeWidthStr;
+
 use super::format::{Cell, Mode, fit};
 use super::state::{Load, Screen, State};
 use super::theme::Theme;
 use crate::info::group_digits;
+use crate::render::wrap;
 
 /// The keys, as listed by `?`.
 const HELP: &[(&str, &str)] = &[
@@ -27,7 +30,7 @@ const HELP: &[(&str, &str)] = &[
     ("1-9 …", "go to row (Enter keeps, Esc goes back)"),
     ("Tab", "next mode: Labels, Codes, Both"),
     ("Enter", "respondent panel (J / K scroll it)"),
-    ("i", "Variable View (Enter jumps to a variable)"),
+    ("i", "Variable View (Enter: details, y / Y: copy)"),
     ("f", "freeze / unfreeze the first variable"),
     ("q, Esc", "close the panel or view; quit"),
 ];
@@ -339,12 +342,49 @@ fn respondent_panel(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) 
 // Variable View
 // ---------------------------------------------------------------------------
 
+/// What the counts cover, for the border: they are computed over the rows
+/// loaded so far.
+fn counts_status(state: &State) -> String {
+    let rows = group_digits(state.counted_rows());
+    match state.load {
+        Load::Loading => format!(" counts: {rows} rows, loading… "),
+        Load::Limit => format!(" counts: first {rows} rows "),
+        Load::Failed(_) => format!(" counts: {rows} rows read "),
+        Load::Done => format!(" counts: {rows} rows "),
+    }
+}
+
+/// One row per variable, as the codebook describes it: type, label,
+/// labelled values, valid and missing cases, and the label check.
 fn variable_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
     let position = format!(
         " Var {}/{} ",
         (state.var_cursor + 1).min(state.columns.len()),
         state.columns.len()
     );
+    let right = Line::from(vec![
+        Span::raw(counts_status(state)),
+        Span::styled("─", theme.frame),
+        Span::raw(position),
+    ]);
+    // The longest hint that fits beside the counts; a notice replaces it.
+    let room = (area.width as usize).saturating_sub(right.width() + 3);
+    let hints = [
+        " ↑↓ move ─ Enter details ─ y / Y copy label / values ─ i / Esc back ",
+        " Enter details ─ y / Y copy ─ i back ",
+        " Enter details ",
+        "",
+    ];
+    let left = match &state.notice {
+        Some(notice) => Line::styled(format!(" {notice} "), theme.accent),
+        None => {
+            let hint = hints
+                .iter()
+                .find(|hint| hint.width() <= room)
+                .unwrap_or(&"");
+            Line::styled(*hint, theme.dim)
+        }
+    };
     Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(theme.frame)
@@ -352,32 +392,27 @@ fn variable_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
             format!(" {} ─ Variable View ", state.file_name),
             theme.title,
         ))
-        .title_bottom(Line::styled(
-            " ↑↓ move ─ Enter go to variable ─ i / Esc back ",
-            theme.dim,
-        ))
-        .title_bottom(Line::raw(position).right_aligned())
+        .title_bottom(left)
+        .title_bottom(right.right_aligned())
         .render(area, buf);
 
     let number_width = state.columns.len().to_string().len().max(1);
-    let name_width = (state.columns.iter().map(|c| c.name.chars().count()))
+    let name_width = (state.columns.iter().map(|c| c.name.width()))
         .max()
         .unwrap_or(4)
         .max(4);
-    // Title, width, right-aligned.
-    let layout: [(&str, usize, bool); 11] = [
+    let count_width = group_digits(state.counted_rows()).len().max(7);
+    // Title, width, right-aligned. Names are never cut; Label check comes
+    // last so it is what a narrow screen loses.
+    let layout: [(&str, usize, bool); 8] = [
         ("#", number_width, true),
         ("Name", name_width, false),
-        ("Type", 8, false),
-        ("Width", 5, true),
-        ("Dec", 3, true),
-        ("Label", 28, false),
-        ("Values", 26, false),
-        // Not an SPSS column: what the loaded rows say about the labels.
+        ("Type", 11, false),
+        ("Label", 32, false),
+        ("Values", 30, false),
+        ("N", count_width, true),
+        ("Missing", count_width, true),
         ("Label check", 32, false),
-        ("Missing", 12, false),
-        ("Measure", 8, false),
-        ("Role", 9, false),
     ];
     let mut x = 2;
     let starts: Vec<usize> = (layout.iter())
@@ -418,35 +453,239 @@ fn variable_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
             row_style,
         );
 
-        let values = if column.labels.is_empty() {
-            String::new()
-        } else {
-            let first: Vec<String> = (column.labels.iter().take(3))
-                .map(|(code, label)| format!("{code}={label}"))
-                .collect();
-            format!("{}: {}", column.labels.len(), first.join(", "))
-        };
+        let summary = state.summary(index);
+        let values: Vec<String> = (summary.values.iter())
+            .map(|(code, label)| format!("{code}={label}"))
+            .collect();
         let check = state.label_check(index);
         let check_style = match check.as_str() {
             "" | "ok" => theme.dim,
             _ => theme.warn,
         };
-        let cells: [(String, Style); 11] = [
+        let cells: [(String, Style); 8] = [
             ((index + 1).to_string(), theme.gutter),
             (column.name.clone(), theme.header),
-            (column.kind.to_string(), Style::new()),
-            (column.format_width.to_string(), Style::new()),
-            (column.decimals.to_string(), Style::new()),
+            (summary.variable_type.name().to_string(), Style::new()),
             (column.label.clone(), Style::new()),
-            (values, Style::new()),
+            (values.join(", "), Style::new()),
+            (group_digits(summary.n_valid), Style::new()),
+            (group_digits(summary.n_missing), Style::new()),
             (check, check_style),
-            (column.missing_text(), Style::new()),
-            (column.measure.to_string(), Style::new()),
-            (column.role.to_string(), Style::new()),
         ];
         for (((text, style), (_, width, right)), &start) in cells.iter().zip(&layout).zip(&starts) {
             put(buf, area, start, y, &fit(text, *width, *right), *style);
         }
+    }
+
+    if state.detail.is_some() {
+        variable_detail(buf, area, state, theme);
+    }
+}
+
+/// The details of the variable under the cursor, over Variable View: its
+/// full label, its definition, and every value with its count.
+fn variable_detail(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
+    let Some(column) = state.columns.get(state.var_cursor) else {
+        return;
+    };
+    let summary = state.summary(state.var_cursor);
+    let rows = state.value_rows(state.var_cursor);
+    let categorical = summary.variable_type.is_categorical();
+
+    let width = area.width.saturating_sub(4).min(96);
+    let text_width = (width as usize).saturating_sub(4);
+
+    // The text above the value table.
+    let label = if column.label.is_empty() {
+        "(no label)".to_string()
+    } else {
+        wrap(&column.label, text_width)
+    };
+    let label_style = if column.label.is_empty() {
+        theme.dim
+    } else {
+        Style::new()
+    };
+    let mut definition = vec![format!("Format {}", column.format)];
+    if !column.measure.is_empty() {
+        definition.push(format!("measure {}", column.measure));
+    }
+    if !column.role.is_empty() {
+        definition.push(format!("role {}", column.role));
+    }
+    let missing = column.missing_text();
+    if !missing.is_empty() {
+        definition.push(format!("user-missing: {missing}"));
+    }
+    let mut counts = vec![
+        format!("Valid {}", group_digits(summary.n_valid)),
+        format!("Missing {}", group_digits(summary.n_missing)),
+        format!("Total {}", group_digits(summary.n_total)),
+    ];
+    if let (Some(labelled), Some(unlabelled)) = (summary.n_labeled, summary.n_unlabeled) {
+        counts.push(format!("Codes {}", group_digits(summary.n_unique)));
+        counts.push(format!("labelled {}", group_digits(labelled)));
+        counts.push(format!("unlabelled {}", group_digits(unlabelled)));
+    }
+
+    let label_lines = label.lines().count();
+    let head_lines = label_lines + 2;
+    let table_lines = if categorical { rows.len() + 2 } else { 0 };
+    let height = ((head_lines + table_lines + 2) as u16).min(area.height.saturating_sub(2));
+    let popup = Rect::new(
+        area.x + (area.width - width) / 2,
+        area.y + (area.height - height) / 2,
+        width,
+        height,
+    );
+    Clear.render(popup, buf);
+    buf.set_style(popup, theme.base);
+    let notice = state
+        .notice
+        .as_deref()
+        .map_or(String::new(), |notice| format!(" {notice} "));
+    Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(theme.frame)
+        .title(Line::from(vec![
+            Span::styled(format!(" {} ", column.name), theme.title),
+            Span::styled("─", theme.frame),
+            Span::styled(format!(" {} ", summary.variable_type.name()), theme.accent),
+        ]))
+        .title_bottom(Line::styled(
+            " ↑↓ scroll ─ ←→ prev / next ─ Enter go to data ─ y / Y copy ─ Esc close ",
+            theme.dim,
+        ))
+        .title_bottom(Line::styled(notice, theme.accent).right_aligned())
+        .render(popup, buf);
+
+    let mut y = 1;
+    for line in label.lines() {
+        put(buf, popup, 2, y, line, label_style);
+        y += 1;
+    }
+    put(buf, popup, 2, y, &definition.join(" · "), theme.dim);
+    put(buf, popup, 2, y + 1, &counts.join(" · "), theme.dim);
+    y += 3;
+    if !categorical {
+        return;
+    }
+
+    // Code, label, count, share of valid, share of total.
+    let code_width = (rows.iter())
+        .filter_map(|row| row.code.as_ref())
+        .map(|code| column.code_text(code).width())
+        .max()
+        .unwrap_or(0)
+        .max(4);
+    let count_width = group_digits(summary.n_total).len().max(5);
+    let numbers_width = count_width + 2 + 8 + 2 + 8;
+    let label_width = text_width.saturating_sub(code_width + 2 + numbers_width + 2);
+    let (code_x, label_x) = (2, 2 + code_width + 2);
+    let count_x = label_x + label_width + 2;
+    let (valid_x, total_x) = (count_x + count_width + 2, count_x + count_width + 2 + 8 + 2);
+
+    put(
+        buf,
+        popup,
+        code_x,
+        y,
+        &fit("Code", code_width, true),
+        theme.header,
+    );
+    put(
+        buf,
+        popup,
+        label_x,
+        y,
+        &fit("Label", label_width, false),
+        theme.header,
+    );
+    put(
+        buf,
+        popup,
+        count_x,
+        y,
+        &fit("N", count_width, true),
+        theme.header,
+    );
+    put(
+        buf,
+        popup,
+        valid_x,
+        y,
+        &fit("% valid", 8, true),
+        theme.header,
+    );
+    put(
+        buf,
+        popup,
+        total_x,
+        y,
+        &fit("% total", 8, true),
+        theme.header,
+    );
+    y += 1;
+
+    let percent =
+        |share: Option<f64>| share.map_or(String::new(), |s| format!("{:.1}%", s * 100.0));
+    for row in rows.iter().skip(state.detail.unwrap_or(0)) {
+        let (code, text, style) = match (&row.code, &row.label) {
+            (None, _) => (
+                String::new(),
+                "MISSING (system-missing)".to_string(),
+                theme.dim,
+            ),
+            (Some(code), label) => {
+                let user_missing = column.value_cell(code, Mode::Codes).user_missing;
+                let text = match (label, user_missing) {
+                    (Some(label), false) => label.clone(),
+                    (Some(label), true) => format!("{label} (user-missing)"),
+                    (None, false) => "(no label)".to_string(),
+                    (None, true) => "(no label, user-missing)".to_string(),
+                };
+                let style = match (label, user_missing) {
+                    (None, _) => theme.warn,
+                    (Some(_), true) => theme.dim,
+                    (Some(_), false) => Style::new(),
+                };
+                (column.code_text(code), text, style)
+            }
+        };
+        put(buf, popup, code_x, y, &fit(&code, code_width, true), style);
+        put(
+            buf,
+            popup,
+            label_x,
+            y,
+            &fit(&text, label_width, false),
+            style,
+        );
+        put(
+            buf,
+            popup,
+            count_x,
+            y,
+            &fit(&group_digits(row.n), count_width, true),
+            style,
+        );
+        put(
+            buf,
+            popup,
+            valid_x,
+            y,
+            &fit(&percent(row.pct_valid), 8, true),
+            style,
+        );
+        put(
+            buf,
+            popup,
+            total_x,
+            y,
+            &fit(&percent(row.pct_total), 8, true),
+            style,
+        );
+        y += 1;
     }
 }
 
@@ -666,5 +905,76 @@ mod tests {
         assert_eq!(style_at("7", 5).fg, theme.warn.fg);
         // Row 6: q1 is 99 "Refused", declared user-missing.
         assert_eq!(style_at("Refused", 7).fg, theme.dim.fg);
+    }
+
+    #[test]
+    fn variable_view_of_every_type() {
+        insta::assert_snapshot!(screen("variable_types.sav", 150, 21, &[Key::Char('i')]));
+    }
+
+    #[test]
+    fn variable_view_narrow_keeps_names_and_types() {
+        insta::assert_snapshot!(screen("survey.sav", 70, 12, &[Key::Char('i')]));
+    }
+
+    #[test]
+    fn variable_detail_categorical() {
+        // q1: unlabelled codes 7 and 8, user-missing 99, one system-missing.
+        insta::assert_snapshot!(screen(
+            "imperfect_labels.sav",
+            110,
+            22,
+            &[Key::Char('i'), Key::Down, Key::Enter]
+        ));
+    }
+
+    #[test]
+    fn variable_detail_scrolled_with_a_notice() {
+        insta::assert_snapshot!(screen(
+            "imperfect_labels.sav",
+            110,
+            22,
+            &[
+                Key::Char('i'),
+                Key::Down,
+                Key::Down,
+                Key::Enter,
+                Key::Down,
+                Key::Down,
+                Key::Char('y')
+            ]
+        ));
+    }
+
+    #[test]
+    fn variable_detail_of_a_numeric_and_a_text_variable() {
+        let numeric = screen(
+            "imperfect_labels.sav",
+            110,
+            16,
+            &[Key::Char('i'), Key::Bottom, Key::Enter],
+        );
+        insta::assert_snapshot!(numeric);
+        // No value table for a variable that is not categorical.
+        assert!(!numeric.contains("% valid"));
+        let text = screen(
+            "imperfect_labels.sav",
+            110,
+            16,
+            &[Key::Char('i'), Key::Bottom, Key::Up, Key::Enter],
+        );
+        assert!(text.contains(" city ─ text "), "{text}");
+        assert!(!text.contains("% valid"));
+    }
+
+    #[test]
+    fn counts_say_what_they_cover() {
+        let mut state = loaded("survey.sav", 120, 8);
+        state.on_key(Key::Char('i'));
+        assert!(render(&state, 120, 8).contains(" counts: 20 rows "));
+        state.load = Load::Loading;
+        assert!(render(&state, 120, 8).contains(" counts: 20 rows, loading… "));
+        state.load = Load::Limit;
+        assert!(render(&state, 120, 8).contains(" counts: first 20 rows "));
     }
 }

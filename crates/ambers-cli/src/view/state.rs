@@ -1,14 +1,15 @@
 //! The viewer's state and what each key does to it. Nothing here touches
 //! the terminal, so every behaviour is unit-tested; `draw` only reads it.
 
-use std::collections::BTreeSet;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use ambers::{SpssMetadata, Value};
+use ambers_codebook::profile::{Profiler, ValueRow, VariableSummary};
 use arrow::datatypes::Schema;
 use arrow::record_batch::RecordBatch;
 
 use super::format::{Cell, Column, Mode};
-use super::loader::{DISTINCT_CAP, Message};
+use super::loader::Message;
 
 /// A key press, already translated from the terminal's event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,13 +58,10 @@ struct Goto {
     origin: usize,
 }
 
-/// What the loaded rows say about one numeric variable with value labels.
-#[derive(Default)]
-struct Audit {
-    seen: BTreeSet<Value>,
-    /// More distinct values than are tracked.
-    many: bool,
-    unlabeled: bool,
+/// Text the viewer wants on the clipboard, and what to tell the user.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Copy {
+    pub text: String,
 }
 
 /// One column on screen: which variable, where, and how wide (the last
@@ -103,9 +101,18 @@ pub struct State {
     pub panel_top: usize,
     pub var_cursor: usize,
     pub var_top: usize,
+    /// In Variable View: the details of the variable under the cursor are
+    /// open, scrolled this many value rows down.
+    pub detail: Option<usize>,
+    /// A one-line message for the border, cleared by the next key.
+    pub notice: Option<String>,
 
     goto: Option<Goto>,
-    audit: Vec<Audit>,
+    /// Types and counts, filled by the loader thread as rows arrive.
+    profiler: Arc<Mutex<Profiler>>,
+    /// Variables holding values without a label, as of the last batch.
+    unlabeled_variables: usize,
+    copy: Option<Copy>,
     width: usize,
     height: usize,
 }
@@ -122,7 +129,11 @@ impl State {
         let columns = Column::from_metadata(meta, schema);
         State {
             file_name,
-            audit: columns.iter().map(|_| Audit::default()).collect(),
+            profiler: Arc::new(Mutex::new(Profiler::new(meta, schema))),
+            unlabeled_variables: 0,
+            copy: None,
+            detail: None,
+            notice: None,
             columns,
             batches: Vec::new(),
             batch_rows,
@@ -148,29 +159,40 @@ impl State {
         }
     }
 
-    /// Numeric variables with value labels: the ones the label audit covers.
-    pub fn audited_columns(&self) -> Vec<usize> {
-        (0..self.columns.len())
-            .filter(|&c| self.columns[c].numeric && !self.columns[c].labels.is_empty())
-            .collect()
+    /// The profiler, for the loader thread to feed.
+    pub fn profiler_handle(&self) -> Arc<Mutex<Profiler>> {
+        Arc::clone(&self.profiler)
+    }
+
+    /// The profiler for reading. The loader holds the lock while it adds a
+    /// batch, so this can wait a moment during loading.
+    fn profiler(&self) -> MutexGuard<'_, Profiler> {
+        // A panic in the loader does not invalidate the tallies so far.
+        self.profiler
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Whether the label audit covers a variable: numeric, with labels.
+    fn is_audited(&self, column: usize) -> bool {
+        self.columns[column].numeric && !self.columns[column].labels.is_empty()
     }
 
     // --- loading ----------------------------------------------------------
 
     pub fn receive(&mut self, message: Message) {
         match message {
-            Message::Batch { batch, new_values } => {
+            Message::Batch(batch) => {
                 self.rows += batch.num_rows();
                 self.batches.push(batch);
-                for (column, values) in new_values {
-                    let audit = &mut self.audit[column];
-                    for value in values {
-                        let value = Value::Numeric(value);
-                        audit.unlabeled |= !self.columns[column].labels.contains_key(&value);
-                        audit.seen.insert(value);
-                    }
-                    audit.many = audit.seen.len() > DISTINCT_CAP;
-                }
+                // Once per batch, not once per frame: the border shows it.
+                let profiler = self.profiler();
+                let unlabeled = (0..self.columns.len())
+                    .filter(|&column| self.is_audited(column))
+                    .filter(|&column| profiler.summary(column).n_unlabeled > Some(0))
+                    .count();
+                drop(profiler);
+                self.unlabeled_variables = unlabeled;
             }
             Message::Finished => {
                 let more = self.total_rows.is_none_or(|total| total > self.rows);
@@ -195,28 +217,53 @@ impl State {
         self.columns[column].cell(batch.column(column), row % self.batch_rows, mode)
     }
 
-    // --- label audit ------------------------------------------------------
+    // --- codebook: types, counts, label audit -----------------------------
+
+    /// Rows the counts cover. The loader counts a batch just before it
+    /// hands it over, so this can be one batch ahead of `rows`.
+    pub fn counted_rows(&self) -> u64 {
+        self.profiler().rows()
+    }
+
+    /// The codebook's summary of one variable: type and counts.
+    pub fn summary(&self, column: usize) -> VariableSummary {
+        self.profiler().summary(column)
+    }
+
+    /// The codebook's value rows of one variable: `MISSING`, then a row
+    /// per code for a categorical variable.
+    pub fn value_rows(&self, column: usize) -> Vec<ValueRow> {
+        self.profiler().values(column)
+    }
 
     /// How many variables hold values that have no label.
     pub fn unlabeled_variables(&self) -> usize {
-        self.audit.iter().filter(|audit| audit.unlabeled).count()
+        self.unlabeled_variables
     }
 
     /// The audit of one variable, for Variable View: `ok`, the unlabelled
     /// values, the duplicated labels, or empty when it is not audited.
     pub fn label_check(&self, column: usize) -> String {
-        let labels = &self.columns[column].labels;
-        if !self.columns[column].numeric || labels.is_empty() {
+        if !self.is_audited(column) {
             return String::new();
         }
-        let audit = &self.audit[column];
+        let labels = &self.columns[column].labels;
+        let (rows, many) = {
+            let profiler = self.profiler();
+            (profiler.values(column), profiler.overflowed(column))
+        };
+        // The codes that occur in the data.
+        let seen: Vec<Value> = (rows.into_iter())
+            .filter(|row| row.n > 0)
+            .filter_map(|row| row.code)
+            .collect();
         let mut findings = Vec::new();
-        if let Some(found) = ambers_codebook::validate::unlabeled_values(&audit.seen, labels) {
+        if let Some(found) = ambers_codebook::validate::unlabeled_values(&seen, labels) {
             let shown: Vec<String> = (found.values.iter().take(5))
                 .map(|value| value.to_string())
                 .collect();
             let more = if found.values.len() > 5 { ", …" } else { "" };
-            let count = if audit.many {
+            let count = if many {
                 "many".to_string()
             } else {
                 found.values.len().to_string()
@@ -375,8 +422,14 @@ impl State {
 
     // --- keys -------------------------------------------------------------
 
+    /// Text a key asked to put on the clipboard, handed over once.
+    pub fn take_copy(&mut self) -> Option<Copy> {
+        self.copy.take()
+    }
+
     /// Apply a key. Returns `true` when the viewer should quit.
     pub fn on_key(&mut self, key: Key) -> bool {
+        self.notice = None;
         if self.help {
             self.help = false;
             return false;
@@ -492,6 +545,9 @@ impl State {
     }
 
     fn variables_key(&mut self, key: Key) {
+        if self.detail.is_some() {
+            return self.detail_key(key);
+        }
         let last = self.columns.len().saturating_sub(1);
         let page = self.grid_rows().max(1);
         match key {
@@ -504,15 +560,78 @@ impl State {
             Key::Top | Key::Home | Key::Char('g') => self.var_cursor = 0,
             Key::Bottom | Key::End | Key::Char('G') => self.var_cursor = last,
             Key::Char('?') => self.help = true,
-            // Go to the chosen variable in Data View.
-            Key::Enter => {
-                self.cursor_col = self.var_cursor;
-                self.screen = Screen::Data;
-                self.follow_panel();
-            }
+            Key::Enter if !self.columns.is_empty() => self.detail = Some(0),
+            Key::Char('y') | Key::Char('Y') => self.copy_key(key),
             Key::Esc | Key::Char('i') | Key::Char('q') => self.screen = Screen::Data,
             _ => {}
         }
+    }
+
+    /// Keys while a variable's details are open.
+    fn detail_key(&mut self, key: Key) {
+        let last = self.columns.len().saturating_sub(1);
+        // The value table scrolls; its last row can always be brought to the top.
+        let last_row = self.value_rows(self.var_cursor).len().saturating_sub(1);
+        let scroll = self.detail.unwrap_or(0);
+        let page = self.grid_rows().max(1);
+        match key {
+            Key::Up | Key::Char('k') => self.detail = Some(scroll.saturating_sub(1)),
+            Key::Down | Key::Char('j') => self.detail = Some((scroll + 1).min(last_row)),
+            Key::PageUp | Key::HalfUp => self.detail = Some(scroll.saturating_sub(page / 2)),
+            Key::PageDown | Key::HalfDown => {
+                self.detail = Some((scroll + page / 2).min(last_row));
+            }
+            Key::Top | Key::Home | Key::Char('g') => self.detail = Some(0),
+            Key::Bottom | Key::End | Key::Char('G') => self.detail = Some(last_row),
+            // The previous / next variable's details.
+            Key::Left | Key::Char('h') => {
+                self.var_cursor = self.var_cursor.saturating_sub(1);
+                self.detail = Some(0);
+            }
+            Key::Right | Key::Char('l') => {
+                self.var_cursor = (self.var_cursor + 1).min(last);
+                self.detail = Some(0);
+            }
+            // Go to this variable in Data View.
+            Key::Enter => {
+                self.cursor_col = self.var_cursor;
+                self.screen = Screen::Data;
+                self.detail = None;
+                self.follow_panel();
+            }
+            Key::Char('y') | Key::Char('Y') => self.copy_key(key),
+            Key::Char('?') => self.help = true,
+            Key::Esc | Key::Char('q') | Key::Char('i') => self.detail = None,
+            _ => {}
+        }
+    }
+
+    /// `y` copies the variable's full label, `Y` its labelled values as
+    /// `code=label` lines (the codebook's `values` text).
+    fn copy_key(&mut self, key: Key) {
+        let Some(column) = self.columns.get(self.var_cursor) else {
+            return;
+        };
+        let (text, what) = if key == Key::Char('y') {
+            (column.label.clone(), "label".to_string())
+        } else {
+            let values = self.summary(self.var_cursor).values;
+            let lines: Vec<String> = (values.iter())
+                .map(|(code, label)| format!("{code}={label}"))
+                .collect();
+            let noun = if lines.len() == 1 { "value" } else { "values" };
+            (lines.join("\n"), format!("{} {noun}", lines.len()))
+        };
+        if text.is_empty() {
+            self.notice = Some(format!(
+                "{} has no {}",
+                column.name,
+                what.trim_start_matches("0 ")
+            ));
+            return;
+        }
+        self.notice = Some(format!("copied {what}"));
+        self.copy = Some(Copy { text });
     }
 }
 
@@ -541,7 +660,7 @@ pub(crate) mod tests {
             Mode::Labels,
         );
         state.resize(width, height);
-        for message in super::super::loader::spawn(scanner, state.audited_columns()) {
+        for message in super::super::loader::spawn(scanner, state.profiler_handle()) {
             state.receive(message);
         }
         state
@@ -703,15 +822,89 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn variable_view_jumps_to_the_chosen_variable() {
+    fn variable_view_opens_details_and_jumps_to_the_variable() {
         let mut state = loaded("survey.sav", 100, 24);
         press(&mut state, &[Key::Right, Key::Char('i')]);
         assert_eq!((state.screen, state.var_cursor), (Screen::Variables, 1));
+        // Enter opens the details; Enter again goes to that variable's data.
         press(&mut state, &[Key::Down, Key::Down, Key::Enter]);
-        assert_eq!((state.screen, state.cursor_col), (Screen::Data, 3));
+        assert_eq!((state.screen, state.detail), (Screen::Variables, Some(0)));
+        press(&mut state, &[Key::Enter]);
+        assert_eq!(
+            (state.screen, state.cursor_col, state.detail),
+            (Screen::Data, 3, None)
+        );
         // Leaving with Esc does not move the cursor.
         press(&mut state, &[Key::Char('i'), Key::Bottom, Key::Esc]);
         assert_eq!((state.screen, state.cursor_col), (Screen::Data, 3));
+    }
+
+    #[test]
+    fn details_scroll_step_between_variables_and_close() {
+        let mut state = loaded("survey.sav", 100, 24);
+        // satisfaction (variable 3): a MISSING row and six codes.
+        press(
+            &mut state,
+            &[Key::Char('i'), Key::Down, Key::Down, Key::Enter],
+        );
+        assert_eq!(state.value_rows(2).len(), 7);
+        press(&mut state, &[Key::Down, Key::Down]);
+        assert_eq!(state.detail, Some(2));
+        press(&mut state, &[Key::Bottom, Key::Down]);
+        assert_eq!(state.detail, Some(6), "stops at the last value row");
+        // The next variable's details start at the top.
+        press(&mut state, &[Key::Right]);
+        assert_eq!((state.var_cursor, state.detail), (3, Some(0)));
+        press(&mut state, &[Key::Left, Key::Left, Key::Left, Key::Left]);
+        assert_eq!(state.var_cursor, 0);
+        // Esc closes the details, not Variable View.
+        press(&mut state, &[Key::Esc]);
+        assert_eq!((state.screen, state.detail), (Screen::Variables, None));
+    }
+
+    #[test]
+    fn copying_the_label_and_the_values() {
+        let mut state = loaded("survey.sav", 100, 24);
+        press(&mut state, &[Key::Char('i'), Key::Down, Key::Char('y')]);
+        assert_eq!(state.take_copy().unwrap().text, "Gender");
+        assert_eq!(state.notice.as_deref(), Some("copied label"));
+        assert_eq!(state.take_copy(), None, "handed over once");
+
+        // From the details too; the notice goes with the next key.
+        press(&mut state, &[Key::Enter, Key::Char('Y')]);
+        assert_eq!(state.take_copy().unwrap().text, "1=Male\n2=Female");
+        assert_eq!(state.notice.as_deref(), Some("copied 2 values"));
+        press(&mut state, &[Key::Down]);
+        assert_eq!(state.notice, None);
+
+        // Nothing to copy: say so, and leave the clipboard alone.
+        let mut state = loaded("long_strings.sav", 100, 24);
+        press(&mut state, &[Key::Char('i'), Key::Char('y')]);
+        assert_eq!(state.take_copy(), None);
+        assert_eq!(state.notice.as_deref(), Some("id has no label"));
+        press(&mut state, &[Key::Char('Y')]);
+        assert_eq!(state.notice.as_deref(), Some("id has no values"));
+    }
+
+    #[test]
+    fn types_and_counts_come_from_the_codebook() {
+        let state = loaded("variable_types.sav", 100, 24);
+        let summary = |name: &str| {
+            let column = state.columns.iter().position(|c| c.name == name).unwrap();
+            state.summary(column)
+        };
+        assert_eq!(summary("flag").variable_type.name(), "categorical");
+        assert_eq!(summary("only1").variable_type.name(), "numeric");
+        assert_eq!(summary("city").variable_type.name(), "text");
+        assert_eq!(summary("when").variable_type.name(), "date");
+        let likert = summary("likert");
+        assert_eq!(
+            (likert.n_valid, likert.n_missing, likert.n_unique),
+            (7, 1, 5)
+        );
+        assert_eq!(state.counted_rows(), 8);
+        // Unlabelled 0/1 items are not a label problem: they have no labels to miss.
+        assert_eq!(state.unlabeled_variables(), 0);
     }
 
     #[test]

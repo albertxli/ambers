@@ -14,7 +14,7 @@ mod state;
 mod theme;
 
 use std::fs::File;
-use std::io::{self, BufReader, IsTerminal};
+use std::io::{self, BufReader, IsTerminal, Write};
 use std::path::Path;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
@@ -73,7 +73,7 @@ pub fn run(file: &Path, options: &Options) -> Result<()> {
         options.limit,
         options.mode,
     );
-    let receiver = loader::spawn(scanner, state.audited_columns());
+    let receiver = loader::spawn(scanner, state.profiler_handle());
     let no_color = std::env::var_os("NO_COLOR").is_some_and(|value| !value.is_empty());
     let theme = Theme::pick(options.theme, no_color);
 
@@ -119,6 +119,12 @@ fn event_loop(
             state.resize(size.width, size.height);
             terminal.draw(|frame| draw::draw(frame, state, theme))?;
             redraw = false;
+            // After the frame, so the two do not interleave on the way out.
+            if let Some(copy) = state.take_copy() {
+                let mut out = io::stdout().lock();
+                out.write_all(clipboard_sequence(&copy.text).as_bytes())?;
+                out.flush()?;
+            }
         }
 
         // While loading, wake up often to pick up new rows; afterwards only
@@ -144,6 +150,34 @@ fn event_loop(
             _ => {}
         }
     }
+}
+
+/// The escape sequence that asks the terminal to put `text` on the system
+/// clipboard (OSC 52). It needs no clipboard library and works over SSH;
+/// Windows Terminal and most current terminals honour it, the legacy
+/// Windows console ignores it.
+fn clipboard_sequence(text: &str) -> String {
+    format!("\x1b]52;c;{}\x07", base64(text.as_bytes()))
+}
+
+/// Standard base64 with padding.
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let group = (u32::from(chunk[0]) << 16)
+            | (u32::from(*chunk.get(1).unwrap_or(&0)) << 8)
+            | u32::from(*chunk.get(2).unwrap_or(&0));
+        for position in 0..4 {
+            if position <= chunk.len() {
+                let index = (group >> (18 - 6 * position)) & 0x3f;
+                encoded.push(ALPHABET[index as usize] as char);
+            } else {
+                encoded.push('=');
+            }
+        }
+    }
+    encoded
 }
 
 /// Ctrl+C. In raw mode it arrives as a key, not as a signal.
@@ -220,5 +254,33 @@ mod tests {
         assert_eq!(translate(&key(KeyCode::Char('x'), ctrl)), None);
         assert!(is_interrupt(&key(KeyCode::Char('c'), ctrl)));
         assert!(!is_interrupt(&key(KeyCode::Char('c'), KeyModifiers::NONE)));
+    }
+}
+
+#[cfg(test)]
+mod clipboard_tests {
+    use super::*;
+
+    #[test]
+    fn base64_matches_the_standard_vectors() {
+        // RFC 4648, section 10.
+        for (plain, encoded) in [
+            ("", ""),
+            ("f", "Zg=="),
+            ("fo", "Zm8="),
+            ("foo", "Zm9v"),
+            ("foob", "Zm9vYg=="),
+            ("fooba", "Zm9vYmE="),
+            ("foobar", "Zm9vYmFy"),
+        ] {
+            assert_eq!(base64(plain.as_bytes()), encoded, "{plain:?}");
+        }
+    }
+
+    #[test]
+    fn the_clipboard_sequence_carries_utf8() {
+        assert_eq!(clipboard_sequence("Gender"), "\x1b]52;c;R2VuZGVy\x07");
+        // "é" is two bytes in UTF-8.
+        assert_eq!(clipboard_sequence("é"), "\x1b]52;c;w6k=\x07");
     }
 }

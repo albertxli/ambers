@@ -75,9 +75,8 @@ pub struct Column {
     pub numeric: bool,
     pub labels: IndexMap<Value, String>,
     pub missing: Vec<MissingSpec>,
-    /// SPSS's Variable View columns: Type, Width, Decimals, Measure, Role.
-    pub kind: &'static str,
-    pub format_width: usize,
+    /// The SPSS print format as written in the file, e.g. `F8.2`.
+    pub format: String,
     pub decimals: usize,
     pub measure: &'static str,
     pub role: &'static str,
@@ -113,20 +112,13 @@ impl Column {
             name: name.to_string(),
             label: one_line(meta.label(name).unwrap_or("")),
             numeric,
+            format,
             labels,
             missing: meta
                 .variable_missing_values
                 .get(name)
                 .cloned()
                 .unwrap_or_default(),
-            kind: match data_type {
-                DataType::Float64 => "Numeric",
-                DataType::Date32 => "Date",
-                DataType::Timestamp(..) => "Datetime",
-                DataType::Duration(_) => "Time",
-                _ => "String",
-            },
-            format_width: parsed.as_ref().map_or(0, |f| f.width as usize),
             decimals: parsed.as_ref().map_or(0, |f| f.decimals as usize),
             measure: meta.measure(name).map_or("", |measure| measure.as_str()),
             role: meta.role(name).map_or("", |role| role.as_str()),

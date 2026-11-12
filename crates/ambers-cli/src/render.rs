@@ -130,7 +130,7 @@ fn one_line(text: &str) -> String {
 
 /// Break `text` into lines of at most `width` characters at spaces. A
 /// single word longer than `width` (a path, say) stays whole.
-fn wrap(text: &str, width: usize) -> String {
+pub(crate) fn wrap(text: &str, width: usize) -> String {
     let mut lines: Vec<String> = Vec::new();
     for paragraph in text.lines() {
         let mut line = String::new();

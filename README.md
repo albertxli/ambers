@@ -88,7 +88,9 @@ A full-screen grid in the style of SPSS's Data View. The first screen appears at
 | digits | go to that row as you type; Enter keeps it, Esc goes back |
 | Tab | switch what cells show: **Labels**, **Codes**, **Both** (`1  Male`) |
 | Enter | panel with the current respondent's answers: variable, code and label, variable label |
-| `i` | Variable View: type, width, decimals, label, values, missing, measure, role; Enter jumps to that variable |
+| `i` | Variable View: one row per variable with its type, label, labelled values, valid and missing counts |
+| Enter (in Variable View) | the variable's details: full label, format, and every value with its count and share; `←` `→` step through variables, Enter goes to that variable's data |
+| `y` / `Y` (in Variable View) | copy the full label / the `code=label` list to the clipboard |
 | `f` | freeze / unfreeze the first variable while scrolling sideways |
 | `?` | list of keys |
 | `q`, Esc | close the panel or view; quit |
@@ -99,6 +101,15 @@ Files with incomplete labels are shown as they are, and the gaps are made visibl
 - When two codes share a label, Labels mode shows `Other [97]` and `Other [98]`.
 - Values declared user-missing are dimmed; system-missing is `.`.
 - The border reports how many variables hold unlabelled values, and Variable View has a **Label check** column per variable (`ok`, `2 unlabelled: 7, 8`, `duplicate: Other (97, 98)`). These are the same checks as `ambers.validate()`, run on the rows loaded so far.
+
+Variable View describes each variable the way `ambers.codebook()` does, with the same rules and the same numbers:
+
+- **Type** is `categorical`, `numeric`, `text` or `date`. A numeric variable is categorical when it has value labels, belongs to a multiple-response set, or holds only 0 and 1; a string is `text` even with value labels.
+- **N** is the valid cases and **Missing** the system-missing ones (for strings, empty text too). Values declared user-missing count as valid.
+- The details list every code: labelled codes that never occur (count 0), codes in the data without a label, and the system-missing row.
+- Counts cover the rows loaded so far and update while the file loads; the border says how many rows that is.
+
+Copying uses the terminal's clipboard escape sequence, which Windows Terminal and most current terminals support; the legacy Windows console does not.
 
 ## Python
 

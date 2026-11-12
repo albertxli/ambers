@@ -5,19 +5,19 @@ expression: "screen(\"survey.sav\", 80, 20, &[Key::Char('?')])"
 ╭ survey.sav ──────────────────────────────────────────────────────────────────╮
 │   # │       id │ gender  satisfaction       age      income  city          b…│
 │   1 │        1 │ Male    Very dissatisfied   18    20000.00  Lisbon        No│
-│   2 │  ╭ Keys ──────────────────────────────────────────────────────╮      Y…│
-│   3 │  │ arrows, h j k l  move one cell                             │      No│
-│   4 │  │ PgUp / PgDn      one screen up / down                      │ered  Y…│
-│   5 │  │ Ctrl+u / Ctrl+d  half a screen up / down                   │      No│
-│   6 │  │ Home / End       first / last variable                     │      Y…│
-│   7 │  │ g / G            first / last loaded row                   │      No│
-│   8 │  │ 1-9 …            go to row (Enter keeps, Esc goes back)    │ered  Y…│
-│   9 │  │ Tab              next mode: Labels, Codes, Both            │      No│
-│  10 │  │ Enter            respondent panel (J / K scroll it)        │      Y…│
-│  11 │  │ i                Variable View (Enter jumps to a variable) │      No│
-│  12 │  │ f                freeze / unfreeze the first variable      │ered  Y…│
-│  13 │  │ q, Esc           close the panel or view; quit             │      No│
-│  14 │  ╰ any key closes ────────────────────────────────────────────╯      Y…│
+│   2 │ ╭ Keys ────────────────────────────────────────────────────────╮     Y…│
+│   3 │ │ arrows, h j k l  move one cell                               │     No│
+│   4 │ │ PgUp / PgDn      one screen up / down                        │red  Y…│
+│   5 │ │ Ctrl+u / Ctrl+d  half a screen up / down                     │     No│
+│   6 │ │ Home / End       first / last variable                       │     Y…│
+│   7 │ │ g / G            first / last loaded row                     │     No│
+│   8 │ │ 1-9 …            go to row (Enter keeps, Esc goes back)      │red  Y…│
+│   9 │ │ Tab              next mode: Labels, Codes, Both              │     No│
+│  10 │ │ Enter            respondent panel (J / K scroll it)          │     Y…│
+│  11 │ │ i                Variable View (Enter: details, y / Y: copy) │     No│
+│  12 │ │ f                freeze / unfreeze the first variable        │red  Y…│
+│  13 │ │ q, Esc           close the panel or view; quit               │     No│
+│  14 │ ╰ any key closes ──────────────────────────────────────────────╯     Y…│
 │  15 │       15 │ Male    Refused             60    41007.00  Lima          No│
 │  16 │       16 │ Female  Very dissatisfied   63    42507.50  Not answered  Y…│
 │  17 │       17 │ Male    Dissatisfied        66    44008.00  Lisbon        No│
