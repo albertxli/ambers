@@ -32,5 +32,10 @@ Options:
           
           By default loading stops at half of the memory the machine has free when the file is opened. The rows already loaded stay usable.
 
+      --check
+          Say whether this build includes the browser interface, and exit
+          
+          Exit code 0 when it does, 1 when ambers was built without the front end and serves only a basic page.
+
   -h, --help
           Print help (see a summary with '-h')

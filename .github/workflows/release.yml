@@ -68,6 +68,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Before maturin: the wheel embeds the page. On Linux the wheel is
+      # built in a container, which sees the files built here.
+      - uses: ./.github/actions/build-frontend
+
       - uses: PyO3/maturin-action@v1
         with:
           command: build
@@ -91,10 +95,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The built page goes into the sdist (crates/ambers-web/dist/), so a
+      # wheel built from it has the browser interface without Bun.
+      - uses: ./.github/actions/build-frontend
+
       - uses: PyO3/maturin-action@v1
         with:
           command: sdist
           args: -o dist
+
+      - name: The sdist carries the built page
+        run: tar tzf dist/*.tar.gz | grep -q 'crates/ambers-web/dist/index.html'
 
       - uses: actions/upload-artifact@v4
         with:
@@ -138,6 +149,9 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
 
+      # Before cargo: the binary embeds the page.
+      - uses: ./.github/actions/build-frontend
+
       - name: Build
         run: cargo build --release -p ambers-cli --target ${{ matrix.target }}
 
@@ -145,6 +159,7 @@ jobs:
         run: |
           target/${{ matrix.target }}/release/ambers info tests/data/survey.zsav --rows 3
           target/${{ matrix.target }}/release/am info tests/data/survey.zsav --rows 3
+          target/${{ matrix.target }}/release/am open --check
 
       - name: Check the binary is standalone (Linux)
         if: runner.os == 'Linux'
@@ -325,7 +340,10 @@ jobs:
         run: python python/tests/smoke_wheel.py
 
       - name: Python tests (small/synthetic data only)
-        run: pytest python/tests/test_apply_labels.py python/tests/test_apply_missing.py python/tests/test_validate.py python/tests/test_metadata_api.py python/tests/test_writer_issues.py python/tests/test_polars_compat.py python/tests/test_malformed.py python/tests/test_warnings.py python/tests/test_encoding.py python/tests/test_fixtures.py python/tests/test_cli.py python/tests/test_codebook.py python/tests/test_codebook_engine.py python/tests/test_codebook_types.py -q -k "not RealFile"
+        run: pytest python/tests/test_apply_labels.py python/tests/test_apply_missing.py python/tests/test_validate.py python/tests/test_metadata_api.py python/tests/test_writer_issues.py python/tests/test_polars_compat.py python/tests/test_malformed.py python/tests/test_warnings.py python/tests/test_encoding.py python/tests/test_fixtures.py python/tests/test_cli.py python/tests/test_cli_open.py python/tests/test_codebook.py python/tests/test_codebook_engine.py python/tests/test_codebook_types.py -q -k "not RealFile"
+
+      - name: The wheel has the browser interface
+        run: ambers open --check
 
   verify-old-glibc:
     name: Verify / Debian 11 (glibc 2.31)
@@ -347,11 +365,47 @@ jobs:
           python python/tests/smoke_wheel.py
 
   # ---------------------------------------------------------------
+  # A wheel built from the sdist is the same product: it has the browser
+  # interface, although this machine never builds the front end (the built
+  # page travels inside the sdist; cargo never runs Bun).
+  # ---------------------------------------------------------------
+  verify-sdist:
+    name: Verify / wheel built from the sdist
+    needs: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build and install from the sdist
+        run: |
+          uv pip install --system polars
+          uv pip install --system --no-deps --no-binary ambers dist/*.tar.gz
+
+      - name: Smoke test
+        run: python python/tests/smoke_wheel.py
+
+      - name: The wheel has the browser interface
+        run: ambers open --check
+
+  # ---------------------------------------------------------------
   # Publish (tags only, after every check passed)
   # ---------------------------------------------------------------
   publish-crates:
     name: Publish to crates.io
-    needs: [preflight, build, sdist, cli, verify-isa, verify-emulated, verify-install, verify-old-glibc]
+    needs: [preflight, build, sdist, cli, verify-isa, verify-emulated, verify-install, verify-old-glibc, verify-sdist]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
 
@@ -366,7 +420,7 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    needs: [preflight, build, sdist, cli, verify-isa, verify-emulated, verify-install, verify-old-glibc]
+    needs: [preflight, build, sdist, cli, verify-isa, verify-emulated, verify-install, verify-old-glibc, verify-sdist]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: pypi
@@ -389,7 +443,7 @@ jobs:
 
   release:
     name: GitHub Release
-    needs: [preflight, build, sdist, cli, verify-isa, verify-emulated, verify-install, verify-old-glibc]
+    needs: [preflight, build, sdist, cli, verify-isa, verify-emulated, verify-install, verify-old-glibc, verify-sdist]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:

@@ -1,0 +1,28 @@
+name: Build the front end
+description: >
+  Builds the browser viewer's page (web/) into crates/ambers-web/dist/, where
+  the Rust build embeds it. Run this before cargo or maturin in every job
+  whose output people use: wheels, the sdist and the standalone binaries.
+  Cargo never runs Bun itself; without this step a build still works and
+  serves only a basic page.
+
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: "1.4.4"
+
+    - name: Install front-end packages
+      shell: bash
+      working-directory: web
+      run: bun install --frozen-lockfile
+
+    - name: Type-check and build the page
+      shell: bash
+      working-directory: web
+      run: bun run build
+
+    - name: The page was built
+      shell: bash
+      run: test -f crates/ambers-web/dist/index.html

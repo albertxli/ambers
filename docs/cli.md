@@ -369,6 +369,7 @@ am open big.sav --memory 8         # load at most 8 GB of data
 | `--keep-alive` | off | Keep serving after the last page is closed |
 | `--limit N` | none | Load at most N rows; the rest of the file is not read |
 | `--memory GB` | half of the free memory | Stop loading when the data takes this much memory |
+| `--check` | | Say whether this build includes the browser interface, and exit (code 0 if it does, 1 if not) |
 
 `am open` starts a small server on your machine and prints an address like `http://127.0.0.1:2627/?token=…`. The page asks the server for the rows it shows, so a file of any size opens at once and the data never leaves the machine.
 

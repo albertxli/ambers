@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { type MouseEvent, useEffect, useMemo, useState } from "react";
 
 import { ApiFailure, api } from "../../api/client";
 import type { CellMode, DatasetInfo } from "../../api/client";
@@ -15,6 +15,15 @@ const MODES: { value: CellMode; label: string; hint: string }[] = [
   { value: "codes", label: "Codes", hint: "Stored values" },
   { value: "both", label: "Both", hint: "The stored value, then its label" },
 ];
+
+/**
+ * For a toolbar button pressed with the mouse: the keyboard focus stays
+ * where it was, so the arrow keys keep moving in the grid after a click
+ * on Labels / Codes / Both. The buttons are still reached with Tab.
+ */
+function keepFocus(event: MouseEvent) {
+  event.preventDefault();
+}
 
 /** What the status bar says about loading. */
 function loadText(info: DatasetInfo): { text: string; tone: "ok" | "busy" | "warn" } {
@@ -144,6 +153,7 @@ export function DataView({ dataset }: { dataset: string }) {
               key={choice.value}
               aria-pressed={mode === choice.value}
               title={choice.hint}
+              onMouseDown={keepFocus}
               onClick={() => setMode(choice.value)}
             >
               {choice.label}
@@ -152,10 +162,14 @@ export function DataView({ dataset }: { dataset: string }) {
         </div>
         <div className="toolbar-spacer" />
         <div className="segmented" role="group" aria-label="Row density">
-          <button aria-pressed={compact} onClick={() => setCompact(true)}>
+          <button aria-pressed={compact} onMouseDown={keepFocus} onClick={() => setCompact(true)}>
             Compact
           </button>
-          <button aria-pressed={!compact} onClick={() => setCompact(false)}>
+          <button
+            aria-pressed={!compact}
+            onMouseDown={keepFocus}
+            onClick={() => setCompact(false)}
+          >
             Comfortable
           </button>
         </div>

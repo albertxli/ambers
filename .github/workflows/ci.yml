@@ -30,8 +30,40 @@ jobs:
       - name: Clippy
         run: cargo clippy -- -D warnings
 
+      # No front end is built in this job on purpose: it is the check that
+      # ambers builds and passes its tests without Bun (the page is then the
+      # basic built-in one). The generated API types are compared here too.
       - name: Run tests
         run: cargo test --lib --tests --examples
+
+  # The browser viewer: the page's unit tests, then the real page against the
+  # real server in a browser.
+  web:
+    name: Front end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: ./.github/actions/build-frontend
+
+      - name: Unit tests
+        working-directory: web
+        run: bun run test
+
+      - name: Build ambers with the page
+        run: cargo build -p ambers-cli
+
+      - name: The binary has the browser interface
+        run: cargo run --quiet -p ambers-cli --bin am -- open --check
+
+      - name: Install a browser
+        working-directory: web
+        run: bunx playwright install --with-deps chromium
+
+      - name: End-to-end tests
+        working-directory: web
+        run: bun run e2e
 
   python-smoke:
     name: Python wheel / ${{ matrix.os }}
@@ -58,6 +90,9 @@ jobs:
 
       - uses: astral-sh/setup-uv@v5
 
+      # Before maturin: the wheel embeds the page.
+      - uses: ./.github/actions/build-frontend
+
       - name: Install dependencies
         run: uv pip install --system maturin polars pytest
 
@@ -71,6 +106,9 @@ jobs:
       - name: Smoke test
         run: python python/tests/smoke_wheel.py
 
+      - name: The wheel has the browser interface
+        run: ambers open --check
+
       - uses: actions/upload-artifact@v4
         with:
           name: ci-wheel-${{ matrix.os }}
@@ -78,7 +116,7 @@ jobs:
 
       - name: Run Python tests (small/synthetic data only)
         run: |
-          pytest python/tests/test_apply_labels.py python/tests/test_apply_missing.py python/tests/test_validate.py python/tests/test_metadata_api.py python/tests/test_writer_issues.py python/tests/test_polars_compat.py python/tests/test_malformed.py python/tests/test_warnings.py python/tests/test_encoding.py python/tests/test_fixtures.py python/tests/test_cli.py python/tests/test_codebook.py python/tests/test_codebook_engine.py python/tests/test_codebook_types.py -v -k "not RealFile"
+          pytest python/tests/test_apply_labels.py python/tests/test_apply_missing.py python/tests/test_validate.py python/tests/test_metadata_api.py python/tests/test_writer_issues.py python/tests/test_polars_compat.py python/tests/test_malformed.py python/tests/test_warnings.py python/tests/test_encoding.py python/tests/test_fixtures.py python/tests/test_cli.py python/tests/test_cli_open.py python/tests/test_codebook.py python/tests/test_codebook_engine.py python/tests/test_codebook_types.py -v -k "not RealFile"
 
   # Standalone `ambers` binary: no Python, no C runtime to install.
   # Keep in sync with the `cli` job in release.yml.
@@ -114,6 +152,9 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
 
+      # Before cargo: the binary embeds the page.
+      - uses: ./.github/actions/build-frontend
+
       - name: Build
         run: cargo build --release -p ambers-cli --target ${{ matrix.target }}
 
@@ -121,6 +162,7 @@ jobs:
         run: |
           target/${{ matrix.target }}/release/ambers info tests/data/survey.zsav --rows 3
           target/${{ matrix.target }}/release/am info tests/data/survey.zsav --rows 3
+          target/${{ matrix.target }}/release/am open --check
 
       - name: Check the binary is standalone (Linux)
         if: runner.os == 'Linux'

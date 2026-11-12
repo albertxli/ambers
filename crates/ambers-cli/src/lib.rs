@@ -116,6 +116,15 @@ enum Command {
         /// free when the file is opened. The rows already loaded stay usable.
         #[arg(long, value_name = "GB")]
         memory: Option<f64>,
+        /// Say whether this build includes the browser interface, and exit
+        ///
+        /// Exit code 0 when it does, 1 when ambers was built without the
+        /// front end and serves only a basic page.
+        #[arg(long)]
+        check: bool,
+        /// Stop after this many seconds without a page (for tests)
+        #[arg(long, hide = true, value_name = "SECONDS")]
+        idle_seconds: Option<f64>,
     },
 }
 
@@ -206,7 +215,21 @@ where
             keep_alive,
             limit,
             memory,
+            check,
+            idle_seconds,
         } => {
+            if check {
+                let mut out = anstream::stdout().lock();
+                let included = ambers_web::has_interface();
+                let said = if included {
+                    "browser interface: included"
+                } else {
+                    "browser interface: not included (this ambers was built without the front end)"
+                };
+                let _ = writeln!(out, "{said}");
+                return u8::from(!included);
+            }
+            let idle = std::time::Duration::from_secs_f64(idle_seconds.unwrap_or(180.0).max(0.0));
             // The launch page lists the data files of a folder: the one
             // given, or the one the command was run in.
             let (file, folder) = match file {
@@ -221,7 +244,7 @@ where
                 browser: !no_browser,
                 limit,
                 memory_gb: memory,
-                idle: (!keep_alive).then_some(std::time::Duration::from_secs(180)),
+                idle: (!keep_alive).then_some(idle),
                 state_dir: ambers_web::instance::state_dir(),
                 signals: true,
             };

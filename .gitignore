@@ -18,3 +18,7 @@ refactoring.md
 
 # Front end (web/): packages are installed by Bun, the build goes to crates/ambers-web/dist/
 node_modules/
+
+# Playwright reports and traces
+web/test-results/
+web/playwright-report/

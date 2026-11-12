@@ -500,6 +500,42 @@ fn open_says_when_its_port_is_taken() {
 }
 
 #[test]
+fn open_check_says_whether_the_page_is_built_in() {
+    let state = scratch_dir("open-check");
+    let output = open_command(&state, &["--check"]).output().unwrap();
+    let said = stdout(&output);
+    // Either answer is right: it depends on whether the front end was
+    // built before this binary. The exit code must agree with the text.
+    match output.status.code() {
+        Some(0) => assert_eq!(said, "browser interface: included\n"),
+        Some(1) => assert!(
+            said.starts_with("browser interface: not included"),
+            "{said}"
+        ),
+        other => panic!("exit code {other:?}: {said}"),
+    }
+    assert_eq!(stderr(&output), "");
+}
+
+#[test]
+fn open_stops_by_itself_when_no_page_is_in_touch() {
+    use std::time::{Duration, Instant};
+
+    let state = scratch_dir("open-idle");
+    let started = Instant::now();
+    // No page ever asks: after half a second without one, it is done.
+    let output = open_command(&state, &["tests/data/survey.sav", "--port", "0"])
+        .args(["--idle-seconds", "0.5"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert!(stdout(&output).contains("is serving on this machine only"));
+    assert!(started.elapsed() < Duration::from_secs(30));
+    // It took its record with it.
+    assert!(!state.join("server.json").exists());
+}
+
+#[test]
 fn open_serves_the_file_and_a_second_open_joins_it() {
     use std::io::{BufRead, BufReader};
     use std::process::Stdio;
