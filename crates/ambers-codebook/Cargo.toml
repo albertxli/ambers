@@ -19,3 +19,4 @@ html = []
 
 [dependencies]
 ambers = { workspace = true }
+indexmap = { workspace = true }

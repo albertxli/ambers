@@ -64,6 +64,7 @@ name = "ambers-codebook"
 version = "0.4.7"
 dependencies = [
  "ambers",
+ "indexmap",
 ]
 
 [[package]]

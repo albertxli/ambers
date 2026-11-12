@@ -5,10 +5,12 @@ they are safe to commit and available in CI. Real files stay in the
 gitignored test_data/ directory.
 
 Usage:
-    uv run python/tests/make_fixtures.py
+    uv run python/tests/make_fixtures.py                    # every fixture
+    uv run python/tests/make_fixtures.py imperfect_labels   # only the named ones
 
 The writer stamps the creation time into each file, so regenerated files
-differ from the committed ones by those bytes only.
+differ from the committed ones by those bytes, and the CLI snapshots that
+show the creation time change with them. Regenerate only what you changed.
 """
 
 from datetime import date, datetime, timedelta
@@ -122,17 +124,74 @@ def long_strings() -> tuple[pl.DataFrame, am.SpssMetadata]:
     return df, meta
 
 
-def main() -> None:
+def imperfect_labels() -> tuple[pl.DataFrame, am.SpssMetadata]:
+    """Value labels the way real files have them: incomplete and ambiguous.
+
+    - ``q1``: codes 7 and 8 appear in the data but have no label
+    - ``scale``: a 0-10 scale with only the endpoints labelled
+    - ``brand``: codes 97 and 98 share the label "Other"
+    - ``city``: a labelled string variable that also holds free text
+    - ``q1`` and ``scale`` declare user-missing values (99, and 90-99)
+    - ``age``: no value labels at all
+    """
+    df = pl.DataFrame(
+        {
+            "id": [float(i) for i in range(1, 13)],
+            "q1": [1.0, 2.0, 3.0, 7.0, 1.0, 99.0, None, 8.0, 2.0, 3.0, 7.0, 1.0],
+            "scale": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 95.0],
+            "brand": [1.0, 97.0, 98.0, 1.0, 2.0, 97.0, 2.0, 98.0, 1.0, None, 2.0, 1.0],
+            "city": ["NYC", "LA", "Springfield", "NYC", "", "Paris", "LA", "NYC", "LA", "Lyon", "NYC", "LA"],
+            "age": [18.0, 25.5, 31.0, 44.0, 52.0, 67.0, None, 23.0, 38.0, 41.0, 59.0, 70.0],
+        }
+    )
+    meta = am.SpssMetadata(
+        file_label="ambers imperfect value labels fixture",
+        variable_labels={
+            "id": "Respondent ID",
+            "q1": "Agreement",
+            "scale": "Likelihood to recommend",
+            "brand": "Brand used most",
+            "city": "City",
+            "age": "Age in years",
+        },
+        variable_value_labels={
+            "q1": {1: "Agree", 2: "Neutral", 3: "Disagree", 99: "Refused"},
+            "scale": {0: "Not at all likely", 10: "Extremely likely"},
+            "brand": {1: "Brand A", 2: "Brand B", 97: "Other", 98: "Other"},
+            "city": {"NYC": "New York", "LA": "Los Angeles"},
+        },
+        variable_formats={"id": "F8.0", "q1": "F8.0", "scale": "F8.0", "brand": "F8.0", "city": "A20", "age": "F8.1"},
+        variable_missing_values={
+            "q1": {"type": "discrete", "values": [99]},
+            "scale": {"type": "range", "low": 90, "high": 99},
+        },
+    )
+    return df, meta
+
+
+# Each fixture: the function that builds it and the files it writes.
+FIXTURES = {
+    "survey": (
+        survey,
+        [("survey.sav", {}), ("survey_uncompressed.sav", {"compression": "uncompressed"}), ("survey.zsav", {})],
+    ),
+    "long_strings": (long_strings, [("long_strings.sav", {})]),
+    "imperfect_labels": (imperfect_labels, [("imperfect_labels.sav", {})]),
+}
+
+
+def main(names: list[str]) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    df, meta = survey()
-    am.write_sav(df, OUT / "survey.sav", meta=meta)
-    am.write_sav(df, OUT / "survey_uncompressed.sav", meta=meta, compression="uncompressed")
-    am.write_sav(df, OUT / "survey.zsav", meta=meta)
-    df, meta = long_strings()
-    am.write_sav(df, OUT / "long_strings.sav", meta=meta)
+    for name in names or FIXTURES:
+        build, files = FIXTURES[name]
+        df, meta = build()
+        for file_name, options in files:
+            am.write_sav(df, OUT / file_name, meta=meta, **options)
     for path in sorted(OUT.glob("*sav")):
         print(f"{path.name}: {path.stat().st_size} bytes")
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    main(sys.argv[1:])

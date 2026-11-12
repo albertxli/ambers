@@ -5,8 +5,8 @@
 //! crate will export one from a file's metadata, import one from disk, and
 //! validate a file against one.
 //!
-//! This is a skeleton: the modules below document their future
-//! responsibility and contain no logic yet.
+//! Mostly a skeleton still: `validate` holds the value-label checks; the
+//! other modules document their future responsibility.
 //!
 //! Anything that needs a second input besides the `.sav` file (a codebook,
 //! a mapping) belongs here, not in the `ambers` engine crate.
