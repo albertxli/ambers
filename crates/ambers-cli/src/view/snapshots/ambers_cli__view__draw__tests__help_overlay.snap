@@ -20,7 +20,7 @@ expression: "screen(\"survey.sav\", 80, 26, &[Key::Char('?')])"
 │ i                      Variable View and back                                │
 │ d                      in Variable View: go to the variable's data           │
 │ /                      filter rows by this column; search variables          │
-│                        jap  =Japan  !=3  >30  <=5  =. (missing)              │
+│                        jap  =Japan  !=3  >30  =. (missing)  a|b (either)     │
 │ =                      keep the rows with this cell's value                  │
 │ c                      copy the highlighted cell, in full                    │
 │ C or t                 copy the open side panel, for a spreadsheet           │

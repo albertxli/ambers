@@ -15,6 +15,7 @@
 //! | `!=Japan`        | everything else                             |
 //! | `>30` `>=` `<` `<=` | numeric variables only                   |
 //! | `=.`             | system-missing (`!=.`: not missing)         |
+//! | `japan|france`   | either: `|` separates alternatives          |
 //!
 //! Text is compared ignoring case. A label and a code both match, so the
 //! result does not depend on the view mode.
@@ -54,7 +55,22 @@ pub struct Parsed {
 }
 
 /// Read what was typed. `Ok(None)` is an empty filter: every row.
-pub fn parse(text: &str) -> Result<Option<Parsed>, String> {
+///
+/// `|` separates alternatives, each read on its own (`japan|france`,
+/// `=1|=2`, `<18|>65`); a row is kept when any of them matches. An empty
+/// alternative is skipped, so `japan|` half-typed is just `japan`.
+pub fn parse(text: &str) -> Result<Option<Vec<Parsed>>, String> {
+    let mut parts = Vec::new();
+    for part in text.split('|') {
+        if let Some(parsed) = parse_one(part)? {
+            parts.push(parsed);
+        }
+    }
+    Ok((!parts.is_empty()).then_some(parts))
+}
+
+/// One alternative of a filter.
+fn parse_one(text: &str) -> Result<Option<Parsed>, String> {
     let text = text.trim();
     if text.is_empty() {
         return Ok(None);
@@ -159,14 +175,20 @@ enum Test {
     },
 }
 
-/// A parsed filter made ready for one column.
-pub struct Matcher {
+/// One alternative of a filter, made ready for one column.
+struct Part {
     test: Test,
     negate: bool,
 }
 
-impl Matcher {
-    pub fn new(column: &Column, parsed: &Parsed) -> Result<Matcher, String> {
+/// A parsed filter made ready for one column: a value passes when any of
+/// its alternatives does.
+pub struct Matcher {
+    parts: Vec<Part>,
+}
+
+impl Part {
+    fn new(column: &Column, parsed: &Parsed) -> Result<Part, String> {
         let test = match &parsed.query {
             Query::Missing => Test::Missing,
             Query::Compare(op, number) => {
@@ -214,7 +236,7 @@ impl Matcher {
                 }
             }
         };
-        Ok(Matcher {
+        Ok(Part {
             test,
             negate: parsed.negate,
         })
@@ -294,6 +316,31 @@ impl Matcher {
             }
         }
     }
+}
+
+impl Matcher {
+    pub fn new(column: &Column, parsed: &[Parsed]) -> Result<Matcher, String> {
+        let parts: Result<Vec<Part>, String> = (parsed.iter())
+            .map(|parsed| Part::new(column, parsed))
+            .collect();
+        Ok(Matcher { parts: parts? })
+    }
+
+    fn null(&self) -> bool {
+        (self.parts.iter()).any(|part| part.null() != part.negate)
+    }
+
+    fn number(&mut self, column: &Column, value: f64) -> bool {
+        (self.parts.iter_mut()).any(|part| part.number(column, value) != part.negate)
+    }
+
+    fn string(&self, value: &str) -> bool {
+        (self.parts.iter()).any(|part| part.string(value) != part.negate)
+    }
+
+    fn written(&self, text: &str) -> bool {
+        (self.parts.iter()).any(|part| part.written(text) != part.negate)
+    }
 
     /// Test `rows` of one batch's column and push the file row numbers
     /// (`base` + row) of those that pass.
@@ -305,9 +352,8 @@ impl Matcher {
         base: usize,
         out: &mut Vec<u32>,
     ) {
-        let negate = self.negate;
         let mut keep = |row: usize, hit: bool| {
-            if hit != negate {
+            if hit {
                 out.push((base + row) as u32);
             }
         };
@@ -429,7 +475,7 @@ mod tests {
 
     #[test]
     fn what_is_typed_is_read() {
-        let query = |text: &str| parse(text).unwrap().unwrap();
+        let query = |text: &str| parse(text).unwrap().unwrap().remove(0);
         assert_eq!(parse("  ").unwrap(), None);
         assert_eq!(query(" Jap ").query, Query::Contains("jap".to_string()));
         assert_eq!(query("=Japan").query, Query::Equals("japan".to_string()));
@@ -448,6 +494,47 @@ mod tests {
         assert_eq!(parse("<=x").unwrap_err(), "type a number after <=");
         assert_eq!(parse("=").unwrap_err(), "type a value after =");
         assert_eq!(parse("!=").unwrap_err(), "type a value after !=");
+    }
+
+    #[test]
+    fn a_bar_separates_alternatives() {
+        let queries = |text: &str| -> Vec<Query> {
+            let parts = parse(text).unwrap().unwrap();
+            parts.into_iter().map(|parsed| parsed.query).collect()
+        };
+        assert_eq!(
+            queries("Japan | france"),
+            [
+                Query::Contains("japan".to_string()),
+                Query::Contains("france".to_string())
+            ]
+        );
+        assert_eq!(
+            queries("=1|>30"),
+            [
+                Query::Equals("1".to_string()),
+                Query::Compare(Op::Greater, 30.0)
+            ]
+        );
+        // Half-typed: the empty alternative is not one yet.
+        assert_eq!(queries("japan|"), [Query::Contains("japan".to_string())]);
+        assert_eq!(parse(" | ").unwrap(), None);
+        // A broken alternative is still reported.
+        assert_eq!(parse("japan|>").unwrap_err(), "type a number after >");
+
+        // Either city; a label or a code; a range from both ends.
+        assert_eq!(
+            rows("survey.sav", "city", "osa|lima"),
+            [2, 3, 6, 7, 10, 11, 14, 15, 18, 19]
+        );
+        assert_eq!(rows("survey.sav", "city", "=osaka|=lisbon").len(), 10);
+        assert_eq!(
+            rows("survey.sav", "satisfaction", "refused|=1"),
+            [1, 5, 6, 10, 11, 15, 16, 20]
+        );
+        assert_eq!(rows("survey.sav", "satisfaction", "=.|=99").len(), 6);
+        assert_eq!(rows("survey.sav", "id", "<3|>18"), [1, 2, 19, 20]);
+        assert_eq!(rows("survey.sav", "id", "=4|=12|=20"), [4, 12, 20]);
     }
 
     #[test]

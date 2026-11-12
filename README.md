@@ -114,6 +114,7 @@ Loading stops by itself when the data would take more than half of the memory yo
 | `!=Japan` | everything else |
 | `>30`, `>=30`, `<30`, `<=30` | numeric variables only |
 | `=.` | system-missing (`!=.`: not missing) |
+| `japan\|france`, `=1\|=2`, `<18\|>65` | either: `\|` separates alternatives, each written like the forms above |
 
 A label and a code both match, whichever of Labels / Codes / Both is on screen. Filters stack: filter `country`, move to another column and press `/` again, and a row must pass both. `/` on a filtered column edits its filter, and emptying it removes it. The row numbers at the left stay the file's own, and going to a row by number lands on the next row the filter shows.
 

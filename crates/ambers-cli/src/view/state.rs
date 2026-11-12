@@ -1205,7 +1205,7 @@ impl State {
         &self,
         column: usize,
         text: &str,
-    ) -> Result<Option<(filter::Parsed, Matcher)>, String> {
+    ) -> Result<Option<(Vec<filter::Parsed>, Matcher)>, String> {
         match filter::parse(text)? {
             Some(parsed) => {
                 let matcher = Matcher::new(&self.columns[column], &parsed)?;
@@ -1425,8 +1425,15 @@ impl State {
                         base.clone()
                     }
                     Ok(Some((parsed, mut matcher))) => {
-                        let needle = match (&parsed.query, parsed.negate) {
-                            (Query::Contains(needle), false) => Some(needle.clone()),
+                        // Only a single "contains": with alternatives
+                        // (`a|b`) more text can keep more rows.
+                        let needle = match parsed.as_slice() {
+                            [
+                                filter::Parsed {
+                                    query: Query::Contains(needle),
+                                    negate: false,
+                                },
+                            ] => Some(needle.clone()),
                             _ => None,
                         };
                         // More of the same text can only keep fewer rows:
@@ -2404,6 +2411,33 @@ pub(crate) mod tests {
         assert_eq!(state.cell(state.cursor_row, 5).text, "Lisbon");
         press(&mut state, &[Key::Down, Key::Top]);
         assert_eq!(state.cursor_file_row(), 0);
+    }
+
+    #[test]
+    fn alternatives_widen_the_filter_as_they_are_typed() {
+        let mut state = on_column("city");
+        press(&mut state, &[Key::Char('/')]);
+        type_text(&mut state, "osa");
+        assert_eq!(shown(&state), [2, 6, 10, 14, 18]);
+        // `osa|` is still just Osaka; the second city adds its rows.
+        type_text(&mut state, "|");
+        assert_eq!(shown(&state), [2, 6, 10, 14, 18]);
+        type_text(&mut state, "lim");
+        assert_eq!(shown(&state), [2, 3, 6, 7, 10, 11, 14, 15, 18, 19]);
+        // Deleting it narrows again.
+        press(&mut state, &[Key::Backspace; 4]);
+        assert_eq!(shown(&state), [2, 6, 10, 14, 18]);
+        type_text(&mut state, "|lima");
+        press(&mut state, &[Key::Enter]);
+        assert_eq!(state.shown_rows(), 10);
+        assert_eq!(state.bar().unwrap().left, "Filter city: osa|lima");
+
+        // Stacked with another column: (Osaka or Lima) and Female.
+        state.cursor_col = 1;
+        press(&mut state, &[Key::Char('/')]);
+        type_text(&mut state, "=female");
+        press(&mut state, &[Key::Enter]);
+        assert_eq!(shown(&state), [2, 6, 10, 14, 18]);
     }
 
     #[test]
