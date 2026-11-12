@@ -81,6 +81,37 @@ enum Command {
         #[arg(long, value_enum, default_value = "dracula")]
         theme: view::ThemeName,
     },
+    /// Open a file in your browser
+    ///
+    /// Starts a small server on this machine (127.0.0.1 only), prints its
+    /// address and opens it in the browser. The page asks only for the rows
+    /// it shows, so a file of any size opens at once. If ambers is already
+    /// serving, the file is opened there instead of starting a second
+    /// server. Ctrl+C stops the server; it also stops by itself a few
+    /// minutes after the last page is closed.
+    #[cfg(feature = "web")]
+    Open {
+        /// Path to a .sav or .zsav file
+        file: Option<PathBuf>,
+        /// Port to listen on (default: 2627, or the next free one after it)
+        #[arg(long, value_name = "PORT")]
+        port: Option<u16>,
+        /// Only print the address; do not open the browser
+        #[arg(long)]
+        no_browser: bool,
+        /// Keep serving after the last page is closed
+        #[arg(long)]
+        keep_alive: bool,
+        /// Load at most N rows (the rest of a larger file is not read)
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+        /// Load at most this many GB of data into memory
+        ///
+        /// By default loading stops at half of the memory the machine has
+        /// free when the file is opened. The rows already loaded stay usable.
+        #[arg(long, value_name = "GB")]
+        memory: Option<f64>,
+    },
 }
 
 /// `--mode`: how cell values are shown. The command line's own copy of
@@ -162,6 +193,30 @@ where
             let result = view::run(&file, &options);
             (file, result)
         }
+        #[cfg(feature = "web")]
+        Command::Open {
+            file,
+            port,
+            no_browser,
+            keep_alive,
+            limit,
+            memory,
+        } => {
+            // A folder is where the launch page will list files; until
+            // then it starts the server with no file open.
+            let file = file.filter(|path| !path.is_dir());
+            let options = ambers_web::Options {
+                path: file.clone(),
+                port,
+                browser: !no_browser,
+                limit,
+                memory_gb: memory,
+                idle: (!keep_alive).then_some(std::time::Duration::from_secs(180)),
+                state_dir: ambers_web::instance::state_dir(),
+                signals: true,
+            };
+            return open(file.as_deref(), &options);
+        }
     };
 
     match result {
@@ -179,6 +234,31 @@ where
                 "{}",
                 info::error_summary(&file, &err)
             );
+            1
+        }
+    }
+}
+
+/// `ambers open`: serve the browser viewer until it stops, or hand the
+/// file to the server that is already running.
+#[cfg(feature = "web")]
+fn open(file: Option<&Path>, options: &ambers_web::Options) -> u8 {
+    let mut out = anstream::stdout().lock();
+    match ambers_web::run(options, &mut out) {
+        Ok(()) => 0,
+        // The file is at fault: the same report as `info` gives.
+        Err(ambers_web::Error::Read(err)) => {
+            let file = file.unwrap_or(Path::new(""));
+            let _ = writeln!(
+                anstream::stderr().lock(),
+                "{}",
+                info::error_summary(file, &err.into())
+            );
+            1
+        }
+        Err(ambers_web::Error::Io(err)) if err.kind() == io::ErrorKind::BrokenPipe => 0,
+        Err(err) => {
+            let _ = writeln!(anstream::stderr().lock(), "error: {err}");
             1
         }
     }

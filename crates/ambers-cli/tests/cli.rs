@@ -430,3 +430,134 @@ fn info_counts_only_the_listed_variables_of_the_whole_file() {
     assert_eq!(rows.len(), 5);
     assert_eq!(rows["weight"][4..6], ["20", "0"]);
 }
+
+// --- `open`: the browser viewer's server -------------------------------------
+//
+// Every run gets its own state folder (`AMBERS_STATE_DIR`), so a test
+// never joins a server the developer has running, and never opens a
+// browser (`--no-browser`).
+
+/// `ambers open …` with a private state folder.
+fn open_command(state: &Path, args: &[&str]) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_ambers"));
+    command
+        .arg("open")
+        .args(args)
+        .arg("--no-browser")
+        .env("AMBERS_STATE_DIR", state)
+        .current_dir(repo_root());
+    command
+}
+
+/// The port and the token in an address `open` printed.
+fn port_and_token(printed: &str) -> (u16, String) {
+    let address = (printed.split_whitespace())
+        .find(|word| word.starts_with("http://127.0.0.1:"))
+        .unwrap_or_else(|| panic!("no address in: {printed}"));
+    let rest = address.strip_prefix("http://127.0.0.1:").unwrap();
+    let (port, query) = rest.split_once("/?token=").unwrap();
+    let token = query.split('&').next().unwrap();
+    (port.parse().unwrap(), token.to_string())
+}
+
+#[test]
+fn open_help() {
+    insta::assert_snapshot!(ok_stdout(&["open", "--help"]));
+}
+
+#[test]
+fn open_reports_an_unreadable_file_like_info() {
+    let state = scratch_dir("open-unreadable");
+    let output = open_command(&state, &["tests/data/does_not_exist.sav"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stdout(&output), "");
+    let report = stderr(&output);
+    assert!(
+        report.contains("│ File   │ tests/data/does_not_exist.sav"),
+        "{report}"
+    );
+    assert!(report.contains("│ Status │ error"), "{report}");
+
+    let not_sav = open_command(&state, &["Cargo.toml"]).output().unwrap();
+    assert_eq!(stderr(&not_sav), stderr(&ambers(&["info", "Cargo.toml"])));
+}
+
+#[test]
+fn open_says_when_its_port_is_taken() {
+    let state = scratch_dir("open-port");
+    let taken = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = taken.local_addr().unwrap().port().to_string();
+    let output = open_command(&state, &["tests/data/survey.sav", "--port", &port])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        stderr(&output),
+        format!("error: port {port} is in use; choose another with --port\n")
+    );
+}
+
+#[test]
+fn open_serves_the_file_and_a_second_open_joins_it() {
+    use std::io::{BufRead, BufReader};
+    use std::process::Stdio;
+    use std::time::Duration;
+
+    let state = scratch_dir("open-serve");
+    let mut server = open_command(&state, &["tests/data/survey.sav", "--port", "0"])
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    // It says where it is before it starts waiting.
+    let mut printed = String::new();
+    let mut lines = BufReader::new(server.stdout.take().unwrap()).lines();
+    while !printed.contains("Ctrl+C") {
+        printed.push_str(&lines.next().expect("the server ended early").unwrap());
+        printed.push('\n');
+    }
+    assert!(
+        printed.starts_with(&format!(
+            "ambers {} is serving on this machine only:\n  http://127.0.0.1:",
+            env!("CARGO_PKG_VERSION")
+        )),
+        "{printed}"
+    );
+    assert!(printed.contains("&dataset=d1\n"), "{printed}");
+    let (port, token) = port_and_token(&printed);
+
+    // It answers, to who has the token.
+    let ask = |headers: &[(&str, &str)]| {
+        let timeout = Duration::from_secs(10);
+        ambers_web::instance::request(port, "GET", "/api/v1/server", headers, None, timeout)
+            .unwrap()
+    };
+    assert_eq!(ask(&[]).status, 401);
+    let authorization = format!("Bearer {token}");
+    let answer = ask(&[("Authorization", &authorization)]);
+    assert_eq!(answer.status, 200, "{}", answer.body);
+    let info: serde_json::Value = serde_json::from_str(&answer.body).unwrap();
+    assert_eq!(info["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(info["datasets"][0]["name"], "survey.sav");
+
+    // A second `open` hands its file to this server and returns at once.
+    let second = open_command(&state, &["tests/data/variable_types.sav"])
+        .output()
+        .unwrap();
+    assert_eq!(second.status.code(), Some(0), "{}", stderr(&second));
+    let said = stdout(&second);
+    assert!(
+        said.starts_with("Opened in the ambers server that is already running:\n"),
+        "{said}"
+    );
+    assert_eq!(port_and_token(&said), (port, token));
+    assert!(said.contains("&dataset=d2\n"), "{said}");
+    let answer = ask(&[("Authorization", &authorization)]);
+    let info: serde_json::Value = serde_json::from_str(&answer.body).unwrap();
+    assert_eq!(info["datasets"].as_array().unwrap().len(), 2);
+
+    // Only this test's own process is stopped.
+    server.kill().unwrap();
+    server.wait().unwrap();
+}

@@ -12,3 +12,4 @@ Add a record when a decision changes the shape of the project (a new crate, a de
 | [0004](0004-open-dracula-palette.md) | The open Dracula palette, not Dracula Pro | 2026-11-12 |
 | [0005](0005-local-server-security.md) | The browser viewer is served from `127.0.0.1` with a token and a Host check | 2026-11-12 |
 | [0006](0006-vite-spa-with-bun.md) | The front end is a Vite single-page app built with Bun, not Next.js | 2026-11-12 |
+| [0007](0007-server-lifecycle.md) | The server stops by itself, and there is one per ambers version | 2026-11-12 |

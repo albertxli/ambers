@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ambers</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 24px; background: #282a36; color: #f8f8f2;
+         font: 14px/1.5 ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; }
+  h1 { margin: 0 0 4px; font-size: 16px; color: #bd93f9; }
+  p { margin: 0 0 16px; color: #6272a4; }
+  .note { color: #ffb86c; }
+  .wrap { overflow: auto; border: 1px solid #44475a; border-radius: 8px; }
+  table { border-collapse: collapse; white-space: nowrap; }
+  th, td { padding: 3px 10px; border-bottom: 1px solid #343746; text-align: left; }
+  th { position: sticky; top: 0; background: #343746; color: #8be9fd; }
+  td.n { color: #6272a4; text-align: right; }
+  td.unlabeled { color: #ffb86c; }
+  td.user_missing { color: #6272a4; }
+  a { color: #8be9fd; }
+</style>
+</head>
+<body>
+<h1 id="title">ambers</h1>
+<p id="facts">Connecting…</p>
+<p class="note">This build of ambers does not include the full browser interface. It shows the first rows only.</p>
+<div class="wrap"><table id="grid"></table></div>
+<script>
+const api = "/api/v1";
+const get = async (path, body) => {
+  const options = body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {};
+  const answer = await fetch(api + path, options);
+  if (!answer.ok) throw new Error((await answer.json().catch(() => ({}))).error || answer.statusText);
+  return answer.json();
+};
+const text = (tag, value, kind) => {
+  const node = document.createElement(tag);
+  node.textContent = value;
+  if (kind) node.className = kind;
+  return node;
+};
+async function show() {
+  const server = await get("/server");
+  const wanted = new URLSearchParams(location.search).get("dataset");
+  const dataset = server.datasets.find((one) => one.id === wanted) || server.datasets[0];
+  const title = document.getElementById("title");
+  const facts = document.getElementById("facts");
+  if (!dataset) {
+    title.textContent = "ambers " + server.version;
+    facts.textContent = "No file is open. Start one with: am open <file.sav>";
+    return;
+  }
+  title.textContent = dataset.name;
+  const total = dataset.total_rows == null ? "" : " of " + dataset.total_rows.toLocaleString();
+  facts.textContent = dataset.rows.toLocaleString() + total + " rows loaded · " +
+    dataset.variables.toLocaleString() + " variables · " + dataset.load;
+  const listed = (await get("/datasets/" + dataset.id + "/variables")).variables.slice(0, 12);
+  const page = await get("/datasets/" + dataset.id + "/rows",
+    { offset: 0, limit: 50, variables: listed.map((one) => one.index), mode: "labels", filters: [] });
+  const grid = document.getElementById("grid");
+  grid.replaceChildren();
+  const head = grid.insertRow();
+  head.append(text("th", "#"), ...listed.map((one) => text("th", one.name)));
+  for (const row of page.rows) {
+    const line = grid.insertRow();
+    line.append(text("td", row.number, "n"), ...row.cells.map((cell) => text("td", cell.text, cell.flag)));
+  }
+  if (dataset.load === "loading") setTimeout(show, 1000);
+}
+show().catch((problem) => { document.getElementById("facts").textContent = String(problem); });
+// The server stops by itself when no page has been in touch for a while.
+setInterval(() => fetch(api + "/heartbeat", { method: "POST" }).catch(() => {}), 5000);
+</script>
+</body>
+</html>

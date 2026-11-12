@@ -20,10 +20,16 @@ path = "src/main.rs"
 name = "am"
 path = "src/bin/am.rs"
 
+[features]
+default = ["web"]
+# The browser viewer (`am open`): a local server and the embedded page.
+web = ["dep:ambers-web"]
+
 [dependencies]
 ambers = { workspace = true }
 ambers-codebook = { workspace = true }
 ambers-dataset = { workspace = true }
+ambers-web = { workspace = true, optional = true }
 anstream = { workspace = true }
 anstyle = { workspace = true }
 anyhow = { workspace = true }
@@ -35,5 +41,6 @@ ratatui = { workspace = true }
 unicode-width = { workspace = true }
 
 [dev-dependencies]
+ambers-web = { workspace = true }
 insta = { workspace = true }
 serde_json = { workspace = true }

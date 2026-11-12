@@ -1,0 +1,34 @@
+---
+source: crates/ambers-cli/tests/cli.rs
+expression: "ok_stdout(&[\"open\", \"--help\"])"
+---
+Open a file in your browser
+
+Starts a small server on this machine (127.0.0.1 only), prints its address and opens it in the browser. The page asks only for the rows it shows, so a file of any size opens at once. If ambers is already serving, the file is opened there instead of starting a second server. Ctrl+C stops the server; it also stops by itself a few minutes after the last page is closed.
+
+Usage: ambers open [OPTIONS] [FILE]
+
+Arguments:
+  [FILE]
+          Path to a .sav or .zsav file
+
+Options:
+      --port <PORT>
+          Port to listen on (default: 2627, or the next free one after it)
+
+      --no-browser
+          Only print the address; do not open the browser
+
+      --keep-alive
+          Keep serving after the last page is closed
+
+      --limit <N>
+          Load at most N rows (the rest of a larger file is not read)
+
+      --memory <GB>
+          Load at most this many GB of data into memory
+          
+          By default loading stops at half of the memory the machine has free when the file is opened. The rows already loaded stay usable.
+
+  -h, --help
+          Print help (see a summary with '-h')

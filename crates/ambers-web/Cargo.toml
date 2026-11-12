@@ -1,0 +1,27 @@
+[package]
+name = "ambers-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The browser viewer behind `am open`: a local server, a JSON API and the embedded page"
+# Not published: it ships inside the `ambers` binary and the wheel.
+publish = false
+build = "build.rs"
+# The built front end (`dist/`, ignored by git) is embedded when present.
+include = ["src/**", "assets/**", "dist/**", "build.rs", "Cargo.toml"]
+
+[dependencies]
+ambers = { workspace = true }
+ambers-codebook = { workspace = true }
+ambers-dataset = { workspace = true }
+axum = { workspace = true }
+getrandom = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+ts-rs = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

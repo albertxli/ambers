@@ -14,6 +14,7 @@
   - [Copying](#copying)
   - [Incomplete labels](#incomplete-labels)
   - [Terminal notes](#terminal-notes)
+- [`am open`: the file in your browser](#am-open-the-file-in-your-browser)
 - [Limits](#limits)
 - [Recipes](#recipes)
 
@@ -74,6 +75,7 @@ am info --help             # one command's options
 |---|---|---|
 | `am info <FILE>` | Prints a summary of the file and a table of its variables | Only with `--counts` or `--rows` |
 | `am view <FILE>` | Opens a full-screen grid of the data, with a variable list, filters and copy | Yes, in the background |
+| `am open <FILE>` | Opens the file in your browser, served from this machine only (in development) | Yes, in the background |
 
 `<FILE>` is a path to a `.sav` or `.zsav` file. Quote it if it contains spaces.
 
@@ -347,6 +349,39 @@ These are the checks of `ambers.validate()` (see [validate.md](validate.md)), ru
 - The frame keeps a small margin from the window's edge, which shows your terminal's own background; the Dracula background is painted inside the frames only. A window narrower than 60 columns or shorter than 16 lines has no margin, so a small pane loses nothing.
 - `NO_COLOR` turns colour off; highlights then use bold and reverse video.
 - Colours: `--theme dracula` looks the same everywhere; `--theme terminal` follows your terminal's palette.
+
+## `am open`: the file in your browser
+
+> In development. The command and its server work; the full browser interface is still being built, and until it is included the page shows only a file's first rows. `am view` is the complete viewer today.
+
+```bash
+am open survey.sav                 # serve the file and open it in the browser
+am open survey.sav --no-browser    # only print the address
+am open big.sav --memory 8         # load at most 8 GB of data
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--port PORT` | 2627, or the next free port after it | The port to listen on |
+| `--no-browser` | off | Print the address without opening the browser |
+| `--keep-alive` | off | Keep serving after the last page is closed |
+| `--limit N` | none | Load at most N rows; the rest of the file is not read |
+| `--memory GB` | half of the free memory | Stop loading when the data takes this much memory |
+
+`am open` starts a small server on your machine and prints an address like `http://127.0.0.1:2627/?token=…`. The page asks the server for the rows it shows, so a file of any size opens at once and the data never leaves the machine.
+
+**One server.** If ambers is already serving, a second `am open other.sav` opens that file in the running server and returns at once. A server from a different ambers version is left alone, and a new one starts on another port.
+
+**Stopping.** Ctrl+C stops the server. It also stops by itself about three minutes after the last page is closed, unless you pass `--keep-alive`.
+
+**The file is not kept open.** Once a file has loaded, ambers closes it. You can move, replace or delete it while its rows are still shown.
+
+**Who can reach it.** Only you, on this machine:
+
+- The server listens on `127.0.0.1`, never on the network.
+- The address carries a random token. Without it, or the cookie the first visit trades it for, every request is refused.
+- Requests that arrive under another host name are refused, so a web page elsewhere cannot reach the server through your browser.
+- The page loads nothing from the internet.
 
 ## Limits
 

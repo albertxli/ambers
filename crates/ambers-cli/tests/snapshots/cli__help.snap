@@ -9,6 +9,7 @@ Usage: ambers <COMMAND>
 Commands:
   info  Print a file's summary and its variables
   view  Browse a file's data in a full-screen grid
+  open  Open a file in your browser
   help  Print this message or the help of the given subcommand(s)
 
 Options:
