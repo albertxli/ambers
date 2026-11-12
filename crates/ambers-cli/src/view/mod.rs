@@ -13,15 +13,15 @@ mod draw;
 mod format;
 mod loader;
 mod state;
+#[cfg(test)]
+mod stress;
 mod theme;
 
-use std::fs::File;
-use std::io::{self, BufReader, IsTerminal, Write};
+use std::io::{self, IsTerminal, Write};
 use std::path::Path;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
 
-use ambers::scanner::SavScanner;
 use anyhow::Result;
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{
@@ -31,7 +31,7 @@ use ratatui::crossterm::event::{
 use ratatui::crossterm::execute;
 
 pub use self::format::Mode;
-use self::loader::{BATCH_ROWS, Message};
+use self::loader::Message;
 use self::state::{Key, Load, Mouse, State};
 use self::theme::Theme;
 pub use self::theme::ThemeName;
@@ -39,9 +39,27 @@ pub use self::theme::ThemeName;
 pub struct Options {
     /// The mode the grid starts in.
     pub mode: Mode,
-    /// Rows to load at most.
-    pub limit: usize,
+    /// Rows to load at most, if the user set a limit.
+    pub limit: Option<usize>,
+    /// Memory to load at most, in GB, if the user set a budget.
+    pub memory_gb: Option<f64>,
     pub theme: ThemeName,
+}
+
+/// The memory the loaded rows may take, in bytes: what the user asked for,
+/// or half of what the machine has available right now, so that opening a
+/// file larger than memory stops loading instead of exhausting it.
+/// `None` (no cap) only when the system does not report its memory.
+fn memory_budget(explicit_gb: Option<f64>) -> Option<u64> {
+    const GB: f64 = 1024.0 * 1024.0 * 1024.0;
+    match explicit_gb {
+        Some(gb) => Some((gb.max(0.0) * GB) as u64),
+        None => {
+            let mut system = sysinfo::System::new().ok()?;
+            system.refresh_memory();
+            Some(system.available_memory() / 2).filter(|&bytes| bytes > 0)
+        }
+    }
 }
 
 /// The viewer was started with its input or output redirected.
@@ -59,9 +77,7 @@ impl std::error::Error for NotATerminal {}
 pub fn run(file: &Path, options: &Options) -> Result<()> {
     // Open the file first: an unreadable file is reported the same way
     // whether or not there is a terminal, and before the screen is taken.
-    let reader = BufReader::with_capacity(8 * 1024 * 1024, File::open(file)?);
-    let mut scanner = SavScanner::open(reader, BATCH_ROWS)?;
-    scanner.limit(options.limit);
+    let (scanner, batch_rows) = loader::open(file, options.limit)?;
 
     if !(io::stdin().is_terminal() && io::stdout().is_terminal()) {
         return Err(NotATerminal.into());
@@ -75,11 +91,12 @@ pub fn run(file: &Path, options: &Options) -> Result<()> {
         name,
         scanner.metadata(),
         &scanner.schema(),
-        BATCH_ROWS,
+        batch_rows,
         options.limit,
         options.mode,
     );
-    let receiver = loader::spawn(scanner, state.profiler_handle());
+    let budget = memory_budget(options.memory_gb);
+    let receiver = loader::spawn(scanner, state.profiler_handle(), budget);
     let no_color = std::env::var_os("NO_COLOR").is_some_and(|value| !value.is_empty());
     let theme = Theme::pick(options.theme, no_color);
 
@@ -155,28 +172,55 @@ fn event_loop(
         if !event::poll(wait)? {
             continue;
         }
-        match event::read()? {
-            // Windows also reports key releases; acting on them would move twice.
-            Event::Key(key) if key.kind != KeyEventKind::Release => {
-                if is_interrupt(&key) {
-                    return Ok(());
-                }
-                if let Some(key) = translate(&key) {
-                    if state.on_key(key) {
-                        return Ok(());
-                    }
-                    redraw = true;
-                }
+        // Take every event that is already waiting before drawing once.
+        // A held key or a spinning wheel sends events faster than frames
+        // can be drawn; one frame per event would build a backlog that
+        // keeps the viewer busy long after the key is released.
+        for _ in 0..MAX_EVENTS_PER_FRAME {
+            match handle(state, event::read()?) {
+                Handled::Quit => return Ok(()),
+                Handled::Changed => redraw = true,
+                Handled::Ignored => {}
             }
-            Event::Mouse(event) => {
-                if let Some(mouse) = translate_mouse(&event) {
-                    state.on_mouse(mouse, event.column as usize, event.row as usize);
-                    redraw = true;
-                }
+            if !event::poll(Duration::ZERO)? {
+                break;
             }
-            Event::Resize(..) => redraw = true,
-            _ => {}
         }
+    }
+}
+
+/// Events applied before the screen is drawn again, at most.
+const MAX_EVENTS_PER_FRAME: usize = 500;
+
+enum Handled {
+    Quit,
+    /// The state changed: draw.
+    Changed,
+    Ignored,
+}
+
+fn handle(state: &mut State, event: Event) -> Handled {
+    match event {
+        // Windows also reports key releases; acting on them would move twice.
+        Event::Key(key) if key.kind != KeyEventKind::Release => {
+            if is_interrupt(&key) {
+                return Handled::Quit;
+            }
+            match translate(&key) {
+                Some(key) if state.on_key(key) => Handled::Quit,
+                Some(_) => Handled::Changed,
+                None => Handled::Ignored,
+            }
+        }
+        Event::Mouse(event) => match translate_mouse(&event) {
+            Some(mouse) => {
+                state.on_mouse(mouse, event.column as usize, event.row as usize);
+                Handled::Changed
+            }
+            None => Handled::Ignored,
+        },
+        Event::Resize(..) => Handled::Changed,
+        _ => Handled::Ignored,
     }
 }
 
@@ -321,5 +365,93 @@ mod mouse_tests {
         ] {
             assert_eq!(translate_mouse(&event(kind, none)), None);
         }
+    }
+}
+
+#[cfg(test)]
+mod handle_tests {
+    use super::*;
+    use std::path::Path;
+
+    fn state() -> State {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/data/survey.sav");
+        let (scanner, batch_rows) = loader::open(&path, None).unwrap();
+        let mut state = State::new(
+            "survey.sav".to_string(),
+            scanner.metadata(),
+            &scanner.schema(),
+            batch_rows,
+            None,
+            Mode::Labels,
+        );
+        state.resize(100, 24);
+        for message in loader::spawn(scanner, state.profiler_handle(), None) {
+            state.receive(message);
+        }
+        state
+    }
+
+    fn press(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    #[test]
+    fn events_change_the_state_quit_or_are_ignored() {
+        let mut state = state();
+        assert!(matches!(
+            handle(&mut state, press(KeyCode::Down)),
+            Handled::Changed
+        ));
+        assert_eq!(state.cursor_row, 1);
+        // A key the viewer does not use, a key release, a mouse move.
+        assert!(matches!(
+            handle(&mut state, press(KeyCode::F(5))),
+            Handled::Ignored
+        ));
+        let mut release = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        release.kind = KeyEventKind::Release;
+        assert!(matches!(
+            handle(&mut state, Event::Key(release)),
+            Handled::Ignored
+        ));
+        let moved = MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: 5,
+            row: 5,
+            modifiers: KeyModifiers::NONE,
+        };
+        assert!(matches!(
+            handle(&mut state, Event::Mouse(moved)),
+            Handled::Ignored
+        ));
+        assert_eq!(state.cursor_row, 1);
+        assert!(matches!(
+            handle(&mut state, Event::Resize(80, 20)),
+            Handled::Changed
+        ));
+        assert!(matches!(
+            handle(&mut state, press(KeyCode::Char('q'))),
+            Handled::Quit
+        ));
+    }
+
+    #[test]
+    fn the_budget_is_what_was_asked_or_half_of_what_is_free() {
+        assert_eq!(memory_budget(Some(2.0)), Some(2 * 1024 * 1024 * 1024));
+        assert_eq!(memory_budget(Some(0.5)), Some(512 * 1024 * 1024));
+        // Detected: this machine reports its memory, and the budget is a
+        // positive share of it.
+        let detected = memory_budget(None).expect("the system reports its memory");
+        assert!(detected > 64 * 1024 * 1024, "{detected}");
+    }
+
+    #[test]
+    fn loader_open_sizes_batches_from_the_file() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/data/survey.sav");
+        let (scanner, batch_rows) = loader::open(&path, Some(7)).unwrap();
+        // 13 columns: the cap on rows per batch.
+        assert_eq!(batch_rows, 20_000);
+        assert_eq!(scanner.schema().fields().len(), 13);
+        assert!(loader::open(Path::new("no/such/file.sav"), None).is_err());
     }
 }

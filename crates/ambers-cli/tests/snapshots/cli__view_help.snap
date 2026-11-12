@@ -25,8 +25,11 @@ Options:
 
       --limit <N>
           Load at most N rows (the rest of a larger file is not read)
+
+      --memory <GB>
+          Load at most this many GB of data into memory
           
-          [default: 1000000]
+          By default the viewer stops loading at half of the memory the machine has free when it starts, and says so. The rows already loaded stay usable.
 
       --theme <THEME>
           Colours

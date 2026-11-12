@@ -8,6 +8,7 @@
 //! it streams in and on files larger than memory.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use ambers::{SpssMetadata, Value};
 use arrow::array::{Array, AsArray};
@@ -71,6 +72,7 @@ impl ValueRow {
 }
 
 /// What is counted for a column, by what it can turn out to be.
+#[derive(Clone)]
 enum Counts {
     /// Dates and times: nulls only.
     None,
@@ -86,15 +88,20 @@ enum Counts {
     ZeroOne { zeros: u64, ones: u64, other: bool },
 }
 
+#[derive(Clone)]
 struct Tally {
     nulls: u64,
     counts: Counts,
 }
 
+/// Cloning is cheap: the metadata and the rules are shared, only the
+/// tallies are copied. A reader can so be handed a snapshot while another
+/// thread keeps counting.
+#[derive(Clone)]
 pub struct Profiler {
-    meta: SpssMetadata,
-    fields: Vec<(String, DataType)>,
-    detector: TypeDetector,
+    meta: Arc<SpssMetadata>,
+    fields: Arc<[(String, DataType)]>,
+    detector: Arc<TypeDetector>,
     tallies: Vec<Tally>,
     rows: u64,
 }
@@ -133,9 +140,9 @@ impl Profiler {
             })
             .collect();
         Profiler {
-            meta: meta.clone(),
-            fields,
-            detector,
+            meta: Arc::new(meta.clone()),
+            fields: fields.into(),
+            detector: Arc::new(detector),
             tallies,
             rows: 0,
         }

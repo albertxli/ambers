@@ -68,8 +68,15 @@ enum Command {
         #[arg(long, value_enum, default_value = "labels")]
         mode: view::Mode,
         /// Load at most N rows (the rest of a larger file is not read)
-        #[arg(long, value_name = "N", default_value_t = 1_000_000)]
-        limit: usize,
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+        /// Load at most this many GB of data into memory
+        ///
+        /// By default the viewer stops loading at half of the memory the
+        /// machine has free when it starts, and says so. The rows already
+        /// loaded stay usable.
+        #[arg(long, value_name = "GB")]
+        memory: Option<f64>,
         /// Colours
         #[arg(long, value_enum, default_value = "dracula")]
         theme: view::ThemeName,
@@ -121,9 +128,15 @@ where
             file,
             mode,
             limit,
+            memory,
             theme,
         } => {
-            let options = view::Options { mode, limit, theme };
+            let options = view::Options {
+                mode,
+                limit,
+                memory_gb: memory,
+                theme,
+            };
             let result = view::run(&file, &options);
             (file, result)
         }

@@ -1,7 +1,8 @@
 //! The viewer's state and what each key does to it. Nothing here touches
 //! the terminal, so every behaviour is unit-tested; `draw` only reads it.
 
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use ambers::{SpssMetadata, Value};
 use ambers_codebook::profile::{Profiler, ValueRow, VariableSummary};
@@ -12,7 +13,7 @@ use unicode_width::UnicodeWidthStr;
 
 use super::detail::{self, Detail};
 use super::format::{Cell, Column, Mode};
-use super::loader::Message;
+use super::loader::{End, Message};
 
 /// Rows moved by one notch of the mouse wheel.
 const WHEEL_ROWS: usize = 3;
@@ -80,6 +81,8 @@ pub enum Load {
     Done,
     /// Loading stopped at the row limit; the file has more rows.
     Limit,
+    /// Loading stopped at the memory budget; the file has more rows.
+    Memory,
     /// Loading failed part-way; the rows read so far are kept.
     Failed(String),
 }
@@ -122,7 +125,8 @@ pub struct State {
     pub rows: usize,
     /// Rows in the file according to its header.
     pub total_rows: Option<usize>,
-    pub limit: usize,
+    /// Rows to load at most, when the user set a limit.
+    pub limit: Option<usize>,
     pub load: Load,
 
     pub mode: Mode,
@@ -152,10 +156,17 @@ pub struct State {
     pub notice: Option<String>,
 
     goto: Option<Goto>,
-    /// Types and counts, filled by the loader thread as rows arrive.
+    /// The loader thread publishes a copy of its profiler (types and
+    /// counts) here after every batch.
     profiler: Arc<Mutex<Profiler>>,
-    /// Variables holding values without a label, as of the last batch.
-    unlabeled_variables: usize,
+    /// What drawing needs from the profiler, per variable, cached so that
+    /// no frame computes it: the codebook summary and the label check.
+    summaries: Vec<VariableSummary>,
+    label_checks: Vec<String>,
+    counted_rows: u64,
+    refreshed: Option<Instant>,
+    /// While loading, the cache is brought up to date this often.
+    pub refresh_every: Duration,
     copy: Option<Copy>,
     width: usize,
     height: usize,
@@ -167,14 +178,18 @@ impl State {
         meta: &SpssMetadata,
         schema: &Schema,
         batch_rows: usize,
-        limit: usize,
+        limit: Option<usize>,
         mode: Mode,
     ) -> State {
         let columns = Column::from_metadata(meta, schema);
-        State {
+        let mut state = State {
             file_name,
             profiler: Arc::new(Mutex::new(Profiler::new(meta, schema))),
-            unlabeled_variables: 0,
+            summaries: Vec::new(),
+            label_checks: Vec::new(),
+            counted_rows: 0,
+            refreshed: None,
+            refresh_every: Duration::from_millis(250),
             copy: None,
             detail: None,
             detail_scroll: 0,
@@ -202,21 +217,24 @@ impl State {
             goto: None,
             width: 80,
             height: 24,
-        }
+        };
+        state.refresh_codebook(true);
+        state
     }
 
-    /// The profiler, for the loader thread to feed.
+    /// The slot the loader thread publishes its profiler into.
     pub fn profiler_handle(&self) -> Arc<Mutex<Profiler>> {
         Arc::clone(&self.profiler)
     }
 
-    /// The profiler for reading. The loader holds the lock while it adds a
-    /// batch, so this can wait a moment during loading.
-    fn profiler(&self) -> MutexGuard<'_, Profiler> {
+    /// A snapshot of the published profiler. The loader holds the lock
+    /// only to swap a copy in, so this does not wait on its counting.
+    fn profiler(&self) -> Profiler {
         // A panic in the loader does not invalidate the tallies so far.
         self.profiler
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 
     /// Whether the label audit covers a variable: numeric, with labels.
@@ -231,25 +249,23 @@ impl State {
             Message::Batch(batch) => {
                 self.rows += batch.num_rows();
                 self.batches.push(batch);
-                // Once per batch, not once per frame: the border shows it.
-                let profiler = self.profiler();
-                let unlabeled = (0..self.columns.len())
-                    .filter(|&column| self.is_audited(column))
-                    .filter(|&column| profiler.summary(column).n_unlabeled > Some(0))
-                    .count();
-                drop(profiler);
-                self.unlabeled_variables = unlabeled;
-                self.refresh_detail();
+                self.refresh_codebook(false);
             }
-            Message::Finished => {
+            Message::Finished(end) => {
                 let more = self.total_rows.is_none_or(|total| total > self.rows);
-                self.load = if self.rows >= self.limit && more {
-                    Load::Limit
-                } else {
-                    Load::Done
+                self.load = match end {
+                    End::MemoryBudget if more => Load::Memory,
+                    End::Data if more && self.limit.is_some_and(|limit| self.rows >= limit) => {
+                        Load::Limit
+                    }
+                    _ => Load::Done,
                 };
+                self.refresh_codebook(true);
             }
-            Message::Failed(error) => self.load = Load::Failed(error),
+            Message::Failed(error) => {
+                self.load = Load::Failed(error);
+                self.refresh_codebook(true);
+            }
         }
     }
 
@@ -266,15 +282,37 @@ impl State {
 
     // --- codebook: types, counts, label audit -----------------------------
 
+    /// Bring the cached types, counts and label checks up to date with
+    /// what the loader has counted. While loading this happens a few times
+    /// a second at most (`refresh_every`), not on every batch; `force`
+    /// does it now. Drawing reads only the cache.
+    fn refresh_codebook(&mut self, force: bool) {
+        let due = self
+            .refreshed
+            .is_none_or(|at| at.elapsed() >= self.refresh_every);
+        if !(force || due) {
+            return;
+        }
+        let profiler = self.profiler();
+        self.counted_rows = profiler.rows();
+        self.summaries = profiler.summaries();
+        self.label_checks = (0..self.columns.len())
+            .map(|column| self.check_labels(&profiler, column))
+            .collect();
+        self.refreshed = Some(Instant::now());
+        self.refresh_detail();
+    }
+
     /// Rows the counts cover. The loader counts a batch just before it
-    /// hands it over, so this can be one batch ahead of `rows`.
+    /// hands it over, and the cache is refreshed a few times a second, so
+    /// this can differ slightly from `rows` while loading.
     pub fn counted_rows(&self) -> u64 {
-        self.profiler().rows()
+        self.counted_rows
     }
 
     /// The codebook's summary of one variable: type and counts.
-    pub fn summary(&self, column: usize) -> VariableSummary {
-        self.profiler().summary(column)
+    pub fn summary(&self, column: usize) -> &VariableSummary {
+        &self.summaries[column]
     }
 
     /// The codebook's value rows of one variable: `MISSING`, then a row
@@ -285,22 +323,25 @@ impl State {
 
     /// How many variables hold values that have no label.
     pub fn unlabeled_variables(&self) -> usize {
-        self.unlabeled_variables
+        (self.label_checks.iter())
+            .filter(|check| check.contains("unlabelled"))
+            .count()
     }
 
     /// The audit of one variable, for Variable View: `ok`, the unlabelled
     /// values, the duplicated labels, or empty when it is not audited.
-    pub fn label_check(&self, column: usize) -> String {
+    pub fn label_check(&self, column: usize) -> &str {
+        &self.label_checks[column]
+    }
+
+    fn check_labels(&self, profiler: &Profiler, column: usize) -> String {
         if !self.is_audited(column) {
             return String::new();
         }
         let labels = &self.columns[column].labels;
-        let (rows, many) = {
-            let profiler = self.profiler();
-            (profiler.values(column), profiler.overflowed(column))
-        };
+        let many = profiler.overflowed(column);
         // The codes that occur in the data.
-        let seen: Vec<Value> = (rows.into_iter())
+        let seen: Vec<Value> = (profiler.values(column).into_iter())
             .filter(|row| row.n > 0)
             .filter_map(|row| row.code)
             .collect();
@@ -789,7 +830,7 @@ impl State {
             }
             5 => summary().n_valid.to_string(),
             6 => summary().n_missing.to_string(),
-            _ => self.label_check(variable),
+            _ => self.label_check(variable).to_string(),
         }
     }
 
@@ -886,11 +927,13 @@ pub(crate) mod tests {
             scanner.metadata(),
             &scanner.schema(),
             5,
-            1_000_000,
+            None,
             Mode::Labels,
         );
         state.resize(width, height);
-        for message in super::super::loader::spawn(scanner, state.profiler_handle()) {
+        // Tests look at the counts straight after a batch.
+        state.refresh_every = Duration::ZERO;
+        for message in super::super::loader::spawn(scanner, state.profiler_handle(), None) {
             state.receive(message);
         }
         state
@@ -914,9 +957,9 @@ pub(crate) mod tests {
     fn stopping_at_the_limit_is_reported() {
         let mut state = loaded("survey.sav", 100, 24);
         // As if only 20 of a larger file were allowed.
-        state.limit = 20;
+        state.limit = Some(20);
         state.total_rows = Some(500);
-        state.receive(Message::Finished);
+        state.receive(Message::Finished(End::Data));
         assert_eq!(state.load, Load::Limit);
     }
 

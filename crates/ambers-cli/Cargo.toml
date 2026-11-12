@@ -32,6 +32,7 @@ comfy-table = { workspace = true }
 indexmap = { workspace = true }
 mimalloc = { workspace = true }
 ratatui = { workspace = true }
+sysinfo = { workspace = true }
 unicode-width = { workspace = true }
 
 [dev-dependencies]

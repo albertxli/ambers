@@ -269,6 +269,15 @@ fn data_status_right<'a>(state: &State, theme: &Theme) -> Line<'a> {
             theme.warn,
         )),
         (Load::Limit, None) => Some((format!(" first {rows} rows (limit) "), theme.warn)),
+        // The flag is named so the way to load more is on screen.
+        (Load::Memory, Some(total)) => Some((
+            format!(" first {rows} of {total} rows: memory budget reached (--memory GB for more) "),
+            theme.warn,
+        )),
+        (Load::Memory, None) => Some((
+            format!(" first {rows} rows: memory budget reached (--memory GB for more) "),
+            theme.warn,
+        )),
         (Load::Failed(error), _) => Some((format!(" stopped at row {rows}: {error} "), theme.warn)),
         (Load::Done, _) => None,
     };
@@ -374,7 +383,7 @@ fn counts_status(state: &State) -> String {
     let rows = group_digits(state.counted_rows());
     match state.load {
         Load::Loading => format!(" counts: {rows} rows, loading… "),
-        Load::Limit => format!(" counts: first {rows} rows "),
+        Load::Limit | Load::Memory => format!(" counts: first {rows} rows "),
         Load::Failed(_) => format!(" counts: {rows} rows read "),
         Load::Done => format!(" counts: {rows} rows "),
     }
@@ -998,6 +1007,22 @@ mod tests {
         state.load = Load::Loading;
         assert!(render(&state, 120, 8).contains(" counts: 20 rows, loading… "));
         state.load = Load::Limit;
+        assert!(render(&state, 120, 8).contains(" counts: first 20 rows "));
+    }
+
+    #[test]
+    fn stopping_at_the_memory_budget_is_reported_with_the_way_out() {
+        let mut state = loaded("survey.sav", 120, 8);
+        state.total_rows = Some(395_330);
+        state.load = Load::Memory;
+        let data = render(&state, 120, 8);
+        assert!(
+            data.contains(
+                " first 20 of 395,330 rows: memory budget reached (--memory GB for more) "
+            ),
+            "{data}"
+        );
+        state.on_key(Key::Char('i'));
         assert!(render(&state, 120, 8).contains(" counts: first 20 rows "));
     }
 }
