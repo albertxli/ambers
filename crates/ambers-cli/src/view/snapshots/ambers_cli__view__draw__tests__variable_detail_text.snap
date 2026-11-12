@@ -3,11 +3,11 @@ source: crates/ambers-cli/src/view/draw.rs
 expression: text
 ---
 ╭ imperfect_labels.sav ─ Variable View ─────────────────────────╮╭ city ─ text ──────────────────────────────────────────────────╮
-│ #  Name   Type         Label                             Value││ City                                                          │
+│ #  Name   Type         Label                             Valu…││ City                                                          │
 │ 1  id     numeric      Respondent ID                          ││ Format A20 · measure nominal · role input                     │
-│ 2  q1     categorical  Agreement                         1=Agr││ Valid 11 · Missing 1 · Total 12 · Distinct 5                  │
-│ 3  scale  categorical  Likelihood to recommend           0=Not││                                                               │
-│ 4  brand  categorical  Brand used most                   1=Bra││ Value        Label                      N   % valid   % total │
+│ 2  q1     categorical  Agreement                         1=Ag…││ Valid 11 · Missing 1 · Total 12 · Distinct 5                  │
+│ 3  scale  categorical  Likelihood to recommend           0=No…││                                                               │
+│ 4  brand  categorical  Brand used most                   1=Br…││ Value        Label                      N   % valid   % total │
 │ 5  city   text         City                                   ││ (missing)                               1                8.3% │
 │ 6  age    numeric      Age in years                           ││ LA           Los Angeles                4     36.4%     33.3% │
 │                                                               ││ Lyon                                    1      9.1%      8.3% │
@@ -17,8 +17,8 @@ expression: text
 │                                                               ││                                                               │
 │                                                               ││                                                               │
 │                                                               ││                                                               │
-│                                                               ││                                                               │
-│                                                               ││                                                               │
+│─ city · Label ────────────────────────────────────────────────││                                                               │
+│ City                                                          ││                                                               │
 │                                                               ││                                                               │
 │                                                               ││                                                               │
 ╰ Enter values ─ y copy ───────────── counts: 12 rows ─ Var 5/6 ╯╰ J/K scroll ─ y copy table ─ Enter close ──────────────────────╯

@@ -16,7 +16,7 @@ use unicode_width::UnicodeWidthStr;
 
 use super::detail::{RowKind, percent};
 use super::format::{Cell, Mode, fit};
-use super::state::{Load, Screen, State};
+use super::state::{Load, Screen, State, VARIABLE_FIELDS};
 use super::theme::Theme;
 use crate::info::group_digits;
 use crate::render::wrap;
@@ -24,11 +24,18 @@ use crate::render::wrap;
 /// The keys, as listed by `?`.
 const HELP: &[(&str, &str)] = &[
     ("arrows, h j k l", "move one cell"),
-    ("mouse", "wheel scrolls (Shift: sideways), click selects"),
+    (
+        "mouse",
+        "wheel scrolls (Shift or Alt: sideways), click selects",
+    ),
     ("PgUp / PgDn", "one screen up / down"),
     ("Ctrl+u / Ctrl+d", "half a screen up / down"),
-    ("Home / End", "first / last variable (or field)"),
-    ("g / G", "first / last row"),
+    ("Shift+arrows, { } < >", "50 rows or columns at once"),
+    (
+        "Ctrl+arrows, g G 0 $",
+        "to the top, bottom, far left, far right",
+    ),
+    ("Home / End", "far left / far right"),
     ("1-9 …", "go to row (Enter keeps, Esc goes back)"),
     ("Tab", "next mode: Labels, Codes, Both"),
     ("f", "freeze / unfreeze the first variable"),
@@ -41,6 +48,7 @@ const HELP: &[(&str, &str)] = &[
     ("d", "in Variable View: go to the variable's data"),
     ("y", "copy the cell; with values open, the table"),
     ("Y", "in Variable View: copy the cell"),
+    ("L", "copy the variable's full label"),
     ("q, Esc", "close the panel or view; quit"),
 ];
 
@@ -216,7 +224,14 @@ fn cell_style(cell: &Cell, theme: &Theme, on_cursor: bool) -> Style {
 /// the row number being typed), then the label warning. Each piece is
 /// dropped whole when it does not fit in `room` columns.
 fn data_status_left<'a>(state: &State, theme: &Theme, room: usize) -> Line<'a> {
-    let mut pieces = vec![(format!(" {} ", state.mode.name()), theme.accent)];
+    let mode = format!(" {} ", state.mode.name());
+    let unlabeled = state.unlabeled_variables();
+    let warning = (unlabeled > 0).then(|| {
+        let noun = if unlabeled == 1 { "var" } else { "vars" };
+        format!(" ⚠ {unlabeled} {noun} with unlabelled values ")
+    });
+
+    let mut pieces = vec![(mode.clone(), theme.accent)];
     if let Some(typed) = state.goto_text() {
         pieces.push((format!(" Go to row: {typed}▏"), theme.accent));
     } else if let Some(notice) = &state.notice {
@@ -225,18 +240,17 @@ fn data_status_left<'a>(state: &State, theme: &Theme, room: usize) -> Line<'a> {
         let label = if column.label.is_empty() {
             String::new()
         } else {
-            let width = column.label.chars().count().min(40);
+            // As much of the label as the border has room for, after the
+            // mode, the name and the warning; `L` copies all of it.
+            let taken = mode.width() + column.name.width() + 6;
+            let taken = taken + warning.as_ref().map_or(0, |warning| warning.width() + 1);
+            let width = column.label.width().min(room.saturating_sub(taken).max(12));
             format!(": {}", fit(&column.label, width, false).trim_end())
         };
         pieces.push((format!(" {}{label} ", column.name), Style::new()));
     }
-    let unlabeled = state.unlabeled_variables();
-    if unlabeled > 0 {
-        let noun = if unlabeled == 1 { "var" } else { "vars" };
-        pieces.push((
-            format!(" ⚠ {unlabeled} {noun} with unlabelled values "),
-            theme.warn,
-        ));
+    if let Some(warning) = warning {
+        pieces.push((warning, theme.warn));
     }
 
     let mut spans = Vec::new();
@@ -407,8 +421,9 @@ fn variable_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
     // unless the value table is open and shows the notice itself.
     let room = (area.width as usize).saturating_sub(right.width() + 3);
     let hints = [
-        " ↑↓←→ cell ─ Enter values ─ y copy cell ─ d go to data ─ i / Esc back ",
-        " Enter values ─ y copy ─ d data ─ i back ",
+        " ↑↓←→ cell ─ Enter values ─ y copy cell ─ L copy label ─ d go to data ─ i / Esc back ",
+        " Enter values ─ y copy cell ─ L copy label ─ d data ─ i back ",
+        " Enter values ─ y copy ─ L label ─ i back ",
         " Enter values ─ y copy ",
         "",
     ];
@@ -440,7 +455,7 @@ fn variable_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
     }
 
     let inner_width = area.width.saturating_sub(2);
-    for line in 0..state.grid_rows() {
+    for line in 0..state.variable_rows() {
         let index = state.var_top + line;
         if index >= state.columns.len() {
             break;
@@ -459,10 +474,10 @@ fn variable_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
             row_style,
         );
 
-        for (number, field) in layout.iter().enumerate() {
+        for field in &layout {
             // On one line: labelled values are one per line in full.
-            let text = state.variable_cell(index, number).replace('\n', ", ");
-            let on_cursor = on_cursor_row && number == state.var_field;
+            let text = state.variable_cell(index, field.index).replace('\n', ", ");
+            let on_cursor = on_cursor_row && field.index == state.var_field;
             let style = if on_cursor {
                 // The highlight covers the cell and the space either side.
                 let x = area.x + (field.x - 1) as u16;
@@ -488,6 +503,45 @@ fn variable_view(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
                 style,
             );
         }
+    }
+    full_text_bar(buf, area, state, theme);
+}
+
+/// Under the variable list, the highlighted cell's text in full, wrapped:
+/// the whole label, the whole value list. The list itself shows them cut.
+fn full_text_bar(buf: &mut Buffer, area: Rect, state: &State, theme: &Theme) {
+    let lines = state.bar_lines();
+    if lines == 0 || state.columns.is_empty() {
+        return;
+    }
+    // A rule, then the text, above the bottom border.
+    let rule_y = (area.height as usize).saturating_sub(lines + 2);
+    let inner_width = (area.width as usize).saturating_sub(2);
+    put(buf, area, 1, rule_y, &"─".repeat(inner_width), theme.frame);
+
+    let (title, _) = VARIABLE_FIELDS[state.var_field];
+    let name = &state.columns[state.var_cursor].name;
+    let heading = format!("{name} · {title}");
+    put(buf, area, 2, rule_y, &format!(" {heading} "), theme.header);
+
+    let text_width = inner_width.saturating_sub(2);
+    let full = state.variable_cell(state.var_cursor, state.var_field);
+    // Labelled values are one per line when copied; here they run on.
+    let wrapped = wrap(&full.replace('\n', ", "), text_width);
+    let mut shown: Vec<String> = wrapped.lines().take(lines).map(str::to_string).collect();
+    if wrapped.lines().count() > lines {
+        // More than fits: the last line says so. `y` still copies all of it.
+        let last = shown.last_mut().expect("at least one line is shown");
+        *last = fit(&format!("{last} "), text_width.saturating_sub(1), false)
+            .trim_end()
+            .to_string()
+            + " …";
+    }
+    if full.is_empty() {
+        put(buf, area, 2, rule_y + 1, "(empty)", theme.dim);
+    }
+    for (line, text) in shown.iter().enumerate() {
+        put(buf, area, 2, rule_y + 1 + line, text, Style::new());
     }
 }
 
@@ -1024,5 +1078,57 @@ mod tests {
         );
         state.on_key(Key::Char('i'));
         assert!(render(&state, 120, 8).contains(" counts: first 20 rows "));
+    }
+
+    #[test]
+    fn the_full_text_bar_shows_the_highlighted_cell_in_full() {
+        // gender's values, then its label; the list shows both cut or short.
+        let values = screen(
+            "survey.sav",
+            80,
+            18,
+            &[Key::Char('i'), Key::Down, Key::Right],
+        );
+        insta::assert_snapshot!(values);
+        assert!(values.contains(" gender · Values "), "{values}");
+        assert!(values.contains("1=Male, 2=Female"), "{values}");
+        let label = screen("survey.sav", 80, 18, &[Key::Char('i'), Key::Down]);
+        assert!(label.contains(" gender · Label "), "{label}");
+    }
+
+    #[test]
+    fn the_full_text_bar_wraps_a_long_value_list() {
+        // satisfaction has six labelled values: more than one line at 80 wide.
+        let text = screen(
+            "survey.sav",
+            80,
+            18,
+            &[Key::Char('i'), Key::Down, Key::Down, Key::Right],
+        );
+        assert!(text.contains(" satisfaction · Values "), "{text}");
+        assert!(
+            text.contains("99=Refused"),
+            "the end of the list is on screen:\n{text}"
+        );
+    }
+
+    #[test]
+    fn the_variable_list_scrolled_to_its_last_field() {
+        insta::assert_snapshot!(screen("survey.sav", 80, 18, &[Key::Char('i'), Key::End]));
+    }
+
+    #[test]
+    fn a_long_label_gets_the_room_the_border_has() {
+        let mut state = loaded("survey.sav", 160, 10);
+        state.columns[0].label =
+            "Q12. Thinking about the last time you visited, how satisfied were you overall?"
+                .to_string();
+        // More than the old limit of 40 characters now shows.
+        let wide = render(&state, 160, 10);
+        assert!(wide.contains("how satisfied were you overall?"), "{wide}");
+        // On a narrow screen it is cut, and the position still shows.
+        let narrow = render(&state, 70, 10);
+        assert!(narrow.contains(" Row 1/20 "), "{narrow}");
+        assert!(!narrow.contains("how satisfied were you overall?"));
     }
 }

@@ -3,11 +3,11 @@ source: crates/ambers-cli/src/view/draw.rs
 expression: "screen(\"imperfect_labels.sav\", 130, 20,\n&[Key::Char('i'), Key::Down, Key::Enter])"
 ---
 ╭ imperfect_labels.sav ─ Variable View ─────────────────────────╮╭ q1 ─ categorical ─────────────────────────────────────────────╮
-│ #  Name   Type         Label                             Value││ Agreement                                                     │
+│ #  Name   Type         Label                             Valu…││ Agreement                                                     │
 │ 1  id     numeric      Respondent ID                          ││ Format F8.0 · measure scale · role input · user-missing: 99   │
-│ 2  q1     categorical  Agreement                         1=Agr││ Valid 11 · Missing 1 · Total 12 · Codes 6 · labelled 4 ·      │
-│ 3  scale  categorical  Likelihood to recommend           0=Not││ unlabelled 2                                                  │
-│ 4  brand  categorical  Brand used most                   1=Bra││                                                               │
+│ 2  q1     categorical  Agreement                         1=Ag…││ Valid 11 · Missing 1 · Total 12 · Codes 6 · labelled 4 ·      │
+│ 3  scale  categorical  Likelihood to recommend           0=No…││ unlabelled 2                                                  │
+│ 4  brand  categorical  Brand used most                   1=Br…││                                                               │
 │ 5  city   text         City                                   ││  Code  Label                            N   % valid   % total │
 │ 6  age    numeric      Age in years                           ││        MISSING (system-missing)         1                8.3% │
 │                                                               ││     1  Agree                            3     27.3%     25.0% │
@@ -17,8 +17,8 @@ expression: "screen(\"imperfect_labels.sav\", 130, 20,\n&[Key::Char('i'), Key::D
 │                                                               ││     8  (no label)                       1      9.1%      8.3% │
 │                                                               ││    99  Refused (user-missing)           1      9.1%      8.3% │
 │                                                               ││                                                               │
-│                                                               ││                                                               │
-│                                                               ││                                                               │
+│─ q1 · Label ──────────────────────────────────────────────────││                                                               │
+│ Agreement                                                     ││                                                               │
 │                                                               ││                                                               │
 │                                                               ││                                                               │
 ╰ Enter values ─ y copy ───────────── counts: 12 rows ─ Var 2/6 ╯╰ J/K scroll ─ y copy table ─ Enter close ──────────────────────╯

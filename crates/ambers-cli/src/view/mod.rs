@@ -224,13 +224,16 @@ fn handle(state: &mut State, event: Event) -> Handled {
     }
 }
 
-/// A terminal mouse event as a viewer one. Shift turns the vertical wheel
-/// into a horizontal one, for mice without a tilt wheel.
+/// A terminal mouse event as a viewer one. Shift or Alt turns the vertical
+/// wheel into a horizontal one, for mice without a tilt wheel; both are
+/// accepted because some terminals keep Shift+wheel for themselves.
 fn translate_mouse(event: &MouseEvent) -> Option<Mouse> {
-    let shift = event.modifiers.contains(KeyModifiers::SHIFT);
+    let sideways = event
+        .modifiers
+        .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT);
     Some(match event.kind {
-        MouseEventKind::ScrollUp if shift => Mouse::ScrollLeft,
-        MouseEventKind::ScrollDown if shift => Mouse::ScrollRight,
+        MouseEventKind::ScrollUp if sideways => Mouse::ScrollLeft,
+        MouseEventKind::ScrollDown if sideways => Mouse::ScrollRight,
         MouseEventKind::ScrollUp => Mouse::ScrollUp,
         MouseEventKind::ScrollDown => Mouse::ScrollDown,
         MouseEventKind::ScrollLeft => Mouse::ScrollLeft,
@@ -251,7 +254,18 @@ fn is_interrupt(key: &KeyEvent) -> bool {
 fn translate(key: &KeyEvent) -> Option<Key> {
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let alt = key.modifiers.contains(KeyModifiers::ALT);
+    let shift = key.modifiers.contains(KeyModifiers::SHIFT);
     Some(match key.code {
+        // Ctrl+arrow: to the edge, as in a spreadsheet.
+        KeyCode::Up if ctrl => Key::Top,
+        KeyCode::Down if ctrl => Key::Bottom,
+        KeyCode::Left if ctrl => Key::Home,
+        KeyCode::Right if ctrl => Key::End,
+        // Shift+arrow: a fast step.
+        KeyCode::Up if shift => Key::FastUp,
+        KeyCode::Down if shift => Key::FastDown,
+        KeyCode::Left if shift => Key::FastLeft,
+        KeyCode::Right if shift => Key::FastRight,
         KeyCode::Up => Key::Up,
         KeyCode::Down => Key::Down,
         KeyCode::Left => Key::Left,
@@ -453,5 +467,62 @@ mod handle_tests {
         assert_eq!(batch_rows, 20_000);
         assert_eq!(scanner.schema().fields().len(), 13);
         assert!(loader::open(Path::new("no/such/file.sav"), None).is_err());
+    }
+}
+
+#[cfg(test)]
+mod navigation_tests {
+    use super::*;
+
+    fn key(code: KeyCode, modifiers: KeyModifiers) -> Option<Key> {
+        translate(&KeyEvent::new(code, modifiers))
+    }
+
+    #[test]
+    fn shift_arrows_are_fast_steps_and_control_arrows_reach_the_edges() {
+        let (none, shift, ctrl) = (
+            KeyModifiers::NONE,
+            KeyModifiers::SHIFT,
+            KeyModifiers::CONTROL,
+        );
+        assert_eq!(key(KeyCode::Down, none), Some(Key::Down));
+        assert_eq!(key(KeyCode::Up, shift), Some(Key::FastUp));
+        assert_eq!(key(KeyCode::Down, shift), Some(Key::FastDown));
+        assert_eq!(key(KeyCode::Left, shift), Some(Key::FastLeft));
+        assert_eq!(key(KeyCode::Right, shift), Some(Key::FastRight));
+        assert_eq!(key(KeyCode::Up, ctrl), Some(Key::Top));
+        assert_eq!(key(KeyCode::Down, ctrl), Some(Key::Bottom));
+        assert_eq!(key(KeyCode::Left, ctrl), Some(Key::Home));
+        assert_eq!(key(KeyCode::Right, ctrl), Some(Key::End));
+        // The letter forms arrive as characters, with or without Shift.
+        for symbol in ['{', '}', '<', '>', '0', '$', 'L'] {
+            assert_eq!(key(KeyCode::Char(symbol), shift), Some(Key::Char(symbol)));
+        }
+    }
+
+    #[test]
+    fn shift_or_alt_turns_the_wheel_sideways() {
+        let wheel = |kind, modifiers| {
+            translate_mouse(&MouseEvent {
+                kind,
+                column: 0,
+                row: 0,
+                modifiers,
+            })
+        };
+        for modifiers in [KeyModifiers::SHIFT, KeyModifiers::ALT] {
+            assert_eq!(
+                wheel(MouseEventKind::ScrollUp, modifiers),
+                Some(Mouse::ScrollLeft)
+            );
+            assert_eq!(
+                wheel(MouseEventKind::ScrollDown, modifiers),
+                Some(Mouse::ScrollRight)
+            );
+        }
+        assert_eq!(
+            wheel(MouseEventKind::ScrollDown, KeyModifiers::NONE),
+            Some(Mouse::ScrollDown)
+        );
     }
 }

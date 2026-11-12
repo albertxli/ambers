@@ -15,8 +15,14 @@ use super::detail::{self, Detail};
 use super::format::{Cell, Column, Mode};
 use super::loader::{End, Message};
 
-/// Rows moved by one notch of the mouse wheel.
+/// Rows or columns moved by one notch of the mouse wheel.
 const WHEEL_ROWS: usize = 3;
+/// Rows or columns moved by the fast keys (Shift+arrows, `{ } < >`).
+const FAST_STEP: usize = 50;
+/// Lines of the full-text bar under the variable list.
+const BAR_LINES: usize = 3;
+/// Fields of the variable list that never scroll sideways: `#` and Name.
+const FIXED_FIELDS: usize = 2;
 
 /// The fields of the variable list: title, and whether it is right-aligned.
 pub const VARIABLE_FIELDS: [(&str, bool); 8] = [
@@ -44,6 +50,8 @@ pub enum Mouse {
 /// One field of the variable list on screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VariableField {
+    /// Which field: an index into `VARIABLE_FIELDS`.
+    pub index: usize,
     pub title: &'static str,
     /// Offset from the left edge of the list, frame included.
     pub x: usize,
@@ -62,7 +70,12 @@ pub enum Key {
     PageDown,
     HalfUp,
     HalfDown,
-    /// First / last variable of the row.
+    /// `FAST_STEP` rows or columns at once.
+    FastUp,
+    FastDown,
+    FastLeft,
+    FastRight,
+    /// Far left / far right: the first / last variable of the row.
     Home,
     End,
     /// First / last loaded row.
@@ -147,6 +160,9 @@ pub struct State {
     /// In Variable View: the highlighted field of the variable under the
     /// cursor, an index into `VARIABLE_FIELDS`.
     pub var_field: usize,
+    /// In Variable View: the first field shown after `#` and Name, which
+    /// stay put while the rest scroll sideways.
+    pub var_left: usize,
     /// In Variable View: the value table of the variable under the cursor,
     /// when it is open beside the list.
     pub detail: Option<Detail>,
@@ -194,6 +210,7 @@ impl State {
             detail: None,
             detail_scroll: 0,
             var_field: 3,
+            var_left: FIXED_FIELDS,
             notice: None,
             columns,
             batches: Vec::new(),
@@ -478,12 +495,59 @@ impl State {
             }
         }
 
-        let rows = self.grid_rows().max(1);
+        let rows = self.variable_rows().max(1);
         if self.var_cursor < self.var_top {
             self.var_top = self.var_cursor;
         } else if self.var_cursor >= self.var_top + rows {
             self.var_top = self.var_cursor + 1 - rows;
         }
+        self.follow_field();
+    }
+
+    /// Scroll the variable list sideways so the highlighted field is on
+    /// screen. `#` and Name never scroll.
+    fn follow_field(&mut self) {
+        let last = VARIABLE_FIELDS.len() - 1;
+        self.var_left = self.var_left.clamp(FIXED_FIELDS, last);
+        if self.var_field < FIXED_FIELDS {
+            return;
+        }
+        if self.var_field < self.var_left {
+            self.var_left = self.var_field;
+        }
+        while self.var_left < self.var_field && !self.field_fully_visible(self.var_field) {
+            self.var_left += 1;
+        }
+        // Use spare room: scroll back as far as the field stays whole.
+        while self.var_left > FIXED_FIELDS {
+            self.var_left -= 1;
+            if !self.field_fully_visible(self.var_field) {
+                self.var_left += 1;
+                break;
+            }
+        }
+    }
+
+    fn field_fully_visible(&self, field: usize) -> bool {
+        let widths = self.variable_field_widths();
+        (self.variable_layout().iter())
+            .any(|shown| shown.index == field && shown.width == widths[field])
+    }
+
+    /// Lines of the full-text bar under the variable list; none on a
+    /// screen too short to spare them.
+    pub fn bar_lines(&self) -> usize {
+        if self.height >= 14 { BAR_LINES } else { 0 }
+    }
+
+    /// Variables that fit in the list: the screen minus the frame, the
+    /// header, and the full-text bar with its rule.
+    pub fn variable_rows(&self) -> usize {
+        let bar = match self.bar_lines() {
+            0 => 0,
+            lines => lines + 1,
+        };
+        self.grid_rows().saturating_sub(bar)
     }
 
     /// Variables listed in the respondent panel: the screen minus its frame.
@@ -591,10 +655,24 @@ impl State {
             Key::PageDown => self.cursor_row = (self.cursor_row + page).min(last_row),
             Key::HalfUp => self.cursor_row = self.cursor_row.saturating_sub(page / 2),
             Key::HalfDown => self.cursor_row = (self.cursor_row + page / 2).min(last_row),
-            Key::Home => self.cursor_col = 0,
-            Key::End => self.cursor_col = last_col,
+            Key::FastUp | Key::Char('{') => {
+                self.cursor_row = self.cursor_row.saturating_sub(FAST_STEP);
+            }
+            Key::FastDown | Key::Char('}') => {
+                self.cursor_row = (self.cursor_row + FAST_STEP).min(last_row);
+            }
+            Key::FastLeft | Key::Char('<') => {
+                self.cursor_col = self.cursor_col.saturating_sub(FAST_STEP);
+            }
+            Key::FastRight | Key::Char('>') => {
+                self.cursor_col = (self.cursor_col + FAST_STEP).min(last_col);
+            }
+            // `0` reaches here only when no row number is being typed.
+            Key::Home | Key::Char('0') => self.cursor_col = 0,
+            Key::End | Key::Char('$') => self.cursor_col = last_col,
             Key::Top | Key::Char('g') => self.cursor_row = 0,
             Key::Bottom | Key::Char('G') => self.cursor_row = last_row,
+            Key::Char('L') => self.copy_label(self.cursor_col),
             Key::Tab => self.mode = self.mode.next(),
             Key::Enter => {
                 self.panel_open = !self.panel_open;
@@ -637,7 +715,7 @@ impl State {
     fn variables_key(&mut self, key: Key) {
         let last = self.columns.len().saturating_sub(1);
         let last_field = VARIABLE_FIELDS.len() - 1;
-        let page = self.grid_rows().max(1);
+        let page = self.variable_rows().max(1);
         match key {
             Key::Up | Key::Char('k') => self.var_cursor = self.var_cursor.saturating_sub(1),
             Key::Down | Key::Char('j') => self.var_cursor = (self.var_cursor + 1).min(last),
@@ -645,13 +723,23 @@ impl State {
             Key::PageDown => self.var_cursor = (self.var_cursor + page).min(last),
             Key::HalfUp => self.var_cursor = self.var_cursor.saturating_sub(page / 2),
             Key::HalfDown => self.var_cursor = (self.var_cursor + page / 2).min(last),
+            Key::FastUp | Key::Char('{') => {
+                self.var_cursor = self.var_cursor.saturating_sub(FAST_STEP);
+            }
+            Key::FastDown | Key::Char('}') => {
+                self.var_cursor = (self.var_cursor + FAST_STEP).min(last);
+            }
             Key::Top | Key::Char('g') => self.var_cursor = 0,
             Key::Bottom | Key::Char('G') => self.var_cursor = last,
             // The highlighted cell: the row number is not one.
             Key::Left | Key::Char('h') => self.var_field = (self.var_field - 1).max(1),
             Key::Right | Key::Char('l') => self.var_field = (self.var_field + 1).min(last_field),
-            Key::Home => self.var_field = 1,
-            Key::End => self.var_field = last_field,
+            // There are only a few fields: a fast step reaches the edge.
+            Key::Home | Key::FastLeft | Key::Char('<') | Key::Char('0') => self.var_field = 1,
+            Key::End | Key::FastRight | Key::Char('>') | Key::Char('$') => {
+                self.var_field = last_field;
+            }
+            Key::Char('L') => self.copy_label(self.var_cursor),
             // The value table beside the list, like the respondent panel.
             Key::Enter if !self.columns.is_empty() => {
                 self.detail = match self.detail {
@@ -718,8 +806,8 @@ impl State {
         match mouse {
             Mouse::ScrollUp => self.cursor_row = self.cursor_row.saturating_sub(WHEEL_ROWS),
             Mouse::ScrollDown => self.cursor_row = (self.cursor_row + WHEEL_ROWS).min(last_row),
-            Mouse::ScrollLeft => self.cursor_col = self.cursor_col.saturating_sub(1),
-            Mouse::ScrollRight => self.cursor_col = (self.cursor_col + 1).min(last_col),
+            Mouse::ScrollLeft => self.cursor_col = self.cursor_col.saturating_sub(WHEEL_ROWS),
+            Mouse::ScrollRight => self.cursor_col = (self.cursor_col + WHEEL_ROWS).min(last_col),
             Mouse::Click => {
                 // The grid starts below the frame and the header.
                 if y >= 2 && y - 2 < self.grid_rows() && self.top_row + y - 2 < self.rows {
@@ -760,13 +848,13 @@ impl State {
             Mouse::ScrollLeft => self.var_field = (self.var_field - 1).max(1),
             Mouse::ScrollRight => self.var_field = (self.var_field + 1).min(last_field),
             Mouse::Click => {
-                if y >= 2 && y - 2 < self.grid_rows() && self.var_top + y - 2 <= last {
+                if y >= 2 && y - 2 < self.variable_rows() && self.var_top + y - 2 <= last {
                     self.var_cursor = self.var_top + y - 2;
                 }
                 if let Some(field) = (self.variable_layout().iter())
-                    .position(|field| (field.x..field.x + field.width).contains(&x))
+                    .find(|field| (field.x..field.x + field.width).contains(&x))
                 {
-                    self.var_field = field.max(1);
+                    self.var_field = field.index.max(1);
                 }
             }
         }
@@ -787,27 +875,43 @@ impl State {
 
     /// Where each field of the variable list is drawn: its offset from the
     /// left edge of the list and its width. Names are never cut.
+    ///
+    /// `#` and Name are always shown; the other fields start at `var_left`
+    /// and run until the list's right edge, where the last one may be cut.
     pub fn variable_layout(&self) -> Vec<VariableField> {
+        let widths = self.variable_field_widths();
+        // The list's inner right edge: the screen minus the value table
+        // and the frame.
+        let edge = self.width.saturating_sub(self.detail_width() + 1);
+        let shown = (0..FIXED_FIELDS).chain(self.var_left.max(FIXED_FIELDS)..VARIABLE_FIELDS.len());
+        let mut x = 2;
+        let mut fields = Vec::new();
+        for index in shown {
+            if x >= edge {
+                break;
+            }
+            let (title, right) = VARIABLE_FIELDS[index];
+            fields.push(VariableField {
+                index,
+                title,
+                x,
+                width: widths[index].min(edge - x),
+                right,
+            });
+            x += widths[index] + 2;
+        }
+        fields
+    }
+
+    /// The full width of each field of the variable list.
+    fn variable_field_widths(&self) -> [usize; 8] {
         let number = self.columns.len().to_string().len().max(1);
         let name = (self.columns.iter().map(|column| column.name.width()))
             .max()
             .unwrap_or(4)
             .max(4);
         let count = crate::info::group_digits(self.counted_rows()).len().max(7);
-        let widths = [number, name, 11, 32, 30, count, count, 32];
-        let mut x = 2;
-        (VARIABLE_FIELDS.iter().zip(widths))
-            .map(|((title, right), width)| {
-                let field = VariableField {
-                    title,
-                    x,
-                    width,
-                    right: *right,
-                };
-                x += width + 2;
-                field
-            })
-            .collect()
+        [number, name, 11, 32, 30, count, count, 32]
     }
 
     /// The full text of one cell of the variable list: what is copied, and
@@ -894,6 +998,19 @@ impl State {
         let (text, rows) = (detail.tsv(), detail.rows.len());
         let noun = if rows == 1 { "row" } else { "rows" };
         self.copy_text(text, &format!("table ({rows} {noun})"));
+    }
+
+    /// A variable's label, from wherever the cursor is.
+    fn copy_label(&mut self, variable: usize) {
+        let Some(column) = self.columns.get(variable) else {
+            return;
+        };
+        if column.label.is_empty() {
+            self.notice = Some(format!("{} has no label", column.name));
+            return;
+        }
+        let (text, what) = (column.label.clone(), format!("label of {}", column.name));
+        self.copy_text(text, &what);
     }
 
     /// The Data View cell under the cursor, in full, as it is shown.
@@ -1286,7 +1403,7 @@ pub(crate) mod tests {
         state.on_mouse(Mouse::ScrollRight, 30, 5);
         state.on_mouse(Mouse::ScrollRight, 30, 5);
         state.on_mouse(Mouse::ScrollLeft, 30, 5);
-        assert_eq!(state.cursor_col, 1);
+        assert_eq!(state.cursor_col, 3, "three columns per notch");
         for _ in 0..20 {
             state.on_mouse(Mouse::ScrollDown, 30, 5);
         }
@@ -1414,5 +1531,156 @@ pub(crate) mod tests {
             press(&mut state, &[Key::Bottom, Key::Enter, Key::Top, Key::Home]);
             state.visible_columns();
         }
+    }
+
+    #[test]
+    fn fast_keys_move_fifty_and_stop_at_the_edges() {
+        // survey.sav is 20 rows by 13 columns: a fast step reaches the edge.
+        let mut state = loaded("survey.sav", 100, 24);
+        press(&mut state, &[Key::FastDown]);
+        assert_eq!(state.cursor_row, 19);
+        press(&mut state, &[Key::FastRight]);
+        assert_eq!(state.cursor_col, 12);
+        press(&mut state, &[Key::FastUp, Key::FastLeft]);
+        assert_eq!((state.cursor_row, state.cursor_col), (0, 0));
+        // The letter forms do the same.
+        press(&mut state, &[Key::Char('}'), Key::Char('>')]);
+        assert_eq!((state.cursor_row, state.cursor_col), (19, 12));
+        press(&mut state, &[Key::Char('{'), Key::Char('<')]);
+        assert_eq!((state.cursor_row, state.cursor_col), (0, 0));
+    }
+
+    #[test]
+    fn a_fast_step_is_fifty_rows_in_a_long_file() {
+        // 26 variables in one row is the widest fixture; rows need a longer
+        // file, so stack the same 20 rows until there are 200.
+        let mut state = loaded("survey.sav", 100, 24);
+        for _ in 0..36 {
+            let again = state.batches[0].clone();
+            state.receive(Message::Batch(again));
+        }
+        assert_eq!(state.rows, 200);
+        press(&mut state, &[Key::FastDown]);
+        assert_eq!(state.cursor_row, 50);
+        press(&mut state, &[Key::FastDown, Key::FastDown, Key::FastUp]);
+        assert_eq!(state.cursor_row, 100);
+        press(&mut state, &[Key::FastDown, Key::FastDown, Key::FastDown]);
+        assert_eq!(state.cursor_row, 199, "stops at the last row");
+    }
+
+    #[test]
+    fn edge_keys_reach_every_corner() {
+        let mut state = loaded("survey.sav", 100, 24);
+        // 0 and $ are the far left and far right; g and G the top and bottom.
+        press(&mut state, &[Key::Char('$'), Key::Char('G')]);
+        assert_eq!((state.cursor_row, state.cursor_col), (19, 12));
+        press(&mut state, &[Key::Char('0'), Key::Char('g')]);
+        assert_eq!((state.cursor_row, state.cursor_col), (0, 0));
+        press(&mut state, &[Key::End, Key::Bottom, Key::Home, Key::Top]);
+        assert_eq!((state.cursor_row, state.cursor_col), (0, 0));
+        // While a row number is being typed, 0 is a digit.
+        press(
+            &mut state,
+            &[Key::Char('$'), Key::Char('1'), Key::Char('0'), Key::Enter],
+        );
+        assert_eq!((state.cursor_row, state.cursor_col), (9, 12));
+    }
+
+    #[test]
+    fn the_same_keys_work_in_variable_view() {
+        let mut state = loaded("survey.sav", 160, 30);
+        press(&mut state, &[Key::Char('i'), Key::FastDown]);
+        assert_eq!(state.var_cursor, 12);
+        press(&mut state, &[Key::Char('{')]);
+        assert_eq!(state.var_cursor, 0);
+        press(&mut state, &[Key::Bottom, Key::Char('$')]);
+        assert_eq!((state.var_cursor, state.var_field), (12, 7));
+        press(&mut state, &[Key::Top, Key::Char('0')]);
+        assert_eq!((state.var_cursor, state.var_field), (0, 1));
+        press(&mut state, &[Key::FastRight]);
+        assert_eq!(state.var_field, 7);
+        press(&mut state, &[Key::FastLeft]);
+        assert_eq!(state.var_field, 1);
+    }
+
+    #[test]
+    fn the_variable_list_scrolls_sideways_and_keeps_the_name() {
+        // 70 columns wide: Label fits after # and Name, Values does not.
+        let mut state = loaded("survey.sav", 70, 30);
+        press(&mut state, &[Key::Char('i')]);
+        let shown = |state: &State| -> Vec<usize> {
+            state
+                .variable_layout()
+                .iter()
+                .map(|field| field.index)
+                .collect()
+        };
+        assert_eq!(shown(&state)[..3], [0, 1, 2]);
+        assert!(!shown(&state).contains(&7));
+
+        // Moving to the last field brings it on screen, whole; # and Name stay.
+        press(&mut state, &[Key::End]);
+        let fields = state.variable_layout();
+        let check = fields.iter().find(|field| field.index == 7).unwrap();
+        assert_eq!(check.width, 32, "the label check is not cut");
+        assert_eq!(shown(&state)[..2], [0, 1]);
+        assert!(state.var_left > 2);
+
+        // Back to the left: the first fields return.
+        press(&mut state, &[Key::Home]);
+        assert_eq!(state.var_field, 1);
+        press(&mut state, &[Key::Right]);
+        assert_eq!((state.var_left, shown(&state)[2]), (2, 2));
+    }
+
+    #[test]
+    fn the_wheel_moves_three_columns_sideways() {
+        let mut state = loaded("survey.sav", 100, 13);
+        state.on_mouse(Mouse::ScrollRight, 30, 5);
+        assert_eq!(state.cursor_col, 3);
+        state.on_mouse(Mouse::ScrollRight, 30, 5);
+        state.on_mouse(Mouse::ScrollLeft, 30, 5);
+        assert_eq!(state.cursor_col, 3);
+        for _ in 0..10 {
+            state.on_mouse(Mouse::ScrollRight, 30, 5);
+        }
+        assert_eq!(state.cursor_col, 12, "stops at the last column");
+    }
+
+    #[test]
+    fn shift_l_copies_the_label_from_anywhere() {
+        let mut state = loaded("survey.sav", 140, 30);
+        // Data View: the current column's variable.
+        press(&mut state, &[Key::Right, Key::Right, Key::Char('L')]);
+        assert_eq!(state.take_copy().unwrap().text, "Overall satisfaction");
+        assert_eq!(
+            state.notice.as_deref(),
+            Some("copied label of satisfaction")
+        );
+
+        // Variable View, whatever cell is highlighted.
+        press(
+            &mut state,
+            &[Key::Char('i'), Key::Down, Key::End, Key::Char('L')],
+        );
+        assert_eq!(state.take_copy().unwrap().text, "Age in years");
+
+        // With the values panel open, where y copies the table.
+        press(&mut state, &[Key::Enter, Key::Char('L')]);
+        assert_eq!(state.take_copy().unwrap().text, "Age in years");
+
+        // A variable without a label: say so, copy nothing.
+        let mut state = loaded("long_strings.sav", 100, 24);
+        press(&mut state, &[Key::Char('L')]);
+        assert_eq!(state.take_copy(), None);
+        assert_eq!(state.notice.as_deref(), Some("id has no label"));
+    }
+
+    #[test]
+    fn the_full_text_bar_takes_rows_only_when_there_is_room() {
+        let tall = loaded("survey.sav", 100, 30);
+        assert_eq!((tall.bar_lines(), tall.variable_rows()), (3, 23));
+        let short = loaded("survey.sav", 100, 12);
+        assert_eq!((short.bar_lines(), short.variable_rows()), (0, 9));
     }
 }

@@ -3,11 +3,11 @@ source: crates/ambers-cli/src/view/draw.rs
 expression: "screen(\"imperfect_labels.sav\", 130, 20,\n&[Key::Char('i'), Key::Down, Key::Down, Key::Enter, Key::Char('J'),\nKey::Char('J'), Key::Char('y')])"
 ---
 ╭ imperfect_labels.sav ─ Variable View ─────────────────────────╮╭ scale ─ categorical ──────────────────────────────────────────╮
-│ #  Name   Type         Label                             Value││ Likelihood to recommend                                       │
+│ #  Name   Type         Label                             Valu…││ Likelihood to recommend                                       │
 │ 1  id     numeric      Respondent ID                          ││ Format F8.0 · measure scale · role input · user-missing: 90   │
-│ 2  q1     categorical  Agreement                         1=Agr││ thru 99                                                       │
-│ 3  scale  categorical  Likelihood to recommend           0=Not││ Valid 12 · Missing 0 · Total 12 · Codes 12 · labelled 2 ·     │
-│ 4  brand  categorical  Brand used most                   1=Bra││ unlabelled 10                                                 │
+│ 2  q1     categorical  Agreement                         1=Ag…││ thru 99                                                       │
+│ 3  scale  categorical  Likelihood to recommend           0=No…││ Valid 12 · Missing 0 · Total 12 · Codes 12 · labelled 2 ·     │
+│ 4  brand  categorical  Brand used most                   1=Br…││ unlabelled 10                                                 │
 │ 5  city   text         City                                   ││                                                               │
 │ 6  age    numeric      Age in years                           ││  Code  Label                            N   % valid   % total │
 │                                                               ││     2  (no label)                       1      8.3%      8.3% │
@@ -17,8 +17,8 @@ expression: "screen(\"imperfect_labels.sav\", 130, 20,\n&[Key::Char('i'), Key::D
 │                                                               ││     6  (no label)                       1      8.3%      8.3% │
 │                                                               ││     7  (no label)                       1      8.3%      8.3% │
 │                                                               ││     8  (no label)                       1      8.3%      8.3% │
-│                                                               ││     9  (no label)                       1      8.3%      8.3% │
-│                                                               ││    10  Extremely likely                 1      8.3%      8.3% │
+│─ scale · Label ───────────────────────────────────────────────││     9  (no label)                       1      8.3%      8.3% │
+│ Likelihood to recommend                                       ││    10  Extremely likely                 1      8.3%      8.3% │
 │                                                               ││    95  (no label, user-missing)         1      8.3%      8.3% │
 │                                                               ││                                                               │
 ╰ Enter values ─ y copy ───────────── counts: 12 rows ─ Var 3/6 ╯╰ y copy table ───────────────────────── copied table (12 rows) ╯

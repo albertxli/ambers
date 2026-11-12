@@ -13,4 +13,4 @@ expression: "screen(\"imperfect_labels.sav\", 110, 12,\n&[Key::Down, Key::Down, 
 │   7 │        7 │ .         6                  Brand B     Los …││                                          │
 │   8 │        8 │ 8         7                  Other [98]  New …││                                          │
 │   9 │        9 │ Neutral   8                  Brand A     Los …││                                          │
-╰ Labels ─ id: Respondent ID ─────── Row 4/12 ─ Var 1/6 ─ ? help ╯╰ J/K scroll ─ Enter close ────────────────╯
+╰ Labels ─ id: Respondent … ──────── Row 4/12 ─ Var 1/6 ─ ? help ╯╰ J/K scroll ─ Enter close ────────────────╯

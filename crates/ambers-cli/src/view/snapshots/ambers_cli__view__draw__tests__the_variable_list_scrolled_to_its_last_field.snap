@@ -1,0 +1,22 @@
+---
+source: crates/ambers-cli/src/view/draw.rs
+expression: "screen(\"survey.sav\", 80, 18, &[Key::Char('i'), Key::End])"
+---
+╭ survey.sav ─ Variable View ──────────────────────────────────────────────────╮
+│  #  Name                   N  Missing  Label check                           │
+│  1  id                    20        0                                        │
+│  2  gender                20        0  ok                                    │
+│  3  satisfaction          18        2  ok                                    │
+│  4  age                   20        0                                        │
+│  5  income                20        0                                        │
+│  6  city                  20        0                                        │
+│  7  brand_a               20        0  ok                                    │
+│  8  brand_b               20        0  ok                                    │
+│  9  brand_c               20        0  ok                                    │
+│ 10  interview_date        20        0                                        │
+│ 11  interview_start       20        0                                        │
+│─ id · Label check ───────────────────────────────────────────────────────────│
+│ (empty)                                                                      │
+│                                                                              │
+│                                                                              │
+╰ Enter values ─ y copy ─ L label ─ i back ──────── counts: 20 rows ─ Var 1/13 ╯

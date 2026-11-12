@@ -3,11 +3,11 @@ source: crates/ambers-cli/src/view/draw.rs
 expression: numeric
 ---
 ╭ imperfect_labels.sav ─ Variable View ─────────────────────────╮╭ age ─ numeric ────────────────────────────────────────────────╮
-│ #  Name   Type         Label                             Value││ Age in years                                                  │
+│ #  Name   Type         Label                             Valu…││ Age in years                                                  │
 │ 1  id     numeric      Respondent ID                          ││ Format F8.1 · measure scale · role input                      │
-│ 2  q1     categorical  Agreement                         1=Agr││ Valid 11 · Missing 1 · Total 12 · Distinct 11                 │
-│ 3  scale  categorical  Likelihood to recommend           0=Not││                                                               │
-│ 4  brand  categorical  Brand used most                   1=Bra││ Value                                   N   % valid   % total │
+│ 2  q1     categorical  Agreement                         1=Ag…││ Valid 11 · Missing 1 · Total 12 · Distinct 11                 │
+│ 3  scale  categorical  Likelihood to recommend           0=No…││                                                               │
+│ 4  brand  categorical  Brand used most                   1=Br…││ Value                                   N   % valid   % total │
 │ 5  city   text         City                                   ││ (missing)                               1                8.3% │
 │ 6  age    numeric      Age in years                           ││ 18.0                                    1      9.1%      8.3% │
 │                                                               ││ 23.0                                    1      9.1%      8.3% │
@@ -17,8 +17,8 @@ expression: numeric
 │                                                               ││ 41.0                                    1      9.1%      8.3% │
 │                                                               ││ 44.0                                    1      9.1%      8.3% │
 │                                                               ││ 52.0                                    1      9.1%      8.3% │
-│                                                               ││ 59.0                                    1      9.1%      8.3% │
-│                                                               ││ 67.0                                    1      9.1%      8.3% │
+│─ age · Label ─────────────────────────────────────────────────││ 59.0                                    1      9.1%      8.3% │
+│ Age in years                                                  ││ 67.0                                    1      9.1%      8.3% │
 │                                                               ││ 70.0                                    1      9.1%      8.3% │
 │                                                               ││                                                               │
 ╰ Enter values ─ y copy ───────────── counts: 12 rows ─ Var 6/6 ╯╰ J/K scroll ─ y copy table ─ Enter close ──────────────────────╯

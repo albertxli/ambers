@@ -1,0 +1,22 @@
+---
+source: crates/ambers-cli/src/view/draw.rs
+expression: values
+---
+╭ survey.sav ─ Variable View ──────────────────────────────────────────────────╮
+│  #  Name             Values                                N  Missing  Label…│
+│  1  id                                                    20        0        │
+│  2  gender           1=Male, 2=Female                     20        0  ok    │
+│  3  satisfaction     1=Very dissatisfied, 2=Dissat…       18        2  ok    │
+│  4  age                                                   20        0        │
+│  5  income                                                20        0        │
+│  6  city                                                  20        0        │
+│  7  brand_a          0=No, 1=Yes                          20        0  ok    │
+│  8  brand_b          0=No, 1=Yes                          20        0  ok    │
+│  9  brand_c          0=No, 1=Yes                          20        0  ok    │
+│ 10  interview_date                                        20        0        │
+│ 11  interview_start                                       20        0        │
+│─ gender · Values ────────────────────────────────────────────────────────────│
+│ 1=Male, 2=Female                                                             │
+│                                                                              │
+│                                                                              │
+╰ Enter values ─ y copy ─ L label ─ i back ──────── counts: 20 rows ─ Var 2/13 ╯

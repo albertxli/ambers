@@ -2,23 +2,23 @@
 source: crates/ambers-cli/src/view/draw.rs
 expression: "screen(\"survey.sav\", 80, 20, &[Key::Char('?')])"
 ---
-╭ survey.sav ──────────────────────────────────────────────────────────────────╮
-│ ╭ Keys ───────────────────────────────────────────────────────────────────╮b…│
-│ │ arrows, h j k l  move one cell                                          │No│
-│ │ mouse            wheel scrolls (Shift: sideways), click selects         │Y…│
-│ │ PgUp / PgDn      one screen up / down                                   │No│
-│ │ Ctrl+u / Ctrl+d  half a screen up / down                                │Y…│
-│ │ Home / End       first / last variable (or field)                       │No│
-│ │ g / G            first / last row                                       │Y…│
-│ │ 1-9 …            go to row (Enter keeps, Esc goes back)                 │No│
-│ │ Tab              next mode: Labels, Codes, Both                         │Y…│
-│ │ f                freeze / unfreeze the first variable                   │No│
-│ │ Enter            side panel: this respondent, or this variable's values │Y…│
-│ │ J / K            scroll the side panel                                  │No│
-│ │ i                Variable View and back                                 │Y…│
-│ │ d                in Variable View: go to the variable's data            │No│
-│ │ y                copy the cell; with values open, the table             │Y…│
-│ │ Y                in Variable View: copy the cell                        │No│
-│ │ q, Esc           close the panel or view; quit                          │Y…│
-│ ╰ any key closes ─────────────────────────────────────────────────────────╯No│
-╰ Labels ─ id: Respondent ID ──────────────────── Row 1/20 ─ Var 1/13 ─ ? help ╯
+╭ Keys ────────────────────────────────────────────────────────────────────────╮
+│ arrows, h j k l        move one cell                                         │
+│ mouse                  wheel scrolls (Shift or Alt: sideways), click selects │
+│ PgUp / PgDn            one screen up / down                                  │
+│ Ctrl+u / Ctrl+d        half a screen up / down                               │
+│ Shift+arrows, { } < >  50 rows or columns at once                            │
+│ Ctrl+arrows, g G 0 $   to the top, bottom, far left, far right               │
+│ Home / End             far left / far right                                  │
+│ 1-9 …                  go to row (Enter keeps, Esc goes back)                │
+│ Tab                    next mode: Labels, Codes, Both                        │
+│ f                      freeze / unfreeze the first variable                  │
+│ Enter                  side panel: this respondent, or this variable's values│
+│ J / K                  scroll the side panel                                 │
+│ i                      Variable View and back                                │
+│ d                      in Variable View: go to the variable's data           │
+│ y                      copy the cell; with values open, the table            │
+│ Y                      in Variable View: copy the cell                       │
+│ L                      copy the variable's full label                        │
+│ q, Esc                 close the panel or view; quit                         │
+╰ any key closes ──────────────────────────────────────────────────────────────╯
