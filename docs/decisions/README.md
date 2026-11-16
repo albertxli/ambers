@@ -13,3 +13,5 @@ Add a record when a decision changes the shape of the project (a new crate, a de
 | [0005](0005-local-server-security.md) | The browser viewer is served from `127.0.0.1` with a token and a Host check | 2026-11-12 |
 | [0006](0006-vite-spa-with-bun.md) | The front end is a Vite single-page app built with Bun, not Next.js | 2026-11-12 |
 | [0007](0007-server-lifecycle.md) | The server stops by itself, and there is one per ambers version | 2026-11-12 |
+| [0008](0008-browser-filter-conditions.md) | The browser filter sends conditions, and a missing value passes only "is empty" | 2026-11-16 |
+| [0009](0009-tanstack-table-for-columns.md) | TanStack Table holds the columns and their state; rows stay on the server | 2026-11-16 |

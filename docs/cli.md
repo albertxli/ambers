@@ -352,7 +352,7 @@ These are the checks of `ambers.validate()` (see [validate.md](validate.md)), ru
 
 ## `am open`: the file in your browser
 
-> In development. Today the page has a list of your data files and a Data View: a grid of every row and variable that scrolls smoothly on files of any size, value labels / codes / both, resizable columns, and the selected cell shown in full with a Copy button. Filters, search and a Variable View are not there yet; `am view` has them. A binary built without the front end shows a basic page with a file's first rows instead, and says so when it starts.
+> In development. Today the page has a list of your data files and a Data View: a grid of every row and variable that scrolls smoothly on files of any size, value labels / codes / both, a filter bar, a chooser for the variables shown, resizable columns, selecting and copying blocks of cells, and the selected cell shown in full. A Variable View is not there yet; `am view` has one. A binary built without the front end shows a basic page with a file's first rows instead, and says so when it starts.
 
 ```bash
 am open survey.sav                 # serve the file and open it in the browser
@@ -375,7 +375,29 @@ am open big.sav --memory 8         # load at most 8 GB of data
 
 **The files page.** Without a file, the page lists the `.sav` and `.zsav` files of the folder (and its sub-folders) with their rows and variables, and remembers the files you opened and starred. Search by name, label or folder, sort by name, rows or date, and click a file to open it; "Files" at the top of a file's view comes back. The page can only list and open files in that folder, files you named on the command line, and files you opened before: it cannot look elsewhere on the disk.
 
-**In the page.** Click a cell or move with the arrow keys; PgUp / PgDn, Home / End and Ctrl+arrows work as in a spreadsheet, and Ctrl+C copies the selected cell. Drag the right edge of a column's header to resize it; double-click the edge to reset it. The strip under the grid shows the selected cell in full. While a file loads, the grid already works and the status bar shows the progress.
+**In the page.** Click a cell or move with the arrow keys; PgUp / PgDn, Home / End and Ctrl+arrows work as in a spreadsheet. Drag the right edge of a column's header to resize it; double-click the edge to reset it. The strip under the grid shows the selected cell in full. While a file loads, the grid already works and the status bar shows the progress. "Keyboard shortcuts" in the status bar, or `?`, lists every key.
+
+**Filtering rows.** The bar above the grid holds the conditions rows must meet. Click it, or press Ctrl+K (⌘K on a Mac), and build a condition in three steps: a column (found by name or label), a condition, a value. While you type a value, the most frequent values of the column that contain it are listed with their counts; click one to take it. Each condition becomes a chip: click it to change it, × to remove it. With more than one, choose "Match all" or "Match any". The line under the bar says how many rows match.
+
+| Condition | For | Rows kept |
+|---|---|---|
+| Equals, Not equal | every variable | the value is, or is not, exactly that |
+| Greater than, Less than, Greater or equal, Less or equal | numbers | the value compares so with a number |
+| Contains, Does not contain, Starts with, Ends with | text, labelled numbers, dates | the value, or its label, does |
+| Like, iLike | text, labelled numbers, dates | the whole value fits a pattern: `%` is any text, `_` one character. Like minds upper and lower case, iLike does not |
+| Is empty, Is not empty | every variable | the value is missing (system-missing, or an empty text), or is not |
+
+- Text is compared without regard to upper and lower case, except by Like.
+- A labelled number is found by its label or by its code: "Equals Female" and "Equals 2" keep the same rows, whatever the grid shows.
+- A missing value matches only "Is empty". "Not equal 99" does not keep the rows with no answer; add "Is empty" with "Match any" to keep them. (`am view` differs: its typed `!=99` keeps them.) A value that the file declares user-missing, such as 99 = Refused, is a value like any other.
+- Dates and times are matched as they are written (`2024-01-15`); comparing them is not there yet.
+- Filters cover the rows loaded so far; while a file loads, the count grows.
+
+**Choosing columns.** "Columns" lists the variables with a search box; untick the ones to hide, or show and hide everything the search finds at once. Hidden variables are still in the file, and can still be filtered on.
+
+**Selecting and copying.** Drag over cells to select a block; Shift+click or Shift+arrows extend it, Ctrl+A selects everything, Esc goes back to one cell. Ctrl+C, or "Copy range" under the grid, copies the block as the grid shows it (labels, codes or both), ready to paste into a spreadsheet. At most 50,000 cells are copied at once.
+
+**If the server has stopped.** The page says so at the top and shows the command that brings it back, with a button to copy it. The rows already on the screen stay; nothing new can be shown until ambers runs again. When it does, the page reconnects by itself, on the same file when the new server has it open.
 
 **One server.** If ambers is already serving, a second `am open other.sav` opens that file in the running server and returns at once. A server from a different ambers version is left alone, and a new one starts on another port.
 
