@@ -342,11 +342,15 @@ pub fn join(options: &Options) -> Result<Join, Error> {
         instance::request(record.port, method, path, &headers, body, JOIN_TIMEOUT)
     };
 
-    // Is it still there, and is it what the record says?
+    // Is it still there, and is it what the record says? Only its version
+    // is read: a server of another ambers version may describe itself with
+    // other fields, and must still be recognised as running.
+    #[derive(serde::Deserialize)]
+    struct Running {
+        version: String,
+    }
     let alive = match ask("GET", &format!("{}/server", api::API), None) {
-        Ok(answer) if answer.status == 200 => {
-            serde_json::from_str::<api::ServerInfo>(&answer.body).ok()
-        }
+        Ok(answer) if answer.status == 200 => serde_json::from_str::<Running>(&answer.body).ok(),
         _ => None,
     };
     let Some(running) = alive else {

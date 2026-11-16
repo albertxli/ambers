@@ -21,6 +21,9 @@ pub const API: &str = "/api/v1";
 pub struct ServerInfo {
     /// The ambers version of the running server.
     pub version: String,
+    /// Different every time a server starts. A page that was open before
+    /// a restart sees it change: its dataset ids then mean nothing.
+    pub instance: String,
     /// Whether the full front end is built into this server, or only the
     /// small built-in page.
     pub interface: bool,
@@ -106,6 +109,29 @@ pub struct Variable {
     /// `ok`, what is wrong with the value labels, or empty when the
     /// variable has none to check.
     pub label_check: String,
+    /// What the variable is to a filter: which conditions it offers.
+    pub filter_kind: FilterKind,
+}
+
+/// What a variable is to a filter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum FilterKind {
+    /// A number without value labels.
+    Number,
+    /// A string.
+    Text,
+    /// A number with value labels: a condition may name a label or a code.
+    Categorical,
+    /// A date or a time, matched as it is written.
+    Date,
+}
+
+/// The conditions the variables of one kind offer, in menu order.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct KindOperators {
+    pub kind: FilterKind,
+    pub operators: Vec<FilterOperator>,
 }
 
 /// `GET /api/v1/datasets/{id}/variables`
@@ -115,6 +141,9 @@ pub struct Variables {
     #[ts(type = "number")]
     pub counted_rows: u64,
     pub variables: Vec<Variable>,
+    /// Which conditions each kind of variable offers. The server decides
+    /// it; the page only draws the menu.
+    pub operators: Vec<KindOperators>,
 }
 
 /// What cells show.
@@ -130,13 +159,49 @@ pub enum CellMode {
     Both,
 }
 
-/// A row filter on one variable. The text follows the filter grammar:
-/// `jap` contains, `=3` exact, `!=3`, `>30`, `=.` missing, `a|b` either.
+/// What a filter condition asks of a value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum FilterOperator {
+    Equals,
+    NotEquals,
+    GreaterThan,
+    LessThan,
+    GreaterOrEqual,
+    LessOrEqual,
+    Contains,
+    NotContains,
+    StartsWith,
+    EndsWith,
+    /// `%` stands for any text, `_` for one character; case counts.
+    Like,
+    /// `like`, ignoring case.
+    Ilike,
+    /// System-missing, or an empty string.
+    IsEmpty,
+    IsNotEmpty,
+}
+
+/// A condition on one variable. Text is compared ignoring case (except
+/// by `like`); a labelled value is found by its label or its code; a
+/// missing value passes only `is_empty`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct Filter {
     /// The variable's position in the file, from 0.
     pub variable: u32,
-    pub text: String,
+    pub operator: FilterOperator,
+    /// What to compare with; unused by `is_empty` and `is_not_empty`.
+    #[serde(default)]
+    pub value: String,
+}
+
+/// Whether a row must pass every filter, or one of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum FilterMode {
+    #[default]
+    All,
+    Any,
 }
 
 /// `POST /api/v1/datasets/{id}/rows`: a window of rows.
@@ -151,9 +216,11 @@ pub struct RowsRequest {
     pub variables: Vec<u32>,
     #[serde(default)]
     pub mode: CellMode,
-    /// A row must pass every filter.
     #[serde(default)]
     pub filters: Vec<Filter>,
+    /// A row must pass every filter, unless this says any.
+    #[serde(default)]
+    pub filter_mode: FilterMode,
 }
 
 /// What is special about a cell's value.
@@ -185,8 +252,8 @@ pub struct Row {
 /// A filter that could not be used, and why. The others still apply.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct FilterProblem {
-    pub variable: u32,
-    pub text: String,
+    /// The filter's position in the request, from 0.
+    pub filter: u32,
     pub message: String,
 }
 

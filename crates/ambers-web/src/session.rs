@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard};
 
 use ambers::Compression;
-use ambers_dataset::detail::RowKind;
+use ambers_dataset::detail::{Detail, RowKind};
+use ambers_dataset::filter::{Condition, Kind, Operator};
 use ambers_dataset::{Dataset, Load, Mode, RowFilter, loader};
 
 use crate::api;
@@ -22,14 +23,25 @@ pub const VALUES_PAGE: usize = 1_000;
 /// Filter results kept ready, so scrolling a filtered view does not match
 /// the column again for every window.
 const KEPT_SETS: usize = 8;
+/// Value tables kept ready: the filter bar asks for the same variable's
+/// values again with every letter typed.
+const KEPT_TABLES: usize = 4;
 
 /// The rows a set of filters keeps, brought up to date as rows load.
 struct Kept {
-    key: Vec<api::Filter>,
+    key: (api::FilterMode, Vec<api::Filter>),
     filters: Vec<RowFilter>,
     rows: Vec<u32>,
     /// Rows `0..upto` have been tested.
     upto: usize,
+}
+
+/// A variable's value table, good while no more rows have been counted.
+struct Table {
+    variable: usize,
+    rows: usize,
+    counted: u64,
+    detail: Arc<Detail>,
 }
 
 pub struct Session {
@@ -43,6 +55,7 @@ pub struct Session {
     warnings: Vec<String>,
     data: RwLock<Dataset>,
     kept: Mutex<Vec<Kept>>,
+    tables: Mutex<Vec<Table>>,
 }
 
 impl Session {
@@ -81,6 +94,7 @@ impl Session {
             warnings: meta.warnings.clone(),
             data: RwLock::new(data),
             kept: Mutex::new(Vec::new()),
+            tables: Mutex::new(Vec::new()),
         });
 
         let receiver = loader::spawn(scanner, profiler, loader::memory_budget(memory_gb));
@@ -155,12 +169,21 @@ impl Session {
                     valid: summary.n_valid,
                     missing_count: summary.n_missing,
                     label_check: data.label_check(index).to_string(),
+                    filter_kind: filter_kind(Kind::of(column)),
                 }
             })
             .collect();
         api::Variables {
             counted_rows: data.counted_rows(),
             variables,
+            operators: (Kind::ALL.into_iter())
+                .map(|kind| api::KindOperators {
+                    kind: filter_kind(kind),
+                    operators: (kind.operators().iter())
+                        .map(|&operator| from_operator(operator))
+                        .collect(),
+                })
+                .collect(),
         }
     }
 
@@ -186,7 +209,7 @@ impl Session {
         let limit = (request.limit as usize).min(MAX_ROWS).min(by_cells);
         let offset = request.offset as usize;
 
-        let (shown, window, problems) = self.window(&data, &request.filters, offset, limit);
+        let (shown, window, problems) = self.window(&data, request, offset, limit);
         let rows = (window.into_iter())
             .map(|row| api::Row {
                 number: row + 1,
@@ -224,17 +247,17 @@ impl Session {
     fn window(
         &self,
         data: &Dataset,
-        filters: &[api::Filter],
+        request: &api::RowsRequest,
         offset: usize,
         limit: usize,
     ) -> (usize, Vec<u32>, Vec<api::FilterProblem>) {
+        let mode = request.filter_mode;
         let mut problems = Vec::new();
-        let mut key = Vec::new();
+        let mut used = Vec::new();
         let mut ready = Vec::new();
-        for filter in filters {
+        for (place, filter) in request.filters.iter().enumerate() {
             let problem = |message: String| api::FilterProblem {
-                variable: filter.variable,
-                text: filter.text.clone(),
+                filter: place as u32,
                 message,
             };
             let column = filter.variable as usize;
@@ -242,26 +265,29 @@ impl Session {
                 problems.push(problem("no such variable".to_string()));
                 continue;
             }
-            match data.matcher(column, &filter.text) {
-                // An empty filter keeps every row.
-                Ok(None) => {}
-                Ok(Some((_, matcher))) => {
-                    key.push(filter.clone());
+            let condition = Condition {
+                operator: to_operator(filter.operator),
+                value: filter.value.clone(),
+            };
+            match data.condition(column, &condition) {
+                Ok(matcher) => {
+                    used.push(filter.clone());
                     ready.push(RowFilter {
                         column,
-                        text: filter.text.clone(),
+                        text: String::new(),
                         matcher,
                     });
                 }
                 Err(message) => problems.push(problem(message)),
             }
         }
-        if key.is_empty() {
+        if used.is_empty() {
             let start = offset.min(data.rows);
             let end = (start + limit).min(data.rows);
             return (data.rows, (start as u32..end as u32).collect(), problems);
         }
 
+        let key = (mode, used);
         let mut sets = self.kept();
         let place = match sets.iter().position(|kept| kept.key == key) {
             Some(place) => place,
@@ -282,7 +308,12 @@ impl Session {
         let mut kept = sets.remove(place);
         // Only the rows that arrived since the last request are tested.
         if kept.upto < data.rows {
-            if let Some(rows) = data.passing(&mut kept.filters, kept.upto..data.rows) {
+            let arrived = kept.upto..data.rows;
+            let passed = match mode {
+                api::FilterMode::All => data.passing(&mut kept.filters, arrived),
+                api::FilterMode::Any => data.passing_any(&mut kept.filters, arrived),
+            };
+            if let Some(rows) = passed {
                 kept.rows.extend(rows);
             }
             kept.upto = data.rows;
@@ -294,18 +325,76 @@ impl Session {
         answer
     }
 
-    /// One page of a variable's value table; `None` when there is no such
-    /// variable.
-    pub fn values(&self, variable: usize, offset: usize, limit: usize) -> Option<api::ValueTable> {
+    /// A variable's value table over the rows loaded so far. Counting the
+    /// distinct values of a long text variable takes a moment, so the
+    /// table is kept until more rows have been counted.
+    fn table(&self, variable: usize) -> Option<Arc<Detail>> {
         let data = self.data();
         if variable >= data.columns.len() {
             return None;
         }
-        let detail = data.detail(variable);
-        let total = detail.rows.len();
+        let (rows, counted) = (data.rows, data.counted_rows());
+        let mut tables = self.tables.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(place) = tables.iter().position(|table| table.variable == variable) {
+            let table = tables.remove(place);
+            if table.rows == rows && table.counted == counted {
+                let detail = Arc::clone(&table.detail);
+                tables.push(table);
+                return Some(detail);
+            }
+        }
+        let detail = Arc::new(data.detail(variable));
+        if tables.len() >= KEPT_TABLES {
+            tables.remove(0);
+        }
+        tables.push(Table {
+            variable,
+            rows,
+            counted,
+            detail: Arc::clone(&detail),
+        });
+        Some(detail)
+    }
+
+    /// One page of a variable's value table; `None` when there is no such
+    /// variable.
+    ///
+    /// With `search`, only the values whose code or label contains it,
+    /// ignoring case. With `top`, the most frequent of them first and no
+    /// more than that many, without the row that counts missing cases:
+    /// what the filter bar suggests while a value is typed.
+    pub fn values(
+        &self,
+        variable: usize,
+        offset: usize,
+        limit: usize,
+        search: Option<&str>,
+        top: Option<usize>,
+    ) -> Option<api::ValueTable> {
+        let detail = self.table(variable)?;
+        let needle = search.map(|text| text.trim().to_lowercase());
+        let mut listed: Vec<&ambers_dataset::detail::DetailRow> = (detail.rows.iter())
+            .filter(|row| top.is_none() || row.kind != RowKind::Missing)
+            .filter(|row| match needle.as_deref() {
+                None | Some("") => true,
+                Some(needle) => {
+                    row.code.to_lowercase().contains(needle)
+                        || row.label.to_lowercase().contains(needle)
+                }
+            })
+            .collect();
+        let (offset, limit) = match top {
+            Some(top) => {
+                // Stable: values with the same count keep the table's order.
+                listed.sort_by_key(|row| std::cmp::Reverse(row.n));
+                (0, top)
+            }
+            None => (offset, limit),
+        };
+        let total = listed.len();
         let start = offset.min(total);
         let end = (start + limit.max(1)).min(total);
-        let rows = (detail.rows[start..end].iter())
+        let rows = (listed[start..end].iter())
             .map(|row| api::ValueRow {
                 code: row.code.clone(),
                 label: row.label.clone(),
@@ -329,6 +418,53 @@ impl Session {
             offset: start as u32,
             rows,
         })
+    }
+}
+
+fn filter_kind(kind: Kind) -> api::FilterKind {
+    match kind {
+        Kind::Number => api::FilterKind::Number,
+        Kind::Text => api::FilterKind::Text,
+        Kind::Categorical => api::FilterKind::Categorical,
+        Kind::Date => api::FilterKind::Date,
+    }
+}
+
+fn to_operator(operator: api::FilterOperator) -> Operator {
+    match operator {
+        api::FilterOperator::Equals => Operator::Equals,
+        api::FilterOperator::NotEquals => Operator::NotEquals,
+        api::FilterOperator::GreaterThan => Operator::Greater,
+        api::FilterOperator::LessThan => Operator::Less,
+        api::FilterOperator::GreaterOrEqual => Operator::GreaterOrEqual,
+        api::FilterOperator::LessOrEqual => Operator::LessOrEqual,
+        api::FilterOperator::Contains => Operator::Contains,
+        api::FilterOperator::NotContains => Operator::NotContains,
+        api::FilterOperator::StartsWith => Operator::StartsWith,
+        api::FilterOperator::EndsWith => Operator::EndsWith,
+        api::FilterOperator::Like => Operator::Like,
+        api::FilterOperator::Ilike => Operator::ILike,
+        api::FilterOperator::IsEmpty => Operator::IsEmpty,
+        api::FilterOperator::IsNotEmpty => Operator::IsNotEmpty,
+    }
+}
+
+fn from_operator(operator: Operator) -> api::FilterOperator {
+    match operator {
+        Operator::Equals => api::FilterOperator::Equals,
+        Operator::NotEquals => api::FilterOperator::NotEquals,
+        Operator::Greater => api::FilterOperator::GreaterThan,
+        Operator::Less => api::FilterOperator::LessThan,
+        Operator::GreaterOrEqual => api::FilterOperator::GreaterOrEqual,
+        Operator::LessOrEqual => api::FilterOperator::LessOrEqual,
+        Operator::Contains => api::FilterOperator::Contains,
+        Operator::NotContains => api::FilterOperator::NotContains,
+        Operator::StartsWith => api::FilterOperator::StartsWith,
+        Operator::EndsWith => api::FilterOperator::EndsWith,
+        Operator::Like => api::FilterOperator::Like,
+        Operator::ILike => api::FilterOperator::Ilike,
+        Operator::IsEmpty => api::FilterOperator::IsEmpty,
+        Operator::IsNotEmpty => api::FilterOperator::IsNotEmpty,
     }
 }
 

@@ -3,4 +3,8 @@
 /**
  * A filter that could not be used, and why. The others still apply.
  */
-export type FilterProblem = { variable: number, text: string, message: string, };
+export type FilterProblem = { 
+/**
+ * The filter's position in the request, from 0.
+ */
+filter: number, message: string, };

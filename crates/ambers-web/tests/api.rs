@@ -178,43 +178,105 @@ fn filters_narrow_the_rows_and_stack() {
     let handle = serve(Some("survey.sav"));
     loaded(&handle, "d1");
     let (id, city) = (variable(&handle, "id"), variable(&handle, "city"));
-    let numbers = |filters: &str| {
-        let body = format!(r#"{{"offset":0,"limit":50,"variables":[{id}],"filters":{filters}}}"#);
+    let satisfaction = variable(&handle, "satisfaction");
+    let filter = |variable: u32, operator: &str, value: &str| {
+        format!(r#"{{"variable":{variable},"operator":"{operator}","value":"{value}"}}"#)
+    };
+    let numbers = |filters: &[String], mode: &str| {
+        let body = format!(
+            r#"{{"offset":0,"limit":50,"variables":[{id}],"filters":[{}],"filter_mode":"{mode}"}}"#,
+            filters.join(",")
+        );
         let page = rows(&handle, &body);
         let numbers: Vec<u32> = page.rows.iter().map(|row| row.number).collect();
         (page.shown, numbers, page.problems)
     };
 
-    let (shown, kept, problems) = numbers(&format!(r#"[{{"variable":{city},"text":"lis"}}]"#));
+    let lisbon = filter(city, "starts_with", "lis");
+    let (shown, kept, problems) = numbers(std::slice::from_ref(&lisbon), "all");
     assert_eq!((shown, kept), (5, vec![1, 5, 9, 13, 17]));
     assert!(problems.is_empty());
     // Asked again, the kept rows are reused, and a window of them works.
-    let body = format!(
-        r#"{{"offset":3,"limit":10,"variables":[{id}],"filters":[{{"variable":{city},"text":"lis"}}]}}"#
-    );
+    // Without a mode, a row must pass every filter.
+    let body = format!(r#"{{"offset":3,"limit":10,"variables":[{id}],"filters":[{lisbon}]}}"#);
     let page = rows(&handle, &body);
     assert_eq!((page.offset, page.shown), (3, 5));
     assert_eq!(texts(&page), [["13"], ["17"]]);
 
-    // Two variables: a row must pass both. `a|b` is either.
-    let both = format!(
-        r#"[{{"variable":{city},"text":"lisbon|osaka"}},{{"variable":{id},"text":">10"}}]"#
-    );
-    assert_eq!(numbers(&both).1, [13, 14, 17, 18]);
-
-    // A filter that cannot be used is reported; the others still apply.
-    let half = format!(
-        r#"[{{"variable":{city},"text":"lis"}},{{"variable":{id},"text":">"}},{{"variable":99,"text":"x"}}]"#
-    );
-    let (shown, _, problems) = numbers(&half);
-    assert_eq!(shown, 5);
-    let said: Vec<&str> = problems.iter().map(|one| one.message.as_str()).collect();
-    assert_eq!(said, ["type a number after >", "no such variable"]);
-    // An empty filter keeps every row.
+    // Two conditions: every one of them, or any of them.
+    let two = [lisbon.clone(), filter(id, "greater_than", "10")];
+    assert_eq!(numbers(&two, "all").1, [13, 17]);
     assert_eq!(
-        numbers(&format!(r#"[{{"variable":{city},"text":" "}}]"#)).0,
-        20
+        numbers(&two, "any").1,
+        [1, 5, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
     );
+
+    // A missing value passes only a condition about missing values.
+    let refused = [filter(satisfaction, "not_equals", "Refused")];
+    assert_eq!(numbers(&refused, "all").0, 14);
+    let empty = format!(r#"{{"variable":{satisfaction},"operator":"is_empty"}}"#);
+    assert_eq!(numbers(&[empty], "all").1, [7, 14]);
+    // A pattern, with and without case.
+    assert_eq!(numbers(&[filter(city, "like", "l%")], "all").0, 0);
+    assert_eq!(numbers(&[filter(city, "ilike", "l%")], "all").0, 10);
+
+    // A condition that cannot be used is reported by its place; the
+    // others still apply.
+    let half = [
+        lisbon,
+        filter(id, "greater_than", ""),
+        filter(city, "less_than", "3"),
+        filter(99, "equals", "x"),
+    ];
+    let (shown, _, problems) = numbers(&half, "all");
+    assert_eq!(shown, 5);
+    let said: Vec<(u32, &str)> = (problems.iter())
+        .map(|one| (one.filter, one.message.as_str()))
+        .collect();
+    assert_eq!(
+        said,
+        [
+            (1, "enter a value"),
+            (2, "city is text: \"less than\" does not apply"),
+            (3, "no such variable")
+        ]
+    );
+    // An operator the server does not know is refused outright.
+    let unknown = format!(
+        r#"{{"offset":0,"limit":5,"filters":[{{"variable":{id},"operator":"sounds_like","value":"x"}}]}}"#
+    );
+    let answer = ask(&handle, "POST", "/api/v1/datasets/d1/rows", Some(&unknown));
+    assert_eq!(answer.status, 422, "{}", answer.body);
+    handle.stop();
+    handle.wait();
+}
+
+#[test]
+fn a_variable_says_which_conditions_it_offers() {
+    let handle = serve(Some("survey.sav"));
+    loaded(&handle, "d1");
+    let all: api::Variables = get(&handle, "/api/v1/datasets/d1/variables");
+    let kind = |name: &str| {
+        let found = all.variables.iter().find(|one| one.name == name).unwrap();
+        found.filter_kind
+    };
+    assert_eq!(kind("id"), api::FilterKind::Number);
+    assert_eq!(kind("gender"), api::FilterKind::Categorical);
+    assert_eq!(kind("city"), api::FilterKind::Text);
+    assert_eq!(kind("interview_date"), api::FilterKind::Date);
+
+    let offered = |kind: api::FilterKind| {
+        let found = all.operators.iter().find(|one| one.kind == kind).unwrap();
+        found.operators.clone()
+    };
+    assert_eq!(all.operators.len(), 4);
+    assert_eq!(offered(api::FilterKind::Categorical).len(), 14);
+    let number = offered(api::FilterKind::Number);
+    assert!(number.contains(&api::FilterOperator::GreaterThan));
+    assert!(!number.contains(&api::FilterOperator::Contains));
+    let text = offered(api::FilterKind::Text);
+    assert!(text.contains(&api::FilterOperator::Ilike));
+    assert!(!text.contains(&api::FilterOperator::LessOrEqual));
     handle.stop();
     handle.wait();
 }
@@ -250,6 +312,28 @@ fn a_value_table_lists_every_value_with_its_count() {
         (1, 2, city.total)
     );
     assert_eq!(page.rows[0].code, city.rows[1].code);
+
+    // What the filter bar suggests: the most frequent values that contain
+    // what was typed, by code or by label, without the missing row.
+    let top = table("satisfaction", "?top=3");
+    assert_eq!(top.rows.len(), 3);
+    assert!(
+        top.rows
+            .iter()
+            .all(|row| row.kind != api::ValueKind::Missing)
+    );
+    assert!(top.rows[0].count >= top.rows[1].count && top.rows[1].count >= top.rows[2].count);
+    let found = table("satisfaction", "?search=DISSAT&top=5");
+    let labels: Vec<&str> = found.rows.iter().map(|row| row.label.as_str()).collect();
+    assert_eq!(found.total, 2);
+    assert!(labels.contains(&"Very dissatisfied") && labels.contains(&"Dissatisfied"));
+    let by_code = table("city", "?search=lis&top=5");
+    assert_eq!(
+        (by_code.total, by_code.rows[0].code.as_str()),
+        (1, "Lisbon")
+    );
+    assert_eq!(by_code.rows[0].count, 5);
+    assert_eq!(table("city", "?search=zzz&top=5").rows.len(), 0);
 
     let missing = ask(
         &handle,

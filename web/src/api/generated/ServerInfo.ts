@@ -10,6 +10,11 @@ export type ServerInfo = {
  */
 version: string, 
 /**
+ * Different every time a server starts. A page that was open before
+ * a restart sees it change: its dataset ids then mean nothing.
+ */
+instance: string, 
+/**
  * Whether the full front end is built into this server, or only the
  * small built-in page.
  */

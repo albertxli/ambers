@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use axum::extract::{Path as UrlPath, Query, Request, State};
 use axum::http::header::{self, HeaderMap, HeaderValue};
@@ -32,6 +32,8 @@ use crate::session::{Session, VALUES_PAGE};
 pub struct App {
     pub token: String,
     pub port: u16,
+    /// Names this run of the server; see `api::ServerInfo::instance`.
+    instance: String,
     sessions: RwLock<Vec<Arc<Session>>>,
     next_id: AtomicU64,
     /// When a request with the token last arrived.
@@ -53,9 +55,12 @@ impl App {
         memory_gb: Option<f64>,
         library: Library,
     ) -> App {
+        // Not a secret: only different from one start to the next.
+        let started = (SystemTime::now().duration_since(UNIX_EPOCH)).map_or(0, |t| t.as_nanos());
         App {
             token,
             port,
+            instance: format!("{:x}-{started:x}", std::process::id()),
             sessions: RwLock::new(Vec::new()),
             next_id: AtomicU64::new(1),
             last_seen: Mutex::new(Instant::now()),
@@ -162,6 +167,7 @@ impl App {
     fn info(&self) -> api::ServerInfo {
         api::ServerInfo {
             version: crate::VERSION.to_string(),
+            instance: self.instance.clone(),
             interface: assets::has_interface(),
             datasets: self
                 .sessions()
@@ -387,6 +393,10 @@ async fn rows(
 struct Paging {
     offset: Option<usize>,
     limit: Option<usize>,
+    /// Only values whose code or label contains this.
+    search: Option<String>,
+    /// The most frequent values first, and no more than this many.
+    top: Option<usize>,
 }
 
 async fn values(
@@ -397,7 +407,8 @@ async fn values(
     let session = app.session(&id)?;
     let offset = paging.offset.unwrap_or(0);
     let limit = paging.limit.unwrap_or(VALUES_PAGE).min(VALUES_PAGE * 10);
-    off_thread(move || session.values(index, offset, limit))
+    let top = paging.top.map(|top| top.min(VALUES_PAGE));
+    off_thread(move || session.values(index, offset, limit, paging.search.as_deref(), top))
         .await?
         .map(Json)
         .ok_or_else(|| Failure(StatusCode::NOT_FOUND, format!("no variable {index}")))
