@@ -13,7 +13,7 @@ use arrow::datatypes::Schema;
 use arrow::record_batch::RecordBatch;
 
 use crate::detail::{self, Detail};
-use crate::filter::{self, Candidates, Matcher, Parsed};
+use crate::filter::{self, Candidates, Condition, Matcher, Parsed};
 use crate::format::{Cell, Column, Mode};
 use crate::loader::{End, Message};
 
@@ -306,6 +306,12 @@ impl Dataset {
         }
     }
 
+    /// A condition of the browser's filter bar made ready for `column`, or
+    /// why the column cannot take it.
+    pub fn condition(&self, column: usize, condition: &Condition) -> Result<Matcher, String> {
+        Matcher::from_condition(&self.columns[column], condition)
+    }
+
     /// The rows among `candidates` that `matcher` keeps, for `column`.
     pub fn select(
         &self,
@@ -339,6 +345,48 @@ impl Dataset {
         }
         kept
     }
+
+    /// The rows of `range` that at least one filter lets through, in
+    /// ascending order; `None` without filters. Like `passing`, it can be
+    /// asked for the range of a batch that just arrived.
+    pub fn passing_any(&self, filters: &mut [RowFilter], range: Range<usize>) -> Option<Vec<u32>> {
+        let mut kept: Option<Vec<u32>> = None;
+        for filter in filters {
+            let candidates = Candidates::Range(range.clone());
+            let rows = self.select(&mut filter.matcher, filter.column, candidates);
+            kept = Some(match kept {
+                Some(have) => union(&have, &rows),
+                None => rows,
+            });
+        }
+        kept
+    }
+}
+
+/// The rows of two ascending lists, each once, in ascending order.
+fn union(a: &[u32], b: &[u32]) -> Vec<u32> {
+    let mut out = Vec::with_capacity(a.len().max(b.len()));
+    let (mut i, mut j) = (0, 0);
+    while i < a.len() && j < b.len() {
+        match a[i].cmp(&b[j]) {
+            std::cmp::Ordering::Less => {
+                out.push(a[i]);
+                i += 1;
+            }
+            std::cmp::Ordering::Greater => {
+                out.push(b[j]);
+                j += 1;
+            }
+            std::cmp::Ordering::Equal => {
+                out.push(a[i]);
+                i += 1;
+                j += 1;
+            }
+        }
+    }
+    out.extend_from_slice(&a[i..]);
+    out.extend_from_slice(&b[j..]);
+    out
 }
 
 #[cfg(test)]
@@ -349,6 +397,8 @@ pub(crate) mod tests {
     use std::path::Path;
 
     use ambers::scanner::SavScanner;
+
+    use crate::filter::Operator;
 
     /// A dataset with every row of a fixture loaded, five rows a batch.
     pub(crate) fn loaded(name: &str) -> Dataset {
@@ -452,6 +502,51 @@ pub(crate) mod tests {
             whole.extend(dataset.passing(&mut filters, start..start + 5).unwrap());
         }
         assert_eq!(Some(whole), dataset.passing(&mut filters, 0..20));
+    }
+
+    /// A condition of the filter bar as a row filter.
+    fn condition(dataset: &Dataset, name: &str, operator: Operator, value: &str) -> RowFilter {
+        let index = column(dataset, name);
+        let condition = Condition {
+            operator,
+            value: value.to_string(),
+        };
+        RowFilter {
+            column: index,
+            text: String::new(),
+            matcher: dataset.condition(index, &condition).unwrap(),
+        }
+    }
+
+    #[test]
+    fn any_condition_is_enough_when_asked_so() {
+        let dataset = loaded("survey.sav");
+        assert_eq!(dataset.passing_any(&mut [], 0..dataset.rows), None);
+
+        // Lisbon is rows 0, 4, …; ids above 17 are rows 17, 18, 19.
+        let mut filters = vec![
+            condition(&dataset, "city", Operator::Equals, "Lisbon"),
+            condition(&dataset, "id", Operator::Greater, "17"),
+        ];
+        assert_eq!(
+            dataset.passing_any(&mut filters, 0..dataset.rows),
+            Some(vec![0, 4, 8, 12, 16, 17, 18, 19])
+        );
+        // All of them: only what both keep.
+        assert_eq!(dataset.passing(&mut filters, 0..dataset.rows), Some(vec![]));
+        // A row both conditions keep is there once.
+        filters.push(condition(&dataset, "id", Operator::Less, "2"));
+        assert_eq!(
+            dataset.passing_any(&mut filters, 0..dataset.rows),
+            Some(vec![0, 4, 8, 12, 16, 17, 18, 19])
+        );
+
+        // Batch by batch, the parts add up to the whole.
+        let mut whole = Vec::new();
+        for start in [0, 5, 10, 15] {
+            whole.extend(dataset.passing_any(&mut filters, start..start + 5).unwrap());
+        }
+        assert_eq!(Some(whole), dataset.passing_any(&mut filters, 0..20));
     }
 
     #[test]

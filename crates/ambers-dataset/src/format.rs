@@ -73,6 +73,8 @@ pub struct Column {
     pub label: String,
     /// Stored as a number (not a string or a date/time).
     pub numeric: bool,
+    /// Stored as a string. Neither this nor `numeric`: a date or a time.
+    pub string: bool,
     pub labels: IndexMap<Value, String>,
     pub missing: Vec<MissingSpec>,
     /// The SPSS print format as written in the file, e.g. `F8.2`.
@@ -112,6 +114,10 @@ impl Column {
             name: name.to_string(),
             label: one_line(meta.label(name).unwrap_or("")),
             numeric,
+            string: matches!(
+                data_type,
+                DataType::Utf8View | DataType::Utf8 | DataType::LargeUtf8
+            ),
             format,
             labels,
             missing: meta

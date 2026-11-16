@@ -19,6 +19,12 @@
 //!
 //! Text is compared ignoring case. A label and a code both match, so the
 //! result does not depend on the view mode.
+//!
+//! The browser's filter bar does not type: it sends a `Condition`, one of
+//! a fixed set of operators and a value (`Matcher::from_condition`). The
+//! matching is the same code, with one rule of its own: a missing value
+//! passes only "is empty". "Not equal 99" there leaves out the rows with
+//! no answer, as SPSS and SQL do, while the typed `!=99` keeps them.
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
@@ -52,6 +58,148 @@ pub enum Query {
 pub struct Parsed {
     pub query: Query,
     pub negate: bool,
+}
+
+/// What a condition of the browser's filter bar asks of a value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Operator {
+    Equals,
+    NotEquals,
+    Greater,
+    Less,
+    GreaterOrEqual,
+    LessOrEqual,
+    Contains,
+    NotContains,
+    StartsWith,
+    EndsWith,
+    /// `%` stands for any text, `_` for one character; case counts.
+    Like,
+    /// `Like`, ignoring case.
+    ILike,
+    /// System-missing, or an empty string.
+    IsEmpty,
+    IsNotEmpty,
+}
+
+impl Operator {
+    /// The operator as a sentence names it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Operator::Equals => "equals",
+            Operator::NotEquals => "not equal",
+            Operator::Greater => "greater than",
+            Operator::Less => "less than",
+            Operator::GreaterOrEqual => "greater or equal",
+            Operator::LessOrEqual => "less or equal",
+            Operator::Contains => "contains",
+            Operator::NotContains => "does not contain",
+            Operator::StartsWith => "starts with",
+            Operator::EndsWith => "ends with",
+            Operator::Like => "like",
+            Operator::ILike => "ilike",
+            Operator::IsEmpty => "is empty",
+            Operator::IsNotEmpty => "is not empty",
+        }
+    }
+
+    /// Whether the condition is incomplete without a value.
+    pub fn needs_value(self) -> bool {
+        !matches!(self, Operator::IsEmpty | Operator::IsNotEmpty)
+    }
+}
+
+/// One condition on one variable.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Condition {
+    pub operator: Operator,
+    pub value: String,
+}
+
+/// What a variable is to a filter: it decides which operators apply.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Kind {
+    /// A number without value labels.
+    Number,
+    /// A string.
+    Text,
+    /// A number with value labels: a condition may name a label or a code.
+    Categorical,
+    /// A date or a time, matched as it is written.
+    Date,
+}
+
+impl Kind {
+    pub const ALL: [Kind; 4] = [Kind::Number, Kind::Text, Kind::Categorical, Kind::Date];
+
+    pub fn of(column: &Column) -> Kind {
+        if column.numeric {
+            if column.labels.is_empty() {
+                Kind::Number
+            } else {
+                Kind::Categorical
+            }
+        } else if column.string {
+            Kind::Text
+        } else {
+            Kind::Date
+        }
+    }
+
+    /// The operators a variable of this kind offers, in the order a menu
+    /// lists them.
+    pub fn operators(self) -> &'static [Operator] {
+        use Operator::*;
+        match self {
+            Kind::Number => &[
+                Equals,
+                NotEquals,
+                Greater,
+                Less,
+                GreaterOrEqual,
+                LessOrEqual,
+                IsEmpty,
+                IsNotEmpty,
+            ],
+            Kind::Text | Kind::Date => &[
+                Equals,
+                NotEquals,
+                Contains,
+                NotContains,
+                StartsWith,
+                EndsWith,
+                Like,
+                ILike,
+                IsEmpty,
+                IsNotEmpty,
+            ],
+            Kind::Categorical => &[
+                Equals,
+                NotEquals,
+                Greater,
+                Less,
+                GreaterOrEqual,
+                LessOrEqual,
+                Contains,
+                NotContains,
+                StartsWith,
+                EndsWith,
+                Like,
+                ILike,
+                IsEmpty,
+                IsNotEmpty,
+            ],
+        }
+    }
+
+    fn described(self) -> &'static str {
+        match self {
+            Kind::Number => "a number",
+            Kind::Text => "text",
+            Kind::Categorical => "a labelled number",
+            Kind::Date => "a date or time",
+        }
+    }
 }
 
 /// Read what was typed. `Ok(None)` is an empty filter: every row.
@@ -139,6 +287,125 @@ fn equals(text: &str, needle: &str) -> bool {
     }
 }
 
+/// Whether `text` starts with `needle` (in lower case), ignoring case.
+fn starts_with(text: &str, needle: &str) -> bool {
+    if needle.is_ascii() {
+        let (text, needle) = (text.as_bytes(), needle.as_bytes());
+        text.len() >= needle.len() && text[..needle.len()].eq_ignore_ascii_case(needle)
+    } else {
+        text.to_lowercase().starts_with(needle)
+    }
+}
+
+/// Whether `text` ends with `needle` (in lower case), ignoring case and
+/// the spaces after it.
+fn ends_with(text: &str, needle: &str) -> bool {
+    let text = text.trim_end();
+    if needle.is_ascii() {
+        let (text, needle) = (text.as_bytes(), needle.as_bytes());
+        text.len() >= needle.len() && text[text.len() - needle.len()..].eq_ignore_ascii_case(needle)
+    } else {
+        text.to_lowercase().ends_with(needle)
+    }
+}
+
+/// One piece of a LIKE pattern.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Token {
+    /// `%`: any text, also none.
+    Any,
+    /// `_`: exactly one character.
+    One,
+    Char(char),
+}
+
+/// A character without its case, for ILIKE. One character stays one.
+fn fold(ch: char) -> char {
+    if ch.is_ascii() {
+        ch.to_ascii_lowercase()
+    } else {
+        ch.to_lowercase().next().unwrap_or(ch)
+    }
+}
+
+/// A LIKE pattern cut into its pieces; without case when `folded`.
+fn tokens(pattern: &str, folded: bool) -> Vec<Token> {
+    (pattern.chars())
+        .map(|ch| match ch {
+            '%' => Token::Any,
+            '_' => Token::One,
+            ch if folded => Token::Char(fold(ch)),
+            ch => Token::Char(ch),
+        })
+        .collect()
+}
+
+/// Whether the whole of `text` (without the spaces around it) fits the
+/// pattern. When `folded`, the pattern must have been cut with `folded`.
+fn like(pattern: &[Token], text: &str, folded: bool) -> bool {
+    let text = text.trim();
+    let (mut at, mut piece) = (0, 0);
+    // Where to go back to: the piece after the last `%`, and how much of
+    // the text that `%` has taken so far.
+    let mut retry: Option<(usize, usize)> = None;
+    loop {
+        let next = text[at..].chars().next();
+        match (pattern.get(piece), next) {
+            (Some(Token::Any), _) => {
+                piece += 1;
+                retry = Some((piece, at));
+            }
+            (Some(Token::One), Some(ch)) => {
+                piece += 1;
+                at += ch.len_utf8();
+            }
+            (Some(Token::Char(wanted)), Some(ch))
+                if *wanted == if folded { fold(ch) } else { ch } =>
+            {
+                piece += 1;
+                at += ch.len_utf8();
+            }
+            (None, None) => return true,
+            _ => {
+                // Let the last `%` take one more character and try again.
+                let Some((after, taken)) = retry else {
+                    return false;
+                };
+                let Some(ch) = text[taken..].chars().next() else {
+                    return false;
+                };
+                at = taken + ch.len_utf8();
+                piece = after;
+                retry = Some((after, at));
+            }
+        }
+    }
+}
+
+/// How a text condition compares.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum How {
+    Contains,
+    Equals,
+    StartsWith,
+    EndsWith,
+    Like { pattern: Vec<Token>, folded: bool },
+}
+
+impl How {
+    /// Whether `text` passes; `needle` is in lower case (unused by LIKE,
+    /// which carries its pattern).
+    fn hit(&self, text: &str, needle: &str) -> bool {
+        match self {
+            How::Contains => contains(text, needle),
+            How::Equals => equals(text, needle),
+            How::StartsWith => starts_with(text, needle),
+            How::EndsWith => ends_with(text, needle),
+            How::Like { pattern, folded } => like(pattern, text, *folded),
+        }
+    }
+}
+
 /// `0.0` and `-0.0` are one value.
 fn bits(number: f64) -> u64 {
     if number == 0.0 {
@@ -155,12 +422,15 @@ pub enum Candidates<'a> {
     Rows(&'a [u32]),
 }
 
+// A filter holds one to a few of these, and rows are tested against them in
+// place: boxing the large variant would add a pointer to follow per row.
+#[allow(clippy::large_enum_variant)]
 enum Test {
     Missing,
     Compare(Op, f64),
     Text {
         needle: String,
-        exact: bool,
+        how: How,
         /// The needle as a number, for an exact match on a numeric column.
         number: Option<f64>,
         /// Whether the needle could be part of a written number; if not,
@@ -181,10 +451,49 @@ struct Part {
     negate: bool,
 }
 
-/// A parsed filter made ready for one column: a value passes when any of
-/// its alternatives does.
+/// A filter made ready for one column: a value passes when any of its
+/// alternatives does.
 pub struct Matcher {
     parts: Vec<Part>,
+    /// A missing value passes only a test for missing: the rule of the
+    /// browser's conditions. Without it, a negated test keeps missing
+    /// rows, as the typed `!=99` does.
+    strict: bool,
+}
+
+impl Test {
+    /// A text test for `column`: the labels that pass are looked up once,
+    /// so a labelled value is found by its code. `needle` is in lower case.
+    fn text(column: &Column, how: How, needle: &str) -> Test {
+        let mut codes = HashSet::new();
+        let mut labelled = HashSet::new();
+        for (value, label) in &column.labels {
+            if how.hit(label, needle) {
+                match value {
+                    Value::Numeric(number) => {
+                        codes.insert(bits(*number));
+                    }
+                    Value::String(text) => {
+                        labelled.insert(text.clone());
+                    }
+                }
+            }
+        }
+        Test::Text {
+            number: needle.parse::<f64>().ok().filter(|n| !n.is_nan()),
+            // A pattern can stand for digits; any other needle with a
+            // letter in it cannot be part of a written number.
+            number_like: matches!(how, How::Like { .. })
+                || needle
+                    .chars()
+                    .all(|ch| ch.is_ascii_digit() || ".-infa".contains(ch)),
+            needle: needle.to_string(),
+            how,
+            codes,
+            labelled,
+            seen: HashMap::new(),
+        }
+    }
 }
 
 impl Part {
@@ -200,46 +509,67 @@ impl Part {
                 }
                 Test::Compare(*op, *number)
             }
-            Query::Contains(needle) | Query::Equals(needle) => {
-                let exact = matches!(parsed.query, Query::Equals(_));
-                let matches = |label: &str| {
-                    if exact {
-                        equals(label, needle)
-                    } else {
-                        contains(label, needle)
-                    }
-                };
-                let mut codes = HashSet::new();
-                let mut labelled = HashSet::new();
-                for (value, label) in &column.labels {
-                    if matches(label) {
-                        match value {
-                            Value::Numeric(number) => {
-                                codes.insert(bits(*number));
-                            }
-                            Value::String(text) => {
-                                labelled.insert(text.clone());
-                            }
-                        }
-                    }
-                }
-                Test::Text {
-                    number: needle.parse::<f64>().ok().filter(|n| !n.is_nan()),
-                    number_like: needle
-                        .chars()
-                        .all(|ch| ch.is_ascii_digit() || ".-infa".contains(ch)),
-                    needle: needle.clone(),
-                    exact,
-                    codes,
-                    labelled,
-                    seen: HashMap::new(),
-                }
-            }
+            Query::Contains(needle) => Test::text(column, How::Contains, needle),
+            Query::Equals(needle) => Test::text(column, How::Equals, needle),
         };
         Ok(Part {
             test,
             negate: parsed.negate,
         })
+    }
+
+    /// A condition of the filter bar, for `column`. It says what is wrong
+    /// with a condition the column cannot take.
+    fn from_condition(column: &Column, condition: &Condition) -> Result<Part, String> {
+        let kind = Kind::of(column);
+        let operator = condition.operator;
+        if !kind.operators().contains(&operator) {
+            return Err(format!(
+                "{} is {}: \"{}\" does not apply",
+                column.name,
+                kind.described(),
+                operator.name()
+            ));
+        }
+        let value = condition.value.trim();
+        if operator.needs_value() && value.is_empty() {
+            return Err("enter a value".to_string());
+        }
+        let number = || {
+            (value.parse::<f64>().ok())
+                .filter(|number| number.is_finite())
+                .ok_or_else(|| "enter a number".to_string())
+        };
+        let lower = value.to_lowercase();
+        let (test, negate) = match operator {
+            Operator::IsEmpty => (Test::Missing, false),
+            Operator::IsNotEmpty => (Test::Missing, true),
+            Operator::Greater => (Test::Compare(Op::Greater, number()?), false),
+            Operator::Less => (Test::Compare(Op::Less, number()?), false),
+            Operator::GreaterOrEqual => (Test::Compare(Op::GreaterOrEqual, number()?), false),
+            Operator::LessOrEqual => (Test::Compare(Op::LessOrEqual, number()?), false),
+            Operator::Equals | Operator::NotEquals => {
+                // A number without labels can only equal a number.
+                if kind == Kind::Number {
+                    number()?;
+                }
+                let test = Test::text(column, How::Equals, &lower);
+                (test, operator == Operator::NotEquals)
+            }
+            Operator::Contains => (Test::text(column, How::Contains, &lower), false),
+            Operator::NotContains => (Test::text(column, How::Contains, &lower), true),
+            Operator::StartsWith => (Test::text(column, How::StartsWith, &lower), false),
+            Operator::EndsWith => (Test::text(column, How::EndsWith, &lower), false),
+            Operator::Like | Operator::ILike => {
+                let folded = operator == Operator::ILike;
+                let how = How::Like {
+                    pattern: tokens(value, folded),
+                    folded,
+                };
+                (Test::text(column, how, &lower), false)
+            }
+        };
+        Ok(Part { test, negate })
     }
 
     fn null(&self) -> bool {
@@ -257,7 +587,7 @@ impl Part {
             },
             Test::Text {
                 needle,
-                exact,
+                how,
                 number,
                 number_like,
                 codes,
@@ -268,7 +598,7 @@ impl Part {
                 if codes.contains(&key) {
                     return true;
                 }
-                if *exact {
+                if matches!(how, How::Equals) {
                     return *number == Some(value);
                 }
                 if !*number_like {
@@ -277,7 +607,7 @@ impl Part {
                 // The number as the grid writes it, e.g. `1042` or `3.00`.
                 *seen
                     .entry(key)
-                    .or_insert_with(|| contains(&column.code_text(&Value::Numeric(value)), needle))
+                    .or_insert_with(|| how.hit(&column.code_text(&Value::Numeric(value)), needle))
             }
         }
     }
@@ -289,17 +619,10 @@ impl Part {
             Test::Compare(..) => false,
             Test::Text {
                 needle,
-                exact,
+                how,
                 labelled,
                 ..
-            } => {
-                let hit = if *exact {
-                    equals(value, needle)
-                } else {
-                    contains(value, needle)
-                };
-                hit || (!labelled.is_empty() && labelled.contains(value))
-            }
+            } => how.hit(value, needle) || (!labelled.is_empty() && labelled.contains(value)),
         }
     }
 
@@ -307,13 +630,7 @@ impl Part {
     fn written(&self, text: &str) -> bool {
         match &self.test {
             Test::Missing | Test::Compare(..) => false,
-            Test::Text { needle, exact, .. } => {
-                if *exact {
-                    equals(text, needle)
-                } else {
-                    contains(text, needle)
-                }
-            }
+            Test::Text { needle, how, .. } => how.hit(text, needle),
         }
     }
 }
@@ -323,10 +640,25 @@ impl Matcher {
         let parts: Result<Vec<Part>, String> = (parsed.iter())
             .map(|parsed| Part::new(column, parsed))
             .collect();
-        Ok(Matcher { parts: parts? })
+        Ok(Matcher {
+            parts: parts?,
+            strict: false,
+        })
+    }
+
+    /// A condition of the browser's filter bar, made ready for `column`.
+    /// A missing value passes it only when it asks for missing values.
+    pub fn from_condition(column: &Column, condition: &Condition) -> Result<Matcher, String> {
+        Ok(Matcher {
+            parts: vec![Part::from_condition(column, condition)?],
+            strict: true,
+        })
     }
 
     fn null(&self) -> bool {
+        if self.strict {
+            return (self.parts.iter()).any(|part| part.null() && !part.negate);
+        }
         (self.parts.iter()).any(|part| part.null() != part.negate)
     }
 
@@ -335,6 +667,10 @@ impl Matcher {
     }
 
     fn string(&self, value: &str) -> bool {
+        // An empty string is a missing value.
+        if self.strict && value.is_empty() {
+            return self.null();
+        }
         (self.parts.iter()).any(|part| part.string(value) != part.negate)
     }
 
@@ -672,6 +1008,198 @@ mod tests {
             Candidates::Rows(&[0, 1, 5, 6, 13, 19]),
         );
         assert_eq!(some, [1, 5, 13]);
+    }
+
+    /// The 1-based rows of `file` that a condition keeps in `variable`,
+    /// or why the variable cannot take it.
+    fn condition(
+        file: &str,
+        variable: &str,
+        operator: Operator,
+        value: &str,
+    ) -> Result<Vec<u32>, String> {
+        let (batch, columns) = fixture(file);
+        let index = columns.iter().position(|c| c.name == variable).unwrap();
+        let condition = Condition {
+            operator,
+            value: value.to_string(),
+        };
+        let mut matcher = Matcher::from_condition(&columns[index], &condition)?;
+        let found = matcher.select(
+            &columns[index],
+            index,
+            std::slice::from_ref(&batch),
+            batch.num_rows(),
+            Candidates::Range(0..batch.num_rows()),
+        );
+        Ok(found.into_iter().map(|row| row + 1).collect())
+    }
+
+    /// As `condition`, for one that the variable takes.
+    fn kept(file: &str, variable: &str, operator: Operator, value: &str) -> Vec<u32> {
+        condition(file, variable, operator, value).unwrap()
+    }
+
+    #[test]
+    fn a_pattern_stands_for_the_whole_value() {
+        let fits = |pattern: &str, text: &str| like(&tokens(pattern, false), text, false);
+        assert!(fits("Lisbon", "Lisbon"));
+        assert!(!fits("Lis", "Lisbon"));
+        assert!(fits("Lis%", "Lisbon"));
+        assert!(fits("%bon", "Lisbon"));
+        assert!(fits("L_sb_n", "Lisbon"));
+        assert!(!fits("L_bon", "Lisbon"));
+        assert!(fits("%", ""));
+        assert!(fits("%", "anything"));
+        assert!(!fits("_", ""));
+        // The first `%` may have to give text back.
+        assert!(fits("%ab%ab", "abxabab"));
+        assert!(fits("%a%a%", "banana"));
+        assert!(!fits("%ab%ab", "abxa"));
+        // Case counts, unless folded; one character may be many bytes.
+        assert!(!fits("lisbon", "Lisbon"));
+        let folded = |pattern: &str, text: &str| like(&tokens(pattern, true), text, true);
+        assert!(folded("LIS%", "lisbon"));
+        assert!(folded("é_ole", "École"));
+        assert!(fits("S_o Paulo", "São Paulo"));
+        // The spaces around a value are not part of it.
+        assert!(fits("Lima", " Lima  "));
+    }
+
+    #[test]
+    fn a_text_condition_keeps_what_its_operator_says() {
+        use Operator::*;
+        // city: Lisbon (1, 5, …), Osaka (2, 6, …), Lima (3, 7, …), N/A (4, 8, …).
+        let lisbon = [1, 5, 9, 13, 17];
+        let osaka = [2, 6, 10, 14, 18];
+        let lima = [3, 7, 11, 15, 19];
+        let none = [4, 8, 12, 16, 20];
+        let city = |operator, value| kept("survey.sav", "city", operator, value);
+        assert_eq!(city(Equals, "osaka"), osaka);
+        assert_eq!(city(Equals, " Osaka "), osaka);
+        assert_eq!(city(NotEquals, "Osaka").len(), 15);
+        assert_eq!(city(Contains, "li").len(), 10);
+        assert_eq!(city(NotContains, "li").len(), 10);
+        assert_eq!(city(StartsWith, "LI").len(), 10);
+        assert_eq!(city(StartsWith, "is"), [] as [u32; 0]);
+        assert_eq!(city(EndsWith, "ma"), lima);
+        assert_eq!(city(EndsWith, "bon"), lisbon);
+        // LIKE minds the case and wants the whole value.
+        assert_eq!(city(Like, "L%").len(), 10);
+        assert_eq!(city(Like, "l%"), [] as [u32; 0]);
+        assert_eq!(city(ILike, "l%").len(), 10);
+        assert_eq!(city(Like, "L_ma"), lima);
+        assert_eq!(city(Like, "Lis"), [] as [u32; 0]);
+        assert_eq!(city(Like, "%").len(), 20);
+        // A labelled string is found by its label too: N/A is "Not answered".
+        assert_eq!(city(Contains, "not ans"), none);
+        assert_eq!(city(StartsWith, "not"), none);
+    }
+
+    #[test]
+    fn a_missing_value_passes_only_a_condition_about_missing() {
+        use Operator::*;
+        // satisfaction: missing in rows 7 and 14, 99 (Refused) in 5, 10, 15, 20.
+        let satisfaction = |operator, value| kept("survey.sav", "satisfaction", operator, value);
+        assert_eq!(satisfaction(IsEmpty, ""), [7, 14]);
+        assert_eq!(satisfaction(IsNotEmpty, "").len(), 18);
+        // Not the refused ones, and not the ones with no answer either.
+        assert_eq!(satisfaction(NotEquals, "99").len(), 14);
+        assert_eq!(satisfaction(NotEquals, "refused").len(), 14);
+        assert_eq!(satisfaction(NotContains, "satisfied").len(), 8);
+        // The typed filter of the terminal keeps the rows with no answer.
+        assert_eq!(rows("survey.sav", "satisfaction", "!=99").len(), 16);
+        // A value declared user-missing is still a value.
+        assert_eq!(satisfaction(Equals, "99"), [5, 10, 15, 20]);
+
+        // An empty string is a missing value: row 5 of this file's city.
+        let city = |operator, value| kept("imperfect_labels.sav", "city", operator, value);
+        assert_eq!(city(IsEmpty, ""), [5]);
+        assert_eq!(city(IsNotEmpty, "").len(), 11);
+        assert_eq!(city(NotEquals, "NYC"), [2, 3, 6, 7, 9, 10, 12]);
+        assert_eq!(city(NotContains, "y"), [2, 3, 6, 7, 9, 12]);
+        assert_eq!(city(Like, "%"), [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12]);
+    }
+
+    #[test]
+    fn a_labelled_number_is_found_by_label_or_code() {
+        use Operator::*;
+        // gender: 1 Male (odd rows), 2 Female (even rows).
+        let female: Vec<u32> = (1..=10).map(|n| n * 2).collect();
+        let male: Vec<u32> = (1..=10).map(|n| n * 2 - 1).collect();
+        let gender = |operator, value| kept("survey.sav", "gender", operator, value);
+        assert_eq!(gender(Equals, "Female"), female);
+        assert_eq!(gender(Equals, "2"), female);
+        assert_eq!(gender(NotEquals, "male"), female);
+        assert_eq!(gender(Greater, "1"), female);
+        assert_eq!(gender(LessOrEqual, "1"), male);
+        assert_eq!(gender(StartsWith, "fem"), female);
+        assert_eq!(gender(StartsWith, "2"), female);
+        assert_eq!(gender(EndsWith, "male").len(), 20);
+        assert_eq!(gender(Contains, "fe"), female);
+        assert_eq!(gender(Like, "F%"), female);
+        assert_eq!(gender(Like, "f%"), [] as [u32; 0]);
+        assert_eq!(gender(ILike, "m%"), male);
+    }
+
+    #[test]
+    fn a_number_is_compared_and_a_date_is_read_as_written() {
+        use Operator::*;
+        let id = |operator, value| kept("survey.sav", "id", operator, value);
+        assert_eq!(id(Greater, "18"), [19, 20]);
+        assert_eq!(id(GreaterOrEqual, "18"), [18, 19, 20]);
+        assert_eq!(id(Less, "3"), [1, 2]);
+        assert_eq!(id(LessOrEqual, " 3 "), [1, 2, 3]);
+        assert_eq!(id(Equals, "12"), [12]);
+        assert_eq!(id(Equals, "12.0"), [12]);
+        assert_eq!(id(NotEquals, "12").len(), 19);
+
+        // The interviews run from 2024-01-01, one a day.
+        let date = |operator, value| kept("survey.sav", "interview_date", operator, value);
+        assert_eq!(date(StartsWith, "2024-01-0").len(), 9);
+        assert_eq!(date(Equals, "2024-01-20"), [20]);
+        assert_eq!(date(EndsWith, "-15"), [15]);
+        assert_eq!(date(Like, "2024-01-1_").len(), 10);
+    }
+
+    #[test]
+    fn a_variable_refuses_a_condition_that_is_not_for_it() {
+        use Operator::*;
+        let refused = |variable, operator, value| {
+            condition("survey.sav", variable, operator, value).unwrap_err()
+        };
+        assert_eq!(
+            refused("city", Greater, "3"),
+            "city is text: \"greater than\" does not apply"
+        );
+        assert_eq!(
+            refused("id", Contains, "1"),
+            "id is a number: \"contains\" does not apply"
+        );
+        assert_eq!(
+            refused("interview_date", Less, "2024"),
+            "interview_date is a date or time: \"less than\" does not apply"
+        );
+        assert_eq!(refused("id", Equals, "abc"), "enter a number");
+        assert_eq!(refused("gender", Greater, "male"), "enter a number");
+        assert_eq!(refused("city", Equals, "  "), "enter a value");
+
+        let (_, columns) = fixture("survey.sav");
+        let kind = |name: &str| Kind::of(columns.iter().find(|c| c.name == name).unwrap());
+        assert_eq!(kind("id"), Kind::Number);
+        assert_eq!(kind("gender"), Kind::Categorical);
+        assert_eq!(kind("city"), Kind::Text);
+        assert_eq!(kind("interview_date"), Kind::Date);
+        assert_eq!(kind("duration"), Kind::Date);
+        // Every kind can ask about missing values; only numbers compare.
+        for kind in Kind::ALL {
+            let offered = kind.operators();
+            assert!(offered.contains(&IsEmpty) && offered.contains(&Equals));
+            assert_eq!(
+                offered.contains(&Greater),
+                matches!(kind, Kind::Number | Kind::Categorical)
+            );
+        }
     }
 
     #[test]
