@@ -9,7 +9,10 @@ const CHARACTER = 6.7;
 /** Space inside a cell left and right of its text. */
 const PADDING = 20;
 export const MIN_WIDTH = 48;
+/** The widest a column starts at. */
 const MAX_WIDTH = 420;
+/** The widest a column can be dragged to. */
+export const MAX_DRAGGED_WIDTH = 1600;
 
 /** The short tag in a column header that says what kind of variable it is. */
 export function typeTag(variable: Variable): string {

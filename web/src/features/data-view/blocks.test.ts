@@ -4,6 +4,7 @@ import type { RowsPage } from "../../api/client";
 import {
   COLUMN_BLOCK,
   ROW_BLOCK,
+  type Shown,
   blockKey,
   blockRequest,
   blocksFor,
@@ -29,11 +30,11 @@ function page(offset: number, variables: number[], rows: number): RowsPage {
 describe("blocksFor", () => {
   it("is empty when nothing is on screen", () => {
     expect(blocksFor(null, [0, 5])).toEqual([]);
-    expect(blocksFor([0, 5], null)).toEqual([]);
+    expect(blocksFor([0, 5], [])).toEqual([]);
   });
 
   it("covers what is on screen, across block edges", () => {
-    expect(blocksFor([0, 40], [0, 12])).toEqual([{ row: 0, column: 0 }]);
+    expect(blocksFor([0, 40], [0, 1, 2, 12])).toEqual([{ row: 0, column: 0 }]);
     const last = ROW_BLOCK - 1;
     expect(blocksFor([last, ROW_BLOCK], [COLUMN_BLOCK - 1, COLUMN_BLOCK])).toEqual([
       { row: 0, column: 0 },
@@ -42,11 +43,21 @@ describe("blocksFor", () => {
       { row: 1, column: 1 },
     ]);
   });
+
+  it("skips the blocks whose variables are all hidden", () => {
+    // Variables 3 and 60 are next to each other on screen: 4 to 59 are hidden.
+    expect(blocksFor([0, 10], [2, 3, 60, 61])).toEqual([
+      { row: 0, column: 0 },
+      { row: 0, column: 2 },
+    ]);
+  });
 });
 
 describe("blockRequest", () => {
+  const codes: Shown = { mode: "codes", filters: [], filterMode: "all" };
+
   it("asks for the block's rows and variables", () => {
-    const request = blockRequest({ row: 3, column: 1 }, 916, "codes", []);
+    const request = blockRequest({ row: 3, column: 1 }, 916, codes);
     expect(request.offset).toBe(3 * ROW_BLOCK);
     expect(request.limit).toBe(ROW_BLOCK);
     expect(request.variables?.[0]).toBe(COLUMN_BLOCK);
@@ -55,8 +66,19 @@ describe("blockRequest", () => {
   });
 
   it("stops at the last variable", () => {
-    const request = blockRequest({ row: 0, column: 1 }, COLUMN_BLOCK + 3, "labels", []);
+    const request = blockRequest({ row: 0, column: 1 }, COLUMN_BLOCK + 3, codes);
     expect(request.variables).toEqual([COLUMN_BLOCK, COLUMN_BLOCK + 1, COLUMN_BLOCK + 2]);
+  });
+
+  it("carries the filters and how they combine", () => {
+    const filters = [{ variable: 4, operator: "contains" as const, value: "lis" }];
+    const request = blockRequest({ row: 0, column: 0 }, 13, {
+      mode: "labels",
+      filters,
+      filterMode: "any",
+    });
+    expect(request.filters).toEqual(filters);
+    expect(request.filter_mode).toBe("any");
   });
 });
 

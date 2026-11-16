@@ -1,0 +1,763 @@
+/* The filter bar and its builder. Colours and fonts come from
+   theme/tokens.css only. */
+
+.filter-builder {
+  flex: 1;
+  min-width: 0;
+}
+
+.filter-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-height: 34px;
+  max-height: 144px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-color: var(--selection) transparent;
+  scrollbar-width: thin;
+  padding: 4px 6px;
+  border: 1px solid var(--selection);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface) 55%, var(--panel));
+  transition:
+    border-color 140ms,
+    box-shadow 140ms;
+  cursor: text;
+}
+
+.filter-bar:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--selection));
+}
+
+.filter-bar:focus-within,
+.filter-bar.is-open {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.filter-bar-icon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 22px;
+  height: 25px;
+  color: var(--accent);
+}
+
+.filter-add {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 140px;
+  min-height: 25px;
+  padding-inline: 4px;
+  color: var(--text-muted);
+  text-align: left;
+  font-size: 11px;
+}
+
+.filter-add:hover {
+  color: var(--accent);
+}
+
+.filter-bar.has-filters .filter-add {
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  gap: 4px;
+  min-width: 90px;
+  padding-inline: 7px;
+  font-size: 10px;
+}
+
+.filter-mode {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  height: 25px;
+  margin-right: 3px;
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.filter-mode select {
+  width: 76px;
+  height: 100%;
+  padding: 0 14px 0 4px;
+  outline-color: var(--accent);
+  appearance: none;
+  cursor: pointer;
+}
+
+.filter-mode option {
+  background: var(--surface);
+}
+
+.filter-mode > svg {
+  position: absolute;
+  right: 3px;
+  pointer-events: none;
+  color: var(--text-faint);
+}
+
+.filter-condition {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.filter-connector {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  font: 400 9px var(--font-data);
+}
+
+.filter-chip {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 26px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--selection));
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+}
+
+.filter-chip:hover,
+.filter-chip.is-editing {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+
+.filter-chip-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 8px;
+  font: 400 10px var(--font-data);
+}
+
+.filter-chip-column {
+  flex-shrink: 0;
+  max-width: 120px;
+  overflow: hidden;
+  color: var(--heading);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-chip-operator {
+  flex-shrink: 0;
+  color: var(--cursor);
+  font-size: 9px;
+}
+
+.filter-chip-value {
+  max-width: 150px;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-chip-remove {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--text-faint);
+  border-radius: 0 4px 4px 0;
+}
+
+.filter-chip-remove:hover {
+  color: var(--cursor);
+  background: color-mix(in srgb, var(--cursor) 10%, transparent);
+}
+
+.filter-clear {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 5px 7px;
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.filter-clear:hover {
+  color: var(--cursor);
+}
+
+.filter-context {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-height: 16px;
+  margin: 5px 0 0 6px;
+  color: var(--text-faint);
+  font-size: 9px;
+}
+
+.filter-context strong {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.filter-active-dot {
+  width: 4px;
+  height: 4px;
+  margin-right: 2px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.filter-popover {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--selection));
+  border-radius: 10px;
+  outline: none;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow:
+    0 14px 45px rgb(0 0 0 / 40%),
+    0 3px 10px rgb(0 0 0 / 20%);
+}
+
+.filter-popover-heading {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  min-height: 43px;
+  padding: 0 13px;
+  border-bottom: 1px solid var(--border);
+}
+
+.filter-popover-symbol {
+  color: var(--accent);
+}
+
+.filter-popover-heading strong {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.filter-popover-heading > button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--text-faint);
+  border-radius: 4px;
+}
+
+.filter-popover-heading > button:hover {
+  color: var(--text);
+  background: var(--selection);
+}
+
+.filter-steps {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 7px 12px;
+  color: var(--text-faint);
+}
+
+.filter-steps > button,
+.filter-steps > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 120px;
+  overflow: hidden;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-steps > button > span,
+.filter-steps > span > span {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--selection);
+  border-radius: 4px;
+  font: 400 9px var(--font-data);
+}
+
+.filter-steps .is-current {
+  color: var(--accent);
+}
+
+.filter-steps .is-current > span {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.filter-steps button:disabled {
+  cursor: default;
+}
+
+.filter-steps > svg {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.filter-column-search {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  min-height: 33px;
+  margin: 1px 11px 5px;
+  padding: 0 9px;
+  border: 1px solid var(--selection);
+  border-radius: 6px;
+  color: var(--text-faint);
+  background: var(--panel);
+}
+
+.filter-column-search:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--selection));
+}
+
+.filter-column-search input {
+  width: 100%;
+  min-width: 0;
+  height: 31px;
+  outline: none;
+  color: var(--text);
+  background: transparent;
+  font-size: 11px;
+}
+
+.filter-column-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.filter-menu-caption {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+  padding: 7px 13px;
+  color: var(--text-faint);
+  font-size: 9px;
+  letter-spacing: 0.8px;
+}
+
+.filter-menu-caption > span {
+  font-size: 9px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.filter-menu-list {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 5px 6px;
+  scrollbar-color: var(--selection) transparent;
+  scrollbar-width: thin;
+}
+
+.filter-menu-list .filter-menu-caption {
+  padding-left: 9px;
+}
+
+.filter-menu-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  text-align: left;
+  font-size: 11px;
+}
+
+.filter-menu-option.is-highlighted {
+  border-color: color-mix(in srgb, var(--accent) 15%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.filter-menu-option > span:not(.filter-type-icon):not(.filter-operator-symbol) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-type-icon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  border-radius: 4px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  font: 400 9px var(--font-data);
+}
+
+.filter-type-icon.is-number {
+  color: var(--heading);
+  border-color: color-mix(in srgb, var(--heading) 20%, transparent);
+}
+
+.filter-menu-option > small {
+  margin-left: auto;
+  color: var(--text-faint);
+  font: 400 9px var(--font-data);
+}
+
+.filter-menu-option > svg {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.filter-operator-symbol {
+  margin-left: auto;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--cursor);
+  background: var(--panel);
+  font: 400 9px var(--font-data);
+}
+
+.filter-menu-empty {
+  padding: 25px 12px;
+  color: var(--text-muted);
+  text-align: center;
+  font-size: 11px;
+}
+
+.filter-popover-footer {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 33px;
+  padding: 7px 13px;
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  background: color-mix(in srgb, var(--panel) 35%, transparent);
+  font-size: 9px;
+}
+
+.filter-popover-footer > span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.filter-popover-footer kbd {
+  padding: 0 3px;
+  font-size: 9px;
+}
+
+.filter-value-form {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 7px 13px 13px;
+}
+
+.filter-value-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.filter-value-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--selection);
+  border-radius: 6px;
+  outline: none;
+  color: var(--text);
+  background: var(--panel);
+  font: 400 11px var(--font-data);
+}
+
+.filter-value-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.filter-value-input::placeholder {
+  color: var(--text-faint);
+}
+
+.filter-value-help {
+  margin-top: 8px;
+  color: var(--text-faint);
+  font-size: 9px;
+  line-height: 1.7;
+}
+
+.filter-value-help.has-error {
+  color: var(--warning);
+}
+
+.filter-no-value {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.filter-suggestions {
+  margin-top: 17px;
+}
+
+.filter-suggestions > span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text-faint);
+  font-size: 9px;
+  letter-spacing: 0.8px;
+}
+
+.filter-suggestions button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 30px;
+  padding-inline: 7px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  text-align: left;
+  font-size: 10px;
+}
+
+.filter-suggestions button:hover {
+  color: var(--heading);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+.filter-suggestions button > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-suggestions small {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  font: 400 9px var(--font-data);
+}
+
+.filter-value-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.filter-value-actions > button {
+  min-height: 30px;
+  padding-inline: 10px;
+  color: var(--text-muted);
+  border-radius: 5px;
+  font-size: 10px;
+}
+
+.filter-value-actions > .filter-apply {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--panel);
+  background: var(--accent);
+  font-weight: 500;
+}
+
+.filter-value-actions > .filter-apply:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 82%, var(--text));
+}
+
+.filter-value-actions > .filter-apply:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.grid-filter-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 240px;
+  padding: 30px 16px;
+  text-align: center;
+}
+
+.grid-filter-empty > svg {
+  margin-bottom: 3px;
+  color: var(--accent);
+}
+
+.grid-filter-empty strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.grid-filter-empty p {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.grid-filter-empty button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 7px;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+/* --- what the mock does not have ----------------------------------------- */
+
+/* A long list (a file's variables) keeps only the options in view in the
+   page: they are placed by their position. */
+.filter-menu-rows {
+  position: relative;
+}
+
+.filter-menu-rows > .filter-menu-option,
+.filter-menu-rows > .columns-option {
+  position: absolute;
+  left: 0;
+}
+
+/* A variable in a list: its kind, its name, its label. */
+.filter-type-icon {
+  width: auto;
+  min-width: 34px;
+  padding: 0 4px;
+}
+
+.filter-type-icon.is-categorical {
+  color: var(--cursor);
+  border-color: color-mix(in srgb, var(--cursor) 20%, transparent);
+}
+
+.filter-type-icon.is-date {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 20%, transparent);
+}
+
+.filter-option-name {
+  flex: none;
+  max-width: 55%;
+  color: var(--heading);
+  font: 400 11px var(--font-data);
+}
+
+.filter-option-label {
+  flex: 1;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.filter-menu-option > svg {
+  margin-left: auto;
+}
+
+/* A condition the server could not use: it is shown, and not applied. */
+.filter-chip.has-problem {
+  border-color: color-mix(in srgb, var(--warning) 60%, var(--selection));
+  background: color-mix(in srgb, var(--warning) 9%, var(--panel));
+}
+
+.filter-chip.has-problem .filter-chip-value {
+  color: var(--warning);
+  text-decoration: line-through;
+}
+
+/* The code of a suggested label. */
+.filter-suggestions em {
+  margin-left: 8px;
+  color: var(--text-faint);
+  font: 400 9px var(--font-data);
+  font-style: normal;
+}
+
+/* --- the Columns menu ----------------------------------------------------- */
+
+.columns-menu {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-top: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--selection));
+  border-radius: 10px;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow:
+    0 14px 45px rgb(0 0 0 / 40%),
+    0 3px 10px rgb(0 0 0 / 20%);
+}
+
+.columns-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 0 9px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.columns-option:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.columns-option input {
+  flex: none;
+  accent-color: var(--accent);
+}
+
+.columns-option span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.columns-menu .filter-popover-footer button {
+  color: var(--accent);
+  font-size: 10px;
+}
+
+.columns-menu .filter-popover-footer button:hover {
+  color: var(--heading);
+}

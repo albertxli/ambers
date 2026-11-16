@@ -19,6 +19,7 @@ function variable(name: string, kind: string, width: number): Variable {
     valid: 0,
     missing_count: 0,
     label_check: "",
+    filter_kind: kind === "text" ? "text" : "number",
   };
 }
 

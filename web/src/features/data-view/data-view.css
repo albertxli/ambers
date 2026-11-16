@@ -112,16 +112,68 @@
 
 /* --- toolbar ------------------------------------------------------------ */
 
+/* The filter bar grows downwards as conditions are added, so the toolbar
+   has no fixed height and its other controls stay at the top. */
 .toolbar {
-  gap: 7px;
-  height: 49px;
-  padding: 0 12px;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 49px;
+  padding: 8px 12px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
 
-.toolbar-spacer {
-  flex: 1;
+.toolbar > .segmented {
+  flex: none;
+  margin-top: 1px;
+}
+
+.tool-button {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 31px;
+  padding: 0 9px;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font-size: 12px;
+  transition: 150ms ease;
+}
+
+.tool-button:hover,
+.tool-button.is-open {
+  color: var(--text);
+  background: var(--selection);
+  border-color: var(--selection);
+}
+
+/* How many of the variables are shown, once some are hidden. */
+.tool-count {
+  color: var(--accent);
+  font: 500 10px var(--font-data);
+}
+
+.grid-hint {
+  flex: none;
+  padding-top: 10px;
+  color: var(--text-faint);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.grid-hint > span {
+  padding-inline: 5px;
+}
+
+kbd {
+  padding: 2px 4px;
+  color: var(--text-muted);
+  background: var(--panel);
+  border: 1px solid var(--selection);
+  border-radius: var(--radius-small);
+  font: 500 9px var(--font-data);
 }
 
 .icon-button {
@@ -153,6 +205,7 @@
   scrollbar-color: var(--selection) var(--panel);
   scrollbar-width: thin;
   outline: none;
+  user-select: none;
 }
 
 .grid-canvas {
@@ -197,8 +250,10 @@
   user-select: none;
 }
 
-.grid-th.is-current {
-  background: color-mix(in srgb, var(--selection) 70%, var(--surface));
+/* A column with selected cells. */
+.grid-th.is-selected {
+  color: var(--cursor);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
 }
 
 .grid-th-name {
@@ -240,7 +295,8 @@
 }
 
 .grid-th-edge:hover::after,
-.grid-th-edge:active::after {
+.grid-th-edge:active::after,
+.grid-th-edge.is-dragged::after {
   background: var(--accent);
 }
 
@@ -269,11 +325,8 @@
   background: var(--panel);
   line-height: 26px;
   text-overflow: ellipsis;
-  cursor: default;
-}
-
-.is-comfortable .grid-cell {
-  line-height: 34px;
+  cursor: cell;
+  touch-action: none;
 }
 
 .grid-row.is-odd .grid-cell {
@@ -298,10 +351,46 @@
   color: var(--text-faint);
 }
 
-.grid-row .grid-cell.is-selected {
+/* A selected block of cells: a tint, and a line around the block. */
+.grid-row .grid-cell.in-range {
+  --range-top: transparent;
+  --range-bottom: transparent;
+  --range-left: transparent;
+  --range-right: transparent;
+  background: color-mix(in srgb, var(--accent) 17%, var(--panel));
+  box-shadow:
+    inset 0 1px var(--range-top),
+    inset 0 -1px var(--range-bottom),
+    inset 1px 0 var(--range-left),
+    inset -1px 0 var(--range-right);
+}
+
+.grid-row .grid-cell.range-top {
+  --range-top: var(--cursor);
+}
+
+.grid-row .grid-cell.range-bottom {
+  --range-bottom: var(--cursor);
+}
+
+.grid-row .grid-cell.range-left {
+  --range-left: var(--cursor);
+}
+
+.grid-row .grid-cell.range-right {
+  --range-right: var(--cursor);
+}
+
+/* The highlighted cell: where the selection started. */
+.grid-row .grid-cell.is-active {
   color: var(--panel);
   background: var(--cursor);
   font-weight: 600;
+}
+
+.grid:focus-visible .grid-cell.is-active {
+  outline: 1px solid var(--text);
+  outline-offset: -2px;
 }
 
 .grid-number {
@@ -315,7 +404,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.grid-row.is-current .grid-number {
+.grid-number.is-selected {
   color: var(--cursor);
   box-shadow: inset 2px 0 var(--cursor);
 }
@@ -502,6 +591,119 @@
   box-shadow: none;
 }
 
+.status-spacer {
+  flex: 1;
+}
+
+.statusbar button {
+  color: var(--text-muted);
+}
+
+.statusbar button:hover {
+  color: var(--text);
+}
+
+/* The selected block, by name. */
+.selection-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-muted);
+  font: 400 10px var(--font-data);
+}
+
+.selection-summary strong {
+  overflow: hidden;
+  color: var(--cursor);
+  font-weight: 400;
+  text-overflow: ellipsis;
+}
+
+.selection-summary > span {
+  flex: none;
+  padding-left: 8px;
+  border-left: 1px solid var(--selection);
+}
+
+/* --- keyboard shortcuts ------------------------------------------------- */
+
+.shortcuts-backdrop {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 0.5);
+}
+
+.shortcuts-panel {
+  width: min(720px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--selection));
+  border-radius: var(--radius-large);
+  box-shadow: 0 22px 70px rgb(0 0 0 / 0.5);
+}
+
+.shortcuts-panel header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px 12px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.shortcuts-panel h2 {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.shortcuts-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 18px 28px;
+  padding: 18px;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.shortcuts-groups h3 {
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.shortcuts-groups dl > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--grid-line);
+}
+
+.shortcuts-groups dt {
+  flex: none;
+  display: flex;
+  gap: 4px;
+}
+
+.shortcuts-groups dd {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: right;
+}
+
 @keyframes pulse {
   50% {
     opacity: 0.35;
@@ -509,6 +711,10 @@
 }
 
 @media (max-width: 900px) {
+  .grid-hint {
+    display: none;
+  }
+
   .inspector {
     grid-template-columns: 160px 1fr;
   }

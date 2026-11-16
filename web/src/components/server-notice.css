@@ -1,0 +1,99 @@
+/* The notice shown once the server has stopped. Colours and fonts come
+   from theme/tokens.css only. */
+
+.server-notice {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+  min-height: 66px;
+  padding: 11px 19px;
+  border-bottom: 1px solid color-mix(in srgb, var(--warning) 24%, var(--panel));
+  background: color-mix(in srgb, var(--warning) 7%, var(--panel));
+}
+
+.server-notice-icon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: var(--warning);
+  border: 1px solid color-mix(in srgb, var(--warning) 20%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--warning) 7%, transparent);
+}
+
+.server-notice-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.server-notice-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.server-notice-title strong {
+  color: var(--warning);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.server-notice-title > span {
+  padding: 2px 5px;
+  color: color-mix(in srgb, var(--warning) 65%, var(--text-faint));
+  border: 1px solid color-mix(in srgb, var(--warning) 15%, transparent);
+  border-radius: 4px;
+  font-size: 9px;
+}
+
+.server-notice p {
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.7;
+}
+
+.server-notice code {
+  padding: 1px 5px;
+  color: var(--warning);
+  border: 1px solid color-mix(in srgb, var(--warning) 15%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
+  font: 400 9px var(--font-data);
+}
+
+.server-command {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 7px;
+  min-height: 29px;
+  padding: 0 10px;
+  color: var(--warning);
+  border: 1px solid color-mix(in srgb, var(--warning) 24%, transparent);
+  border-radius: 6px;
+  font-size: 10px;
+  transition: background 120ms;
+}
+
+.server-command:hover {
+  background: color-mix(in srgb, var(--warning) 9%, transparent);
+}
+
+.server-notice-close {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  color: var(--text-muted);
+  border-radius: 5px;
+}
+
+.server-notice-close:hover {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+}

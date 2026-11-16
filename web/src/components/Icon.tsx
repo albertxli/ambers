@@ -4,7 +4,29 @@
 const PATHS = {
   "arrow-left": <path d="M19 12H5m0 0 6-6m-6 6 6 6" />,
   "arrow-right": <path d="M5 12h14m0 0-6-6m6 6-6 6" />,
+  check: <path d="m5 12.5 4.5 4.500L19 7" />,
   "chevron-down": <path d="m6 9 6 6 6-6" />,
+  "chevron-right": <path d="m9 6 6 6-6 6" />,
+  columns: (
+    <>
+      <rect x="3.5" y="5" width="17" height="14" rx="2" />
+      <path d="M9 5v14m6-14v14" />
+    </>
+  ),
+  copy: (
+    <>
+      <rect x="9" y="9" width="11" height="12" rx="1.5" />
+      <path d="M15 9V4.500A1.500 1.500 0 0 0 13.500 3h-9A1.500 1.500 0 0 0 3 4.500v10A1.500 1.500 0 0 0 4.500 16H9" />
+    </>
+  ),
+  filter: <path d="M4 6h16M7 12h10m-7 6h4" />,
+  plus: <path d="M12 5v14M5 12h14" />,
+  stop: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <rect x="8.5" y="8.5" width="7" height="7" rx="1" />
+    </>
+  ),
   clock: (
     <>
       <circle cx="12" cy="12" r="8.5" />

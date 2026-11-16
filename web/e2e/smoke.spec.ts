@@ -1,25 +1,11 @@
-import { type Page, expect, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 import { TOKEN } from "../playwright.config";
+import { openSurvey, stayLocal } from "./helpers";
 
 // The whole path once: the command starts a server, the server lists and
 // loads files, the API answers, the page shows it. Files are the
 // committed fixtures in tests/data.
-
-/** Fail a test when the page asks anything outside this machine. */
-function stayLocal(page: Page) {
-  page.on("request", (request) => {
-    expect(request.url(), "the page must not load anything from outside").toMatch(
-      /^http:\/\/127\.0\.0\.1:/,
-    );
-  });
-}
-
-async function openSurvey(page: Page) {
-  await page.goto(`/?token=${TOKEN}`);
-  await page.getByRole("button", { name: "Open survey.sav", exact: true }).click();
-  await expect(page.getByRole("columnheader", { name: /^id/ })).toBeVisible();
-}
 
 test("the launch page lists the folder's data files", async ({ page }) => {
   stayLocal(page);

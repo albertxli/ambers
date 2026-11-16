@@ -21,11 +21,17 @@ export type { FileList } from "./generated/FileList";
 export type { CellMode } from "./generated/CellMode";
 export type { DatasetInfo } from "./generated/DatasetInfo";
 export type { Filter } from "./generated/Filter";
+export type { FilterKind } from "./generated/FilterKind";
+export type { FilterMode } from "./generated/FilterMode";
+export type { FilterOperator } from "./generated/FilterOperator";
+export type { FilterProblem } from "./generated/FilterProblem";
+export type { KindOperators } from "./generated/KindOperators";
 export type { LoadState } from "./generated/LoadState";
 export type { Row } from "./generated/Row";
 export type { RowsPage } from "./generated/RowsPage";
 export type { RowsRequest } from "./generated/RowsRequest";
 export type { ServerInfo } from "./generated/ServerInfo";
+export type { ValueRow } from "./generated/ValueRow";
 export type { ValueTable } from "./generated/ValueTable";
 export type { Variable } from "./generated/Variable";
 export type { Variables } from "./generated/Variables";
@@ -72,6 +78,11 @@ export const api = {
   rows: (id: string, request: RowsRequest) => post<RowsPage>(`/datasets/${id}/rows`, request),
   values: (id: string, variable: number, offset = 0, limit = 1000) =>
     call<ValueTable>(`/datasets/${id}/variables/${variable}/values?offset=${offset}&limit=${limit}`),
+  /** The most frequent values of a variable whose code or label contains `search`. */
+  suggest: (id: string, variable: number, search: string, top: number) =>
+    call<ValueTable>(
+      `/datasets/${id}/variables/${variable}/values?top=${top}&search=${encodeURIComponent(search)}`,
+    ),
   /** The data files the launch page may show and open. */
   files: () => call<FileList>("/files"),
   /** Open a listed file; the server refuses any other path. */

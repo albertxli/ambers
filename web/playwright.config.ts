@@ -29,6 +29,8 @@ export default defineConfig({
     // Small on purpose: not every row and column fits, so the tests see
     // that the grid only holds what is near the screen.
     viewport: { width: 900, height: 520 },
+    // The tests read back what the page copied.
+    permissions: ["clipboard-read", "clipboard-write"],
   },
   webServer: {
     command: `cargo run --quiet -p ambers-cli --bin am -- open tests/data --no-browser --port ${PORT} --keep-alive`,
