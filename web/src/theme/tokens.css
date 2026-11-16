@@ -20,7 +20,6 @@
   --dracula-yellow: #f1fa8c;
 
   /* Roles. Components use these, never the palette names above. */
-  --backdrop: color-mix(in srgb, var(--dracula-background) 62%, black);
   --panel: var(--dracula-background);
   --surface: color-mix(in srgb, var(--dracula-current-line) 38%, var(--dracula-background));
   --selection: var(--dracula-current-line);

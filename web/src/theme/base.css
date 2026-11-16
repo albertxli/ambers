@@ -9,7 +9,7 @@
   font-family: var(--font-ui);
   font-synthesis: none;
   color: var(--text);
-  background: var(--backdrop);
+  background: var(--panel);
 }
 
 @layer base {
@@ -22,7 +22,7 @@
   body {
     min-width: 320px;
     overflow: hidden;
-    background: var(--backdrop);
+    background: var(--panel);
   }
 
   button,
@@ -46,10 +46,9 @@
   }
 }
 
-/* The frame every screen sits in: a rounded panel with room around it. */
+/* Every screen fills the browser window, edge to edge. */
 .app-shell {
   height: 100%;
-  padding: 18px;
 }
 
 .workspace {
@@ -58,22 +57,6 @@
   flex-direction: column;
   overflow: hidden;
   background: var(--panel);
-  border: 1px solid var(--selection);
-  border-radius: var(--radius-large);
-  box-shadow:
-    0 22px 70px rgb(0 0 0 / 0.45),
-    inset 0 1px rgb(255 255 255 / 0.025);
-}
-
-@media (max-width: 900px) {
-  .app-shell {
-    padding: 0;
-  }
-
-  .workspace {
-    border: 0;
-    border-radius: 0;
-  }
 }
 
 /* A message in place of a screen: nothing open, loading, an error. */
