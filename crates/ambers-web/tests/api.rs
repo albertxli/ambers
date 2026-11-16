@@ -327,6 +327,13 @@ fn a_value_table_lists_every_value_with_its_count() {
     let labels: Vec<&str> = found.rows.iter().map(|row| row.label.as_str()).collect();
     assert_eq!(found.total, 2);
     assert!(labels.contains(&"Very dissatisfied") && labels.contains(&"Dissatisfied"));
+    // A table marks a user-missing value in its label; a filter needs the
+    // label as the file has it, and a remark is not searched.
+    let refused = table("satisfaction", "?search=ref&top=5");
+    assert_eq!(refused.rows.len(), 1);
+    assert_eq!(refused.rows[0].label, "Refused (user-missing)");
+    assert_eq!(refused.rows[0].value_label, "Refused");
+    assert_eq!(table("satisfaction", "?search=user-missing&top=5").total, 0);
     let by_code = table("city", "?search=lis&top=5");
     assert_eq!(
         (by_code.total, by_code.rows[0].code.as_str()),

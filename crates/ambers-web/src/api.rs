@@ -290,7 +290,12 @@ pub enum ValueKind {
 pub struct ValueRow {
     /// The stored value as text.
     pub code: String,
+    /// What a table shows beside the code: the value label, which may
+    /// carry a remark (`Refused (user-missing)`, `(no label)`).
     pub label: String,
+    /// The value label as the file has it, without remarks; empty when
+    /// the value has none. A filter finds the value by this or its code.
+    pub value_label: String,
     #[ts(type = "number")]
     pub count: u64,
     /// Share of valid cases, from 0 to 1; absent on the missing row.

@@ -34,7 +34,12 @@ pub struct DetailRow {
     /// The code or value as text; empty on a categorical variable's
     /// missing row.
     pub code: String,
+    /// What a table shows beside the code: the value label, which may
+    /// carry a remark (`Refused (user-missing)`, `(no label)`).
     pub label: String,
+    /// The value label as the file has it, without remarks; empty when
+    /// the value has none. What a filter can be given to find the value.
+    pub value_label: String,
     pub n: u64,
     pub pct_valid: Option<f64>,
     pub pct_total: Option<f64>,
@@ -116,6 +121,10 @@ pub fn categorical(column: &Column, values: Vec<ValueRow>) -> Vec<DetailRow> {
             DetailRow {
                 code,
                 label,
+                value_label: match &row.code {
+                    Some(_) => row.label.clone().unwrap_or_default(),
+                    None => String::new(),
+                },
                 n: row.n,
                 pct_valid: row.pct_valid,
                 pct_total: row.pct_total,
@@ -225,6 +234,7 @@ pub fn distinct(column: &Column, index: usize, batches: &[RecordBatch]) -> Vec<D
         rows.push(DetailRow {
             code: "(missing)".to_string(),
             label: String::new(),
+            value_label: String::new(),
             n: missing,
             pct_valid: None,
             pct_total: share(missing, total),
@@ -236,6 +246,7 @@ pub fn distinct(column: &Column, index: usize, batches: &[RecordBatch]) -> Vec<D
             .into_iter()
             .map(|(code, label, user_missing, n)| DetailRow {
                 code,
+                value_label: label.clone(),
                 label,
                 n,
                 pct_valid: share(n, valid),

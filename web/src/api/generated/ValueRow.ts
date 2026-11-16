@@ -5,7 +5,17 @@ export type ValueRow = {
 /**
  * The stored value as text.
  */
-code: string, label: string, count: number, 
+code: string, 
+/**
+ * What a table shows beside the code: the value label, which may
+ * carry a remark (`Refused (user-missing)`, `(no label)`).
+ */
+label: string, 
+/**
+ * The value label as the file has it, without remarks; empty when
+ * the value has none. A filter finds the value by this or its code.
+ */
+value_label: string, count: number, 
 /**
  * Share of valid cases, from 0 to 1; absent on the missing row.
  */

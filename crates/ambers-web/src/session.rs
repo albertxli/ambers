@@ -379,7 +379,7 @@ impl Session {
                 None | Some("") => true,
                 Some(needle) => {
                     row.code.to_lowercase().contains(needle)
-                        || row.label.to_lowercase().contains(needle)
+                        || row.value_label.to_lowercase().contains(needle)
                 }
             })
             .collect();
@@ -398,6 +398,7 @@ impl Session {
             .map(|row| api::ValueRow {
                 code: row.code.clone(),
                 label: row.label.clone(),
+                value_label: row.value_label.clone(),
                 count: row.n,
                 share_valid: row.pct_valid,
                 share_total: row.pct_total,
