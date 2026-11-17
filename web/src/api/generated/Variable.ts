@@ -29,7 +29,8 @@ numeric: boolean,
  */
 width: number, 
 /**
- * The labelled values, in code order; empty unless categorical.
+ * The labelled values: of a categorical variable in code order, of a
+ * string with value labels as the file lists them.
  */
 values: Array<ValueLabel>, 
 /**

@@ -7,9 +7,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard};
 
-use ambers::Compression;
+use ambers::{Compression, Value};
+use ambers_codebook::profile::VariableSummary;
 use ambers_dataset::detail::{Detail, RowKind, Totals};
 use ambers_dataset::filter::{Condition, Kind, Operator};
+use ambers_dataset::format::Column;
 use ambers_dataset::{Dataset, Load, Mode, RowFilter, loader};
 
 use crate::api;
@@ -160,13 +162,7 @@ impl Session {
                     role: column.role.to_string(),
                     numeric: column.numeric,
                     width: column.width(Mode::Labels) as u32,
-                    values: (summary.values.iter())
-                        .map(|(code, label)| api::ValueLabel {
-                            code: column.code_text(code),
-                            label: label.clone(),
-                            user_missing: column.value_cell(code, Mode::Codes).user_missing,
-                        })
-                        .collect(),
+                    values: labelled(column, summary),
                     missing: column.missing_text(),
                     valid: summary.n_valid,
                     missing_count: summary.n_missing,
@@ -217,6 +213,10 @@ impl Session {
             api::CellMode::Labels | api::CellMode::Both => Mode::Labels,
             api::CellMode::Codes => Mode::Codes,
         };
+        let cell_at = |row: usize, variable: usize| match both {
+            true => data.cell_apart(row, variable),
+            false => data.cell(row, variable, mode),
+        };
         // Fewer rows for a wide answer, but always at least one.
         let by_cells = (MAX_CELLS / variables.len().max(1)).max(1);
         let limit = (request.limit as usize).min(MAX_ROWS).min(by_cells);
@@ -228,7 +228,7 @@ impl Session {
                 number: row + 1,
                 cells: (variables.iter())
                     .map(|&variable| {
-                        let cell = data.cell(row as usize, variable as usize, mode);
+                        let cell = cell_at(row as usize, variable as usize);
                         api::Cell {
                             text: cell.text,
                             code: cell.code.filter(|_| both),
@@ -449,6 +449,26 @@ impl Session {
             offset: start as u32,
             rows,
         })
+    }
+}
+
+/// A variable's labelled values. The codebook lists them for a categorical
+/// variable (in code order); a string with value labels is `text` to the
+/// codebook, and its labels come from the file as they are.
+fn labelled(column: &Column, summary: &VariableSummary) -> Vec<api::ValueLabel> {
+    let one = |code: &Value, label: &String| api::ValueLabel {
+        code: column.code_text(code),
+        label: label.clone(),
+        user_missing: column.value_cell(code, Mode::Codes).user_missing,
+    };
+    if summary.values.is_empty() {
+        (column.labels.iter())
+            .map(|(code, label)| one(code, label))
+            .collect()
+    } else {
+        (summary.values.iter())
+            .map(|(code, label)| one(code, label))
+            .collect()
     }
 }
 

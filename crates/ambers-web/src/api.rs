@@ -115,7 +115,8 @@ pub struct Variable {
     /// A starting column width in characters, from the print format and
     /// the longest value label.
     pub width: u32,
-    /// The labelled values, in code order; empty unless categorical.
+    /// The labelled values: of a categorical variable in code order, of a
+    /// string with value labels as the file lists them.
     pub values: Vec<ValueLabel>,
     /// The user-missing definition as text; empty when there is none.
     pub missing: String,

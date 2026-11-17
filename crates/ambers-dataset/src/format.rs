@@ -185,6 +185,17 @@ impl Column {
 
     /// The cell at `row` of `array`, which must be this variable's column.
     pub fn cell(&self, array: &dyn Array, row: usize, mode: Mode) -> Cell {
+        self.cell_as(array, row, mode, false)
+    }
+
+    /// The cell as its label with the stored value beside it (`code`), for
+    /// a viewer that draws the two apart: the label is given plain, where
+    /// Labels mode appends the code to a label several codes share.
+    pub fn cell_apart(&self, array: &dyn Array, row: usize) -> Cell {
+        self.cell_as(array, row, Mode::Labels, true)
+    }
+
+    fn cell_as(&self, array: &dyn Array, row: usize, mode: Mode, apart: bool) -> Cell {
         if array.is_null(row) {
             // System-missing, shown as SPSS shows it.
             return Cell {
@@ -202,15 +213,20 @@ impl Column {
                 };
             }
         };
-        self.value_cell(&value, mode)
+        self.value_cell_as(&value, mode, apart)
     }
 
     /// The cell for a stored value.
     pub fn value_cell(&self, value: &Value, mode: Mode) -> Cell {
+        self.value_cell_as(value, mode, false)
+    }
+
+    fn value_cell_as(&self, value: &Value, mode: Mode, apart: bool) -> Cell {
         let code = self.code_text(value);
         let label = self.labels.get(value);
         let (text, code) = match (mode, label) {
             (Mode::Codes, _) | (_, None) => (code, None),
+            (Mode::Labels, Some(label)) if apart => (one_line(label), Some(code)),
             (Mode::Labels, Some(label)) => (self.label_text(value, label), Some(code)),
             (Mode::Both, Some(label)) => {
                 let pad = self.code_width.saturating_sub(code.width());
@@ -397,6 +413,30 @@ pub(crate) mod tests {
             cells("imperfect_labels.sav", "q1", Mode::Labels)[3].code,
             None
         );
+    }
+
+    #[test]
+    fn a_label_drawn_apart_from_its_code_is_plain() {
+        // brand: 97 and 98 share the label "Other".
+        let (batch, columns) = fixture("imperfect_labels.sav");
+        let index = batch.schema().index_of("brand").unwrap();
+        let column = &columns[index];
+        let array = batch.column(index);
+        let row = (0..batch.num_rows())
+            .find(|&row| column.cell(array.as_ref(), row, Mode::Labels).text == "Other [97]")
+            .expect("a row holding 97");
+        let apart = column.cell_apart(array.as_ref(), row);
+        assert_eq!(apart.text, "Other");
+        assert!(apart.code.is_some());
+        // Everything but the label's text is as in Labels mode.
+        for row in 0..batch.num_rows() {
+            let labels = column.cell(array.as_ref(), row, Mode::Labels);
+            let apart = column.cell_apart(array.as_ref(), row);
+            if labels.code.is_none() {
+                assert_eq!(apart, labels);
+            }
+            assert_eq!(apart.code, labels.code);
+        }
     }
 
     #[test]

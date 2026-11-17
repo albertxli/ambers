@@ -185,6 +185,13 @@ impl Dataset {
         self.columns[column].cell(batch.column(column), row % self.batch_rows, mode)
     }
 
+    /// The cell at a file row as its label with the stored value beside
+    /// it (`Column::cell_apart`).
+    pub fn cell_apart(&self, row: usize, column: usize) -> Cell {
+        let batch = &self.batches[row / self.batch_rows];
+        self.columns[column].cell_apart(batch.column(column), row % self.batch_rows)
+    }
+
     // --- codebook: types, counts, label audit -----------------------------
 
     /// Bring the cached types, counts and label checks up to date with

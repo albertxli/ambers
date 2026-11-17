@@ -304,8 +304,14 @@ fn a_variable_carries_its_label_audit_and_user_missing_values() {
     let refused = q1.values.iter().find(|value| value.code == "99").unwrap();
     assert!(refused.user_missing);
     assert!(q1.values.iter().any(|value| !value.user_missing));
+    // A string with value labels lists them too, though it is not audited.
+    let city = named("city");
+    assert_eq!(city.kind, "text");
+    assert!(city.values.iter().any(|value| value.label == "New York"));
+    assert!(!city.label_audit.audited);
     // A variable without value labels is not audited.
     let id = named("id");
+    assert!(id.values.is_empty());
     assert!(!id.label_audit.audited);
     assert_eq!(
         (id.label_audit.unlabeled, id.label_audit.duplicates),
