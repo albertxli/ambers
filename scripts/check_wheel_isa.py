@@ -14,9 +14,12 @@ GitHub's ubuntu runners. Standard library only.
 What is checked:
   x86-64, any baseline : no AVX-512 at all (zmm, k1-k7 mask regs, xmm/ymm16-31, EVEX-only
                          mnemonics). No supported baseline includes it.
-  x86-64, x86-64-v2    : AVX/AVX2/BMI2 instruction count stays under --max-avx. A few dozen
-                         come from dependencies that check the CPU at runtime before using
-                         them (safe); a native/v3 build has thousands.
+  x86-64, x86-64-v2    : AVX/AVX2/BMI2 instruction count stays under --max-avx. One or two
+                         hundred come from dependencies that check the CPU at runtime before
+                         using them (memchr, zlib-rs: safe); a native/v3 build has thousands,
+                         and C code alone built above the baseline has several hundred (seen
+                         2026-11: Ubuntu 26.04's gcc targets x86-64-v3 by default, which put
+                         600 AVX2/BMI2 instructions into the bundled allocator).
   arm64                : nothing newer than Apple M1 (no SVE/SME, bf16, i8mm).
 """
 
@@ -49,7 +52,9 @@ AVX512_MNEMONIC = re.compile(
 )
 # Instructions that need AVX, AVX2, FMA or BMI1/2 (above x86-64-v2).
 AVX_OR_BMI_MNEMONIC = re.compile(
-    r"^(?:shlx|shrx|sarx|rorx|mulx|pdep|pext|bzhi|andn|bextr|blsr|blsi|blsmsk"
+    # `pext`, `pdep` and `andn` end there (or with an l/q suffix): `pextrb` is SSE4.1
+    # and `andnps` SSE, both inside x86-64-v2.
+    r"^(?:shlx|shrx|sarx|rorx|mulx|pdep[lq]?$|pext[lq]?$|bzhi|andn[lq]?$|bextr|blsr|blsi|blsmsk"
     r"|vfn?m(?:add|sub)|vpbroadcast|vperm2i128|vinserti128|vextracti128|vpgather|vgather"
     r"|vpblendd|vpermq|vpermd|vpsllv|vpsrlv|vpsrav)"
 )
@@ -85,6 +90,7 @@ def check_x86(binary: Path, baseline: str, max_avx: int) -> list[str]:
     asm = run(["objdump", "-d", "--no-show-raw-insn", str(binary)])
     total = avx512 = avx = 0
     examples: dict[str, int] = {}
+    avx_examples: dict[str, int] = {}
     for line in asm.splitlines():
         m = X86_INSN.match(line)
         if not m:
@@ -96,6 +102,7 @@ def check_x86(binary: Path, baseline: str, max_avx: int) -> list[str]:
             examples[mnem] = examples.get(mnem, 0) + 1
         elif YMM_REG.search(ops) or AVX_OR_BMI_MNEMONIC.match(mnem):
             avx += 1
+            avx_examples[mnem] = avx_examples.get(mnem, 0) + 1
     print(f"    {total:,} instructions | AVX-512: {avx512} | AVX/AVX2/BMI: {avx}")
     if total == 0:
         return ["disassembly produced no instructions (objdump format not recognised?)"]
@@ -104,9 +111,12 @@ def check_x86(binary: Path, baseline: str, max_avx: int) -> list[str]:
         top = ", ".join(f"{k}×{v}" for k, v in sorted(examples.items(), key=lambda kv: -kv[1])[:6])
         problems.append(f"{avx512} AVX-512 instructions ({top})")
     if baseline == "x86-64-v2" and avx > max_avx:
+        top = ", ".join(
+            f"{k}×{v}" for k, v in sorted(avx_examples.items(), key=lambda kv: -kv[1])[:8]
+        )
         problems.append(
             f"{avx} AVX/AVX2/BMI instructions > --max-avx {max_avx}: built above x86-64-v2 "
-            "(target-cpu=native or x86-64-v3?)"
+            f"(target-cpu=native or x86-64-v3? C code without -march?). Most frequent: {top}"
         )
     return problems
 

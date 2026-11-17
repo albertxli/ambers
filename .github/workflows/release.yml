@@ -57,6 +57,12 @@ jobs:
           # that targets whatever CPU the runner VM happens to have.
           - os: ubuntu-latest
             rustflags: "-C target-cpu=x86-64-v2"
+          # C code (the bundled allocator) is built by the system's C compiler,
+          # which RUSTFLAGS does not reach. Ubuntu 26.04's gcc targets
+          # x86-64-v3 unless told otherwise: without this the binary has AVX2
+          # in its allocator and dies with SIGILL on older CPUs. `nehalem` is
+          # x86-64-v2 under the name older compilers know.
+            cflags: "-march=nehalem -mtune=generic"
           - os: windows-latest
             rustflags: "-C target-cpu=x86-64-v2"
           - os: macos-latest
@@ -64,6 +70,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       RUSTFLAGS: ${{ matrix.rustflags }}
+      CFLAGS: ${{ matrix.cflags }}
 
     steps:
       - uses: actions/checkout@v4
@@ -126,6 +133,12 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             rustflags: "-C target-cpu=x86-64-v2"
+          # C code (the bundled allocator) is built by the system's C compiler,
+          # which RUSTFLAGS does not reach. Ubuntu 26.04's gcc targets
+          # x86-64-v3 unless told otherwise: without this the binary has AVX2
+          # in its allocator and dies with SIGILL on older CPUs. `nehalem` is
+          # x86-64-v2 under the name older compilers know.
+            cflags: "-march=nehalem -mtune=generic"
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             rustflags: "-C target-cpu=x86-64-v2 -C target-feature=+crt-static"
@@ -135,6 +148,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       RUSTFLAGS: ${{ matrix.rustflags }}
+      CFLAGS: ${{ matrix.cflags }}
     defaults:
       run:
         shell: bash
