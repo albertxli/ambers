@@ -60,6 +60,9 @@ impl Mode {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Cell {
     pub text: String,
+    /// The stored value as text, when `text` shows its label. `None` when
+    /// the text is the stored value itself.
+    pub code: Option<String>,
     /// A value with no label, in a numeric variable that has value labels.
     pub unlabeled: bool,
     /// A value the metadata declares as user-missing.
@@ -206,16 +209,18 @@ impl Column {
     pub fn value_cell(&self, value: &Value, mode: Mode) -> Cell {
         let code = self.code_text(value);
         let label = self.labels.get(value);
-        let text = match (mode, label) {
-            (Mode::Codes, _) | (_, None) => code,
-            (Mode::Labels, Some(label)) => self.label_text(value, label),
+        let (text, code) = match (mode, label) {
+            (Mode::Codes, _) | (_, None) => (code, None),
+            (Mode::Labels, Some(label)) => (self.label_text(value, label), Some(code)),
             (Mode::Both, Some(label)) => {
                 let pad = self.code_width.saturating_sub(code.width());
-                format!("{code}{} {}", " ".repeat(pad), one_line(label))
+                let text = format!("{code}{} {}", " ".repeat(pad), one_line(label));
+                (text, Some(code))
             }
         };
         Cell {
             text,
+            code,
             // Free text in a labelled string variable is legitimate data,
             // so only numeric variables are flagged (as `validate()` does).
             unlabeled: mode != Mode::Codes
@@ -381,6 +386,16 @@ pub(crate) mod tests {
         assert_eq!(
             texts("survey.sav", "gender", Mode::Both)[..2],
             ["1.00 Male", "2.00 Female"]
+        );
+        // A cell that shows a label says which stored value it stands for.
+        let code = |mode| cells("survey.sav", "gender", mode)[0].code.clone();
+        assert_eq!(code(Mode::Labels).as_deref(), Some("1.00"));
+        assert_eq!(code(Mode::Both).as_deref(), Some("1.00"));
+        assert_eq!(code(Mode::Codes), None);
+        // A value without a label is its own text.
+        assert_eq!(
+            cells("imperfect_labels.sav", "q1", Mode::Labels)[3].code,
+            None
         );
     }
 

@@ -46,6 +46,21 @@ pub struct Arrived {
     pub refreshed: bool,
 }
 
+/// What the label audit found for one variable, as numbers. The text the
+/// terminal shows (`Dataset::label_check`) says the same in words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct LabelAudit {
+    /// The variable is audited: numeric, with value labels.
+    pub audited: bool,
+    /// Values in the data that have no label.
+    pub unlabeled: usize,
+    /// The variable has more distinct values than are counted, so
+    /// `unlabeled` is only what was seen.
+    pub many: bool,
+    /// Labels carried by more than one code.
+    pub duplicates: usize,
+}
+
 pub struct Dataset {
     pub columns: Vec<Column>,
     batches: Vec<RecordBatch>,
@@ -66,6 +81,7 @@ pub struct Dataset {
     /// label check.
     summaries: Vec<VariableSummary>,
     label_checks: Vec<String>,
+    audits: Vec<LabelAudit>,
     counted_rows: u64,
     refreshed: Option<Instant>,
     /// While loading, the cache is brought up to date this often.
@@ -92,6 +108,7 @@ impl Dataset {
             profiler: Arc::new(Mutex::new(Profiler::new(meta, schema))),
             summaries: Vec::new(),
             label_checks: Vec::new(),
+            audits: Vec::new(),
             counted_rows: 0,
             refreshed: None,
             refresh_every: Duration::from_millis(250),
@@ -184,9 +201,9 @@ impl Dataset {
         let profiler = self.profiler();
         self.counted_rows = profiler.rows();
         self.summaries = profiler.summaries();
-        self.label_checks = (0..self.columns.len())
+        (self.audits, self.label_checks) = (0..self.columns.len())
             .map(|column| self.check_labels(&profiler, column))
-            .collect();
+            .unzip();
         self.refreshed = Some(Instant::now());
         true
     }
@@ -211,9 +228,14 @@ impl Dataset {
 
     /// How many variables hold values that have no label.
     pub fn unlabeled_variables(&self) -> usize {
-        (self.label_checks.iter())
-            .filter(|check| check.contains("unlabelled"))
+        (self.audits.iter())
+            .filter(|audit| audit.unlabeled > 0)
             .count()
+    }
+
+    /// The audit of one variable as numbers.
+    pub fn label_audit(&self, column: usize) -> LabelAudit {
+        self.audits[column]
     }
 
     /// The audit of one variable: `ok`, the unlabelled values, the
@@ -227,9 +249,9 @@ impl Dataset {
         self.columns[column].numeric && !self.columns[column].labels.is_empty()
     }
 
-    fn check_labels(&self, profiler: &Profiler, column: usize) -> String {
+    fn check_labels(&self, profiler: &Profiler, column: usize) -> (LabelAudit, String) {
         if !self.is_audited(column) {
-            return String::new();
+            return (LabelAudit::default(), String::new());
         }
         let labels = &self.columns[column].labels;
         let many = profiler.overflowed(column);
@@ -238,8 +260,14 @@ impl Dataset {
             .filter(|row| row.n > 0)
             .filter_map(|row| row.code)
             .collect();
+        let mut audit = LabelAudit {
+            audited: true,
+            many,
+            ..LabelAudit::default()
+        };
         let mut findings = Vec::new();
         if let Some(found) = ambers_codebook::validate::unlabeled_values(&seen, labels) {
+            audit.unlabeled = found.values.len();
             let shown: Vec<String> = (found.values.iter().take(5))
                 .map(|value| value.to_string())
                 .collect();
@@ -252,6 +280,7 @@ impl Dataset {
             findings.push(format!("{count} unlabelled: {}{more}", shown.join(", ")));
         }
         for duplicate in ambers_codebook::validate::duplicate_labels(labels) {
+            audit.duplicates += 1;
             let codes: Vec<String> = duplicate.codes.iter().map(Value::to_string).collect();
             findings.push(format!(
                 "duplicate: {} ({})",
@@ -259,11 +288,12 @@ impl Dataset {
                 codes.join(", ")
             ));
         }
-        if findings.is_empty() {
+        let text = if findings.is_empty() {
             "ok".to_string()
         } else {
             findings.join("; ")
-        }
+        };
+        (audit, text)
     }
 
     /// The value table of one variable: for a categorical variable the
@@ -272,14 +302,19 @@ impl Dataset {
     pub fn detail(&self, variable: usize) -> Detail {
         let column = &self.columns[variable];
         let categorical = self.summary(variable).variable_type.is_categorical();
-        let rows = if categorical {
-            detail::categorical(column, self.value_rows(variable))
+        let (rows, counted) = if categorical {
+            // One snapshot for the rows and the number of cases they cover.
+            let profiler = self.profiler();
+            let rows = detail::categorical(column, profiler.values(variable));
+            (rows, profiler.rows())
         } else {
-            detail::distinct(column, variable, &self.batches)
+            let rows = detail::distinct(column, variable, &self.batches);
+            (rows, self.rows as u64)
         };
         Detail {
             variable,
             rows_loaded: self.rows,
+            counted,
             categorical,
             rows,
         }
@@ -569,9 +604,13 @@ pub(crate) mod tests {
         assert!(dataset.summary(q1).variable_type.is_categorical());
         assert!(dataset.label_check(q1).contains("unlabelled"));
         assert!(dataset.unlabeled_variables() >= 1);
+        // The same finding as numbers.
+        let audit = dataset.label_audit(q1);
+        assert!(audit.audited && audit.unlabeled >= 1 && !audit.many);
         // A variable without value labels is not audited.
         let id = column(&dataset, "id");
         assert_eq!(dataset.label_check(id), "");
+        assert_eq!(dataset.label_audit(id), LabelAudit::default());
     }
 
     #[test]
@@ -581,6 +620,9 @@ pub(crate) mod tests {
         assert!(gender.categorical);
         assert_eq!(gender.rows_loaded, 20);
         assert!(gender.rows.iter().any(|row| row.label == "Male"));
+        let totals = gender.totals();
+        assert_eq!(totals.total, 20);
+        assert_eq!(totals.valid + totals.missing, 20);
         // A text variable: every distinct value, counted on demand.
         let city = dataset.detail(column(&dataset, "city"));
         assert!(!city.categorical);

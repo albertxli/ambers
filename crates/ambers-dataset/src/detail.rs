@@ -52,11 +52,51 @@ pub struct Detail {
     /// when they were built: together they say when to rebuild.
     pub variable: usize,
     pub rows_loaded: usize,
+    /// Rows the counts cover. For a categorical variable the loader's
+    /// count, which can trail `rows_loaded` slightly while loading.
+    pub counted: u64,
     pub categorical: bool,
     pub rows: Vec<DetailRow>,
 }
 
+/// The numbers above a value table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Totals {
+    pub valid: u64,
+    pub missing: u64,
+    pub total: u64,
+    /// Rows of the table without the missing row: the codes of a
+    /// categorical variable (labelled or found in the data), otherwise
+    /// the distinct values.
+    pub values: u64,
+    /// Of those, the values that have a label.
+    pub labeled: u64,
+    /// Codes found in the data without a label; 0 unless categorical.
+    pub unlabeled: u64,
+}
+
 impl Detail {
+    /// Valid, missing and total cases, and how many values the table
+    /// lists. A user-missing value is a value: it counts as valid, as
+    /// everywhere in ambers.
+    pub fn totals(&self) -> Totals {
+        let listed = || self.rows.iter().filter(|row| row.kind != RowKind::Missing);
+        let missing: u64 = (self.rows.iter())
+            .filter(|row| row.kind == RowKind::Missing)
+            .map(|row| row.n)
+            .sum();
+        Totals {
+            valid: self.counted.saturating_sub(missing),
+            missing,
+            total: self.counted,
+            values: listed().count() as u64,
+            labeled: listed().filter(|row| !row.value_label.is_empty()).count() as u64,
+            unlabeled: listed()
+                .filter(|row| row.kind == RowKind::Unlabeled)
+                .count() as u64,
+        }
+    }
+
     /// Whether any value row carries a label, so the table needs a label
     /// column. Always true for a categorical variable.
     pub fn has_labels(&self) -> bool {
@@ -382,6 +422,7 @@ mod tests {
         let numeric = Detail {
             variable: 0,
             rows_loaded: 8,
+            counted: 8,
             categorical: false,
             rows: rows_of("variable_types.sav", "only1"),
         };
@@ -400,6 +441,14 @@ mod tests {
                 .starts_with("Value\tLabel\tN\t% valid\t% total\n(missing)\t\t2\t\t25.0%\n")
         );
         assert!(text.tsv().contains("\nNYC\tNew York\t3\t50.0%\t37.5%\n"));
+
+        // only1: seven ones and a null. city: two empty, three places, two labelled.
+        let totals = numeric.totals();
+        assert_eq!((totals.valid, totals.missing, totals.total), (7, 1, 8));
+        assert_eq!((totals.values, totals.labeled, totals.unlabeled), (1, 0, 0));
+        let totals = text.totals();
+        assert_eq!((totals.valid, totals.missing, totals.values), (6, 2, 3));
+        assert_eq!((totals.labeled, totals.unlabeled), (2, 0));
     }
 
     #[test]
@@ -439,9 +488,14 @@ mod tests {
         let detail = Detail {
             variable: index,
             rows_loaded: 12,
+            counted: 12,
             categorical: true,
             rows,
         };
+        // Refused (99) is declared user-missing and still a valid case.
+        let totals = detail.totals();
+        assert_eq!((totals.valid, totals.missing, totals.total), (11, 1, 12));
+        assert_eq!((totals.values, totals.labeled, totals.unlabeled), (3, 2, 1));
         assert!(
             detail.tsv().starts_with(
                 "Code\tLabel\tN\t% valid\t% total\n\tMISSING (system-missing)\t1\t\t\n"
