@@ -17,4 +17,6 @@ ambers-cli = { workspace = true, features = ["web"] }
 arrow = { workspace = true, features = ["ffi"] }
 indexmap = { workspace = true }
 mimalloc = { workspace = true }
-pyo3 = { workspace = true, features = ["extension-module", "indexmap"] }
+# abi3-py312: built against Python's stable interface, so one wheel per
+# platform serves Python 3.12 and every later version (decision 0011).
+pyo3 = { workspace = true, features = ["extension-module", "abi3-py312", "indexmap"] }
