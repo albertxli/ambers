@@ -3,4 +3,8 @@
 /**
  * A labelled value of a variable.
  */
-export type ValueLabel = { code: string, label: string, };
+export type ValueLabel = { code: string, label: string, 
+/**
+ * The metadata declares this value user-missing.
+ */
+user_missing: boolean, };

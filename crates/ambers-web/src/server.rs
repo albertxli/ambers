@@ -395,6 +395,8 @@ struct Paging {
     limit: Option<usize>,
     /// Only values whose code or label contains this.
     search: Option<String>,
+    /// How the values are sorted; the missing row is then left out.
+    order: Option<api::ValueOrder>,
     /// The most frequent values first, and no more than this many.
     top: Option<usize>,
 }
@@ -408,10 +410,13 @@ async fn values(
     let offset = paging.offset.unwrap_or(0);
     let limit = paging.limit.unwrap_or(VALUES_PAGE).min(VALUES_PAGE * 10);
     let top = paging.top.map(|top| top.min(VALUES_PAGE));
-    off_thread(move || session.values(index, offset, limit, paging.search.as_deref(), top))
-        .await?
-        .map(Json)
-        .ok_or_else(|| Failure(StatusCode::NOT_FOUND, format!("no variable {index}")))
+    off_thread(move || {
+        let search = paging.search.as_deref();
+        session.values(index, offset, limit, search, paging.order, top)
+    })
+    .await?
+    .map(Json)
+    .ok_or_else(|| Failure(StatusCode::NOT_FOUND, format!("no variable {index}")))
 }
 
 /// A second `am open` asks this server to open a file, or to list a

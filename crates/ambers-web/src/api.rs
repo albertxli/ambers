@@ -78,6 +78,23 @@ pub struct DatasetInfo {
 pub struct ValueLabel {
     pub code: String,
     pub label: String,
+    /// The metadata declares this value user-missing.
+    pub user_missing: bool,
+}
+
+/// What the audit of a variable's value labels found, as numbers.
+/// `Variable.label_check` says the same in words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct LabelAudit {
+    /// The variable is audited: stored as a number, with value labels.
+    pub audited: bool,
+    /// Values found in the data that have no label.
+    pub unlabeled: u32,
+    /// The variable has more distinct values than are counted, so
+    /// `unlabeled` is only what was seen.
+    pub many: bool,
+    /// Labels carried by more than one code.
+    pub duplicates: u32,
 }
 
 /// One variable, as Variable View lists it.
@@ -109,6 +126,7 @@ pub struct Variable {
     /// `ok`, what is wrong with the value labels, or empty when the
     /// variable has none to check.
     pub label_check: String,
+    pub label_audit: LabelAudit,
     /// What the variable is to a filter: which conditions it offers.
     pub filter_kind: FilterKind,
 }
@@ -155,7 +173,7 @@ pub enum CellMode {
     Labels,
     /// The stored value.
     Codes,
-    /// The stored value followed by its label.
+    /// The label as `text` and the stored value beside it as `code`.
     Both,
 }
 
@@ -236,6 +254,10 @@ pub enum CellFlag {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct Cell {
     pub text: String,
+    /// In `both` mode: the stored value, when `text` is its label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub code: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub flag: Option<CellFlag>,
@@ -305,8 +327,46 @@ pub struct ValueRow {
     pub kind: ValueKind,
 }
 
+/// The order of a value table's rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ValueOrder {
+    /// Numbers and dates from low to high, text from A to Z.
+    Value,
+    ValueDesc,
+    /// The most frequent first.
+    Count,
+}
+
+/// The numbers above a value table. A user-missing value is a value: it
+/// counts as valid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ValueTotals {
+    #[ts(type = "number")]
+    pub valid: u64,
+    #[ts(type = "number")]
+    pub missing: u64,
+    #[ts(type = "number")]
+    pub total: u64,
+    /// Values the whole table lists: the codes of a categorical variable
+    /// (labelled or found in the data), otherwise the distinct values.
+    #[ts(type = "number")]
+    pub values: u64,
+    /// Of those, the values that have a label.
+    #[ts(type = "number")]
+    pub labeled: u64,
+    /// Codes found in the data without a label; 0 unless categorical.
+    #[ts(type = "number")]
+    pub unlabeled: u64,
+}
+
 /// `GET /api/v1/datasets/{id}/variables/{index}/values`: every value of a
 /// variable with its count, over the rows loaded so far.
+///
+/// `?offset=&limit=` pages it, `?search=` keeps the values whose code or
+/// label contains the text, `?order=` sorts it. With an order the row
+/// that counts missing cases is left out (`totals` has it): the page pins
+/// it. `?top=N` is the N most frequent, for the filter bar.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct ValueTable {
     pub variable: u32,
@@ -316,7 +376,8 @@ pub struct ValueTable {
     /// they are the distinct values found in the data.
     pub categorical: bool,
     pub has_labels: bool,
-    /// Rows in the whole table; `rows` may be one page of it.
+    pub totals: ValueTotals,
+    /// Rows that match the search; `rows` may be one page of them.
     pub total: u32,
     pub offset: u32,
     pub rows: Vec<ValueRow>,
@@ -445,6 +506,7 @@ mod tests {
         RowsRequest::export_all(&config).unwrap();
         RowsPage::export_all(&config).unwrap();
         ValueTable::export_all(&config).unwrap();
+        ValueOrder::export_all(&config).unwrap();
         OpenRequest::export_all(&config).unwrap();
         OpenAnswer::export_all(&config).unwrap();
         FileList::export_all(&config).unwrap();
@@ -483,11 +545,13 @@ mod tests {
     fn a_cell_without_a_flag_is_only_its_text() {
         let plain = Cell {
             text: "Male".to_string(),
+            code: None,
             flag: None,
         };
         assert_eq!(serde_json::to_string(&plain).unwrap(), r#"{"text":"Male"}"#);
         let flagged = Cell {
             text: "7".to_string(),
+            code: None,
             flag: Some(CellFlag::Unlabeled),
         };
         assert_eq!(

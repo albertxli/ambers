@@ -162,8 +162,16 @@ fn rows_come_as_a_window_in_the_mode_asked_for() {
     assert_eq!(texts(&page).len(), 2);
     assert_eq!(page.rows[0].number, 19);
     assert_eq!(page.rows[0].cells[1].text, "1.00");
+    // Both: the label, and the stored value beside it for the page to
+    // draw. A cell that shows its own value has no code.
     let page = window(1, 1, "both");
-    assert_eq!(page.rows[0].cells[1].text, "2.00 Female");
+    let female = &page.rows[0].cells[1];
+    assert_eq!(
+        (female.text.as_str(), female.code.as_deref()),
+        ("Female", Some("2.00"))
+    );
+    assert_eq!(page.rows[0].cells[2].code, None);
+    assert_eq!(window(1, 1, "labels").rows[0].cells[1].code, None);
     assert!(window(500, 5, "labels").rows.is_empty());
 
     // With no variables named, every variable comes.
@@ -282,6 +290,41 @@ fn a_variable_says_which_conditions_it_offers() {
 }
 
 #[test]
+fn a_variable_carries_its_label_audit_and_user_missing_values() {
+    let handle = serve(Some("imperfect_labels.sav"));
+    loaded(&handle, "d1");
+    let all: api::Variables = get(&handle, "/api/v1/datasets/d1/variables");
+    let named = |name: &str| all.variables.iter().find(|one| one.name == name).unwrap();
+
+    // q1 has labels for 1, 2, 3 and 99, holds a 7, and declares 99 missing.
+    let q1 = named("q1");
+    assert!(q1.label_audit.audited && !q1.label_audit.many);
+    assert!(q1.label_audit.unlabeled >= 1);
+    assert!(q1.label_check.contains("unlabelled"));
+    let refused = q1.values.iter().find(|value| value.code == "99").unwrap();
+    assert!(refused.user_missing);
+    assert!(q1.values.iter().any(|value| !value.user_missing));
+    // A variable without value labels is not audited.
+    let id = named("id");
+    assert!(!id.label_audit.audited);
+    assert_eq!(
+        (id.label_audit.unlabeled, id.label_audit.duplicates),
+        (0, 0)
+    );
+    // Every variable whose check names a duplicate counts at least one.
+    for variable in &all.variables {
+        assert_eq!(
+            variable.label_check.contains("duplicate"),
+            variable.label_audit.duplicates > 0,
+            "{}",
+            variable.name
+        );
+    }
+    handle.stop();
+    handle.wait();
+}
+
+#[test]
 fn a_value_table_lists_every_value_with_its_count() {
     let handle = serve(Some("survey.sav"));
     loaded(&handle, "d1");
@@ -341,6 +384,49 @@ fn a_value_table_lists_every_value_with_its_count() {
     );
     assert_eq!(by_code.rows[0].count, 5);
     assert_eq!(table("city", "?search=zzz&top=5").rows.len(), 0);
+
+    // The numbers above the table, whatever page or search is asked for.
+    assert_eq!(gender.totals.total, 20);
+    assert_eq!(gender.totals.valid + gender.totals.missing, 20);
+    assert_eq!(gender.totals.unlabeled, 0);
+    assert!(gender.totals.values >= 2 && gender.totals.labeled == gender.totals.values);
+    let in_city = city
+        .rows
+        .iter()
+        .filter(|row| row.kind != api::ValueKind::Missing);
+    assert_eq!(city.totals.values, in_city.count() as u64);
+    assert_eq!(table("city", "?search=lis&order=value").totals, city.totals);
+
+    // Sorted: from A to Z, from Z to A, the most frequent first. The row
+    // that counts missing cases is then left to the totals.
+    let codes = |paging: &str| -> Vec<String> {
+        let rows = table("city", paging).rows;
+        assert!(rows.iter().all(|row| row.kind != api::ValueKind::Missing));
+        rows.into_iter().map(|row| row.code).collect()
+    };
+    let up = codes("?order=value");
+    let mut down = codes("?order=value_desc");
+    assert_eq!(up.len() as u64, city.totals.values);
+    down.reverse();
+    assert_eq!(up, down);
+    let frequent = table("city", "?order=count");
+    assert!(
+        frequent
+            .rows
+            .windows(2)
+            .all(|pair| pair[0].count >= pair[1].count)
+    );
+    // A page of a sorted, searched table.
+    let page = table("city", "?order=value_desc&offset=1&limit=1");
+    assert_eq!((page.rows.len(), page.total as usize), (1, up.len()));
+    assert_eq!(page.rows[0].code, up[up.len() - 2]);
+    let wrong = ask(
+        &handle,
+        "GET",
+        "/api/v1/datasets/d1/variables/0/values?order=sideways",
+        None,
+    );
+    assert_eq!(wrong.status, 400);
 
     let missing = ask(
         &handle,

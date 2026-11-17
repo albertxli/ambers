@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard};
 
 use ambers::Compression;
-use ambers_dataset::detail::{Detail, RowKind};
+use ambers_dataset::detail::{Detail, RowKind, Totals};
 use ambers_dataset::filter::{Condition, Kind, Operator};
 use ambers_dataset::{Dataset, Load, Mode, RowFilter, loader};
 
@@ -42,6 +42,7 @@ struct Table {
     rows: usize,
     counted: u64,
     detail: Arc<Detail>,
+    totals: Totals,
 }
 
 pub struct Session {
@@ -163,12 +164,22 @@ impl Session {
                         .map(|(code, label)| api::ValueLabel {
                             code: column.code_text(code),
                             label: label.clone(),
+                            user_missing: column.value_cell(code, Mode::Codes).user_missing,
                         })
                         .collect(),
                     missing: column.missing_text(),
                     valid: summary.n_valid,
                     missing_count: summary.n_missing,
                     label_check: data.label_check(index).to_string(),
+                    label_audit: {
+                        let audit = data.label_audit(index);
+                        api::LabelAudit {
+                            audited: audit.audited,
+                            unlabeled: audit.unlabeled as u32,
+                            many: audit.many,
+                            duplicates: audit.duplicates as u32,
+                        }
+                    },
                     filter_kind: filter_kind(Kind::of(column)),
                 }
             })
@@ -199,10 +210,12 @@ impl Session {
                 .filter(|&variable| (variable as usize) < count)
                 .collect()
         };
+        // The page draws `both` itself, from the label and the code: the
+        // dataset's own Both text is laid out for a terminal.
+        let both = request.mode == api::CellMode::Both;
         let mode = match request.mode {
-            api::CellMode::Labels => Mode::Labels,
+            api::CellMode::Labels | api::CellMode::Both => Mode::Labels,
             api::CellMode::Codes => Mode::Codes,
-            api::CellMode::Both => Mode::Both,
         };
         // Fewer rows for a wide answer, but always at least one.
         let by_cells = (MAX_CELLS / variables.len().max(1)).max(1);
@@ -218,6 +231,7 @@ impl Session {
                         let cell = data.cell(row as usize, variable as usize, mode);
                         api::Cell {
                             text: cell.text,
+                            code: cell.code.filter(|_| both),
                             flag: if cell.unlabeled {
                                 Some(api::CellFlag::Unlabeled)
                             } else if cell.user_missing {
@@ -328,7 +342,7 @@ impl Session {
     /// A variable's value table over the rows loaded so far. Counting the
     /// distinct values of a long text variable takes a moment, so the
     /// table is kept until more rows have been counted.
-    fn table(&self, variable: usize) -> Option<Arc<Detail>> {
+    fn table(&self, variable: usize) -> Option<(Arc<Detail>, Totals)> {
         let data = self.data();
         if variable >= data.columns.len() {
             return None;
@@ -338,12 +352,13 @@ impl Session {
         if let Some(place) = tables.iter().position(|table| table.variable == variable) {
             let table = tables.remove(place);
             if table.rows == rows && table.counted == counted {
-                let detail = Arc::clone(&table.detail);
+                let found = (Arc::clone(&table.detail), table.totals);
                 tables.push(table);
-                return Some(detail);
+                return Some(found);
             }
         }
         let detail = Arc::new(data.detail(variable));
+        let totals = detail.totals();
         if tables.len() >= KEPT_TABLES {
             tables.remove(0);
         }
@@ -352,29 +367,33 @@ impl Session {
             rows,
             counted,
             detail: Arc::clone(&detail),
+            totals,
         });
-        Some(detail)
+        Some((detail, totals))
     }
 
     /// One page of a variable's value table; `None` when there is no such
     /// variable.
     ///
     /// With `search`, only the values whose code or label contains it,
-    /// ignoring case. With `top`, the most frequent of them first and no
-    /// more than that many, without the row that counts missing cases:
-    /// what the filter bar suggests while a value is typed.
+    /// ignoring case. With an `order`, sorted so and without the row that
+    /// counts missing cases (the totals carry it). With `top`, the most
+    /// frequent first and no more than that many: what the filter bar
+    /// suggests while a value is typed.
     pub fn values(
         &self,
         variable: usize,
         offset: usize,
         limit: usize,
         search: Option<&str>,
+        order: Option<api::ValueOrder>,
         top: Option<usize>,
     ) -> Option<api::ValueTable> {
-        let detail = self.table(variable)?;
+        let (detail, totals) = self.table(variable)?;
+        let order = order.or(top.map(|_| api::ValueOrder::Count));
         let needle = search.map(|text| text.trim().to_lowercase());
         let mut listed: Vec<&ambers_dataset::detail::DetailRow> = (detail.rows.iter())
-            .filter(|row| top.is_none() || row.kind != RowKind::Missing)
+            .filter(|row| order.is_none() || row.kind != RowKind::Missing)
             .filter(|row| match needle.as_deref() {
                 None | Some("") => true,
                 Some(needle) => {
@@ -383,12 +402,15 @@ impl Session {
                 }
             })
             .collect();
+        match order {
+            // The table is built from low to high, from A to Z.
+            None | Some(api::ValueOrder::Value) => {}
+            Some(api::ValueOrder::ValueDesc) => listed.reverse(),
+            // Stable: values with the same count keep the table's order.
+            Some(api::ValueOrder::Count) => listed.sort_by_key(|row| std::cmp::Reverse(row.n)),
+        }
         let (offset, limit) = match top {
-            Some(top) => {
-                // Stable: values with the same count keep the table's order.
-                listed.sort_by_key(|row| std::cmp::Reverse(row.n));
-                (0, top)
-            }
+            Some(top) => (0, top),
             None => (offset, limit),
         };
         let total = listed.len();
@@ -415,6 +437,14 @@ impl Session {
             rows_loaded: detail.rows_loaded as u32,
             categorical: detail.categorical,
             has_labels: detail.has_labels(),
+            totals: api::ValueTotals {
+                valid: totals.valid,
+                missing: totals.missing,
+                total: totals.total,
+                values: totals.values,
+                labeled: totals.labeled,
+                unlabeled: totals.unlabeled,
+            },
             total: total as u32,
             offset: start as u32,
             rows,
