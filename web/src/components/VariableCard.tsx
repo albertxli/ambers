@@ -21,7 +21,7 @@ const OPEN_AFTER = 220;
 /** How long after the pointer left the card stays, to be reached. */
 const CLOSE_AFTER = 140;
 const WIDTH = 320;
-const MAX_HEIGHT = 380;
+const MAX_HEIGHT = 460;
 const MARGIN = 12;
 
 /** A variable's value labels: the first `limit`, and how many more there are. */

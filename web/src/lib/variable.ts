@@ -61,6 +61,8 @@ export function countsScope(info: DatasetInfo, countedRows: number): string {
   const rows = `${count(countedRows)} ${countedRows === 1 ? "row" : "rows"}`;
   const whole = info.total_rows !== null && countedRows >= info.total_rows;
   if (info.load === "done" || whole) return rows;
+  // The first counts arrive a moment after the first rows.
+  if (countedRows === 0 && info.load === "loading") return "no rows yet, still loading";
   const total = info.total_rows === null ? "" : ` of ${count(info.total_rows)}`;
   const first = `first ${count(countedRows)}${total} rows`;
   switch (info.load) {

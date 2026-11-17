@@ -163,6 +163,7 @@ describe("countsScope", () => {
       "first 200,000 of 395,330 rows (memory budget)",
     );
     expect(countsScope({ ...info, load: "done", total_rows: null }, 1)).toBe("1 row");
+    expect(countsScope(info, 0)).toBe("no rows yet, still loading");
   });
 });
 
