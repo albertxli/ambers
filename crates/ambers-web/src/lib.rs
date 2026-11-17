@@ -221,14 +221,21 @@ pub fn start(options: &Options) -> Result<Handle, Error> {
     });
 
     let (serving, idle, signals) = (Arc::clone(&app), options.idle, options.signals);
+    let (ready, is_ready) = std::sync::mpsc::channel();
     let thread = std::thread::Builder::new()
         .name("ambers-web".to_string())
         .spawn(move || {
-            let _ = runtime.block_on(serve(listener, serving, idle, signals));
+            let _ = runtime.block_on(serve(listener, serving, idle, signals, ready));
             if let Some((dir, record)) = record {
                 instance::remove(&dir, &record);
             }
         })?;
+    // Not before the server listens for Ctrl+C: the caller is about to say
+    // "press Ctrl+C to stop", and a signal that arrives before the
+    // listener is in place ends the process the hard way, leaving the
+    // server's record behind. (An error here means the thread has ended;
+    // `Handle::wait` reports that.)
+    let _ = is_ready.recv();
     Ok(Handle {
         app,
         thread,
@@ -241,7 +248,11 @@ async fn serve(
     app: Arc<App>,
     idle: Option<Duration>,
     signals: bool,
+    ready: std::sync::mpsc::Sender<()>,
 ) -> io::Result<()> {
+    // Listening starts here, not when the signals are first waited for.
+    let mut interrupts = signals.then(Interrupts::listen);
+    let _ = ready.send(());
     let listener = tokio::net::TcpListener::from_std(listener)?;
     let router = server::router(Arc::clone(&app));
     let (stopping, stopped) = tokio::sync::oneshot::channel::<()>();
@@ -249,7 +260,7 @@ async fn serve(
         tokio::select! {
             () = app.stop.notified() => {}
             () = quiet(&app, idle) => {}
-            () = interrupted(signals) => {}
+            () = interrupted(interrupts.as_mut()) => {}
         }
         let _ = stopping.send(());
     };
@@ -275,42 +286,89 @@ async fn quiet(app: &App, idle: Option<Duration>) {
 }
 
 /// Returns on Ctrl+C, and on the other ways a terminal or the system asks
-/// a program to end. Never, when `signals` is off.
-async fn interrupted(signals: bool) {
-    if !signals {
-        return std::future::pending().await;
+/// a program to end. Never, without listeners.
+async fn interrupted(interrupts: Option<&mut Interrupts>) {
+    match interrupts {
+        Some(interrupts) => interrupts.received().await,
+        None => std::future::pending().await,
     }
-    #[cfg(windows)]
-    {
-        let mut ctrl_break = tokio::signal::windows::ctrl_break().ok();
-        let on_break = async {
-            match ctrl_break.as_mut() {
+}
+
+/// One of the signals that ask the program to end; never, when it could
+/// not be listened for.
+#[cfg(any(unix, windows))]
+macro_rules! received {
+    ($signal:expr) => {
+        async {
+            match $signal.as_mut() {
                 Some(signal) => drop(signal.recv().await),
                 None => std::future::pending().await,
             }
-        };
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {}
-            () = on_break => {}
         }
-    }
-    #[cfg(unix)]
-    {
+    };
+}
+
+/// The signals that ask the program to end, listened for from the moment
+/// this is made. Until then a signal has its default effect: the process
+/// is ended at once.
+#[cfg(unix)]
+struct Interrupts {
+    /// Ctrl+C.
+    interrupt: Option<tokio::signal::unix::Signal>,
+    terminate: Option<tokio::signal::unix::Signal>,
+}
+
+#[cfg(unix)]
+impl Interrupts {
+    fn listen() -> Interrupts {
         use tokio::signal::unix::{SignalKind, signal};
-        let mut terminate = signal(SignalKind::terminate()).ok();
-        let on_terminate = async {
-            match terminate.as_mut() {
-                Some(signal) => drop(signal.recv().await),
-                None => std::future::pending().await,
-            }
-        };
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {}
-            () = on_terminate => {}
+        Interrupts {
+            interrupt: signal(SignalKind::interrupt()).ok(),
+            terminate: signal(SignalKind::terminate()).ok(),
         }
     }
-    #[cfg(not(any(windows, unix)))]
-    {
+
+    async fn received(&mut self) {
+        tokio::select! {
+            () = received!(self.interrupt) => {}
+            () = received!(self.terminate) => {}
+        }
+    }
+}
+
+#[cfg(windows)]
+struct Interrupts {
+    ctrl_c: Option<tokio::signal::windows::CtrlC>,
+    ctrl_break: Option<tokio::signal::windows::CtrlBreak>,
+}
+
+#[cfg(windows)]
+impl Interrupts {
+    fn listen() -> Interrupts {
+        Interrupts {
+            ctrl_c: tokio::signal::windows::ctrl_c().ok(),
+            ctrl_break: tokio::signal::windows::ctrl_break().ok(),
+        }
+    }
+
+    async fn received(&mut self) {
+        tokio::select! {
+            () = received!(self.ctrl_c) => {}
+            () = received!(self.ctrl_break) => {}
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+struct Interrupts;
+
+#[cfg(not(any(unix, windows)))]
+impl Interrupts {
+    fn listen() -> Interrupts {
+        Interrupts
+    }
+
+    async fn received(&mut self) {
         let _ = tokio::signal::ctrl_c().await;
     }
 }
