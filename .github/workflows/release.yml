@@ -322,7 +322,10 @@ jobs:
   verify-emulated:
     name: Verify / emulated x86-64-v2 CPU
     needs: build
-    runs-on: ubuntu-latest
+    # Pinned on purpose. Ubuntu 26.04 itself is built for x86-64-v3: its
+    # program loader uses AVX, so nothing at all starts on an emulated
+    # Nehalem there, whatever the wheel contains.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 

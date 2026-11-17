@@ -67,6 +67,12 @@ YMM_REG = re.compile(r"%ymm\d")
 # arm64 --------------------------------------------------------------------
 ARM_INSN = re.compile(r"^\s*[0-9a-f]+:\s+(\S+)\s*(.*)$")
 ARM_SVE_REG = re.compile(r"\b(?:z\d+\.[bhsdq]|p\d+/[zm]|za\d*[hv]?\.)")
+# Runtime support that handles newer CPU state when the CPU has it, and is
+# not reached otherwise: the unwinder switches the SME "ZA" state off
+# (`smstop za`) before unwinding, and compiler-rt's SME routines do the like.
+# They are in every Linux arm64 Rust binary, whatever it was built for.
+ARM_RUNTIME_SUPPORT = re.compile(r"^(?:__libunwind_Registers_arm64_\w+|__arm_(?:sme|za|tpidr2)\w*)$")
+OBJDUMP_FUNCTION = re.compile(r"^[0-9a-f]+ <(.+)>:$")
 ARM_POST_M1 = re.compile(
     r"^(?:bfdot|bfmmla|bfmlal[bt]|bfcvtn?2?|smmla|ummla|usmmla|usdot|sudot|smstart|smstop)$"
 )
@@ -136,17 +142,26 @@ def check_x86(binary: Path, baseline: str, max_avx: int) -> list[str]:
 
 def check_arm64(binary: Path) -> list[str]:
     asm = run(["llvm-objdump", "-d", "--mattr=+all", "--no-show-raw-insn", str(binary)])
-    total = 0
+    total = support = 0
     found: dict[str, int] = {}
+    function = ""
     for line in asm.splitlines():
+        header = OBJDUMP_FUNCTION.match(line)
+        if header:
+            function = header.group(1)
+            continue
         m = ARM_INSN.match(line)
         if not m:
             continue
         total += 1
         mnem, ops = m.group(1).lower(), m.group(2)
         if ARM_POST_M1.match(mnem) or ARM_SVE_REG.search(ops):
-            found[mnem] = found.get(mnem, 0) + 1
-    print(f"    {total:,} instructions | post-M1 (SVE/SME/bf16/i8mm): {sum(found.values())}")
+            if ARM_RUNTIME_SUPPORT.match(function):
+                support += 1
+            else:
+                found[mnem] = found.get(mnem, 0) + 1
+    note = f" (+{support} in runtime support routines, not counted)" if support else ""
+    print(f"    {total:,} instructions | post-M1 (SVE/SME/bf16/i8mm): {sum(found.values())}{note}")
     if total == 0:
         return ["disassembly produced no instructions (llvm-objdump format not recognised?)"]
     if found:
