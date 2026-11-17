@@ -84,6 +84,16 @@ jobs:
             rustflags: "-C target-cpu=x86-64-v2"
           - os: macos-latest
             rustflags: "-C target-cpu=apple-m1"
+          # Intel Macs and ARM Linux, each on a runner of its own kind (as
+          # Polars and DuckDB build them): nothing is cross-compiled, and the
+          # result is run where it was built.
+          - os: macos-15-intel
+            rustflags: "-C target-cpu=x86-64-v2"
+            cflags: "-march=nehalem -mtune=generic"
+          # No CPU flags: Rust's and gcc's default for aarch64 is the plain
+          # ARMv8.0 baseline.
+          - os: ubuntu-24.04-arm
+            rustflags: ""
     runs-on: ${{ matrix.os }}
     env:
       RUSTFLAGS: ${{ matrix.rustflags }}
@@ -148,6 +158,13 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             rustflags: "-C target-cpu=apple-m1"
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            rustflags: "-C target-cpu=x86-64-v2"
+            cflags: "-march=nehalem -mtune=generic"
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            rustflags: ""
     runs-on: ${{ matrix.os }}
     env:
       RUSTFLAGS: ${{ matrix.rustflags }}
@@ -266,6 +283,14 @@ jobs:
 
       - name: Check wheels against the portable baseline
         run: python3 scripts/check_wheel_isa.py --x86-baseline x86-64-v2 dist/
+
+      # The wheels are built against Python's stable interface (abi3): one
+      # file serves Python 3.12 and every later version. This fails if the
+      # extension module uses anything outside that interface.
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Check the wheels use only Python's stable interface
+        run: uvx abi3audit==0.0.26 --strict --report dist/*.whl
 
       - name: Check CLI binaries against the portable baseline
         run: |

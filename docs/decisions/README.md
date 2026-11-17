@@ -16,3 +16,4 @@ Add a record when a decision changes the shape of the project (a new crate, a de
 | [0008](0008-browser-filter-conditions.md) | The browser filter sends conditions, and a missing value passes only "is empty" | 2026-11-16 |
 | [0009](0009-tanstack-table-for-columns.md) | TanStack Table holds the columns and their state; rows stay on the server | 2026-11-16 |
 | [0010](0010-value-distributions-on-the-server.md) | A variable's value distribution is searched, sorted and paged on the server | 2026-11-16 |
+| [0011](0011-abi3-wheels-and-native-runners.md) | One wheel per platform (abi3), each platform built on a runner of its own kind | 2026-11-17 |

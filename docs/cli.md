@@ -43,13 +43,15 @@ The script downloads the program for your machine from the [latest release](http
 
 Settings, as environment variables: `AMBERS_VERSION` (a version instead of the latest, e.g. `0.5.0`), `AMBERS_INSTALL_DIR` (another folder), and on Windows `AMBERS_NO_MODIFY_PATH=1` (leave PATH alone).
 
-Ready-made programs exist for these machines. On others (Intel Macs, ARM Linux) the script says so; use the Python package there.
+Ready-made programs exist for these machines. On others (Windows on ARM, for one) the script says so; use the Python package there.
 
 | Platform | Archive on the release page |
 |---|---|
 | Windows, 64-bit | `ambers-<version>-x86_64-pc-windows-msvc.zip` |
 | Linux, x86-64 | `ambers-<version>-x86_64-unknown-linux-musl.tar.gz` |
+| Linux, ARM 64-bit | `ambers-<version>-aarch64-unknown-linux-musl.tar.gz` |
 | macOS, Apple Silicon | `ambers-<version>-aarch64-apple-darwin.tar.gz` |
+| macOS, Intel | `ambers-<version>-x86_64-apple-darwin.tar.gz` |
 
 You can also download an archive yourself, unpack it, and run the program inside.
 

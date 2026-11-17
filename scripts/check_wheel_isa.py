@@ -8,8 +8,8 @@ Usage:
     python scripts/check_wheel_isa.py [--x86-baseline x86-64-v2|x86-64-v3] PATH [PATH ...]
 
 PATH may be a wheel, a directory of wheels, or a bare .so/.pyd/.dylib. Needs GNU `objdump`
-(x86-64 ELF and PE) and `llvm-objdump` (arm64 Mach-O) on PATH; both are preinstalled on
-GitHub's ubuntu runners. Standard library only.
+(x86-64 ELF and PE) and `llvm-objdump` (Mach-O of either architecture, arm64 ELF) on PATH;
+both are preinstalled on GitHub's ubuntu runners. Standard library only.
 
 What is checked:
   x86-64, any baseline : no AVX-512 at all (zmm, k1-k7 mask regs, xmm/ymm16-31, EVEX-only
@@ -20,7 +20,10 @@ What is checked:
                          and C code alone built above the baseline has several hundred (seen
                          2026-11: Ubuntu 26.04's gcc targets x86-64-v3 by default, which put
                          600 AVX2/BMI2 instructions into the bundled allocator).
-  arm64                : nothing newer than Apple M1 (no SVE/SME, bf16, i8mm).
+  arm64                : nothing newer than Apple M1 (no SVE/SME, bf16, i8mm). For Linux
+                         on ARM this is looser than its real baseline (ARMv8.0): it
+                         would not notice ARMv8.1 to 8.4 instructions. Those builds set
+                         no CPU flags at all, so the compilers' default applies.
 """
 
 from __future__ import annotations
@@ -38,7 +41,8 @@ BINARY_SUFFIXES = (".so", ".pyd", ".dylib")
 
 # x86-64 -------------------------------------------------------------------
 # objdump line: "  1234:\tmnemonic operands"
-X86_INSN = re.compile(r"^\s*[0-9a-f]+:\t(\S+)\s*(.*)$")
+# objdump line: "  1234:\tmnemonic operands"; llvm-objdump pads differently.
+X86_INSN = re.compile(r"^\s*[0-9a-f]+:\s+(\S+)\s*(.*)$")
 AVX512_REG = re.compile(r"%zmm\d|%k[1-7]\b|%[xy]mm(?:1[6-9]|2\d|3[01])\b")
 AVX512_MNEMONIC = re.compile(
     r"^(?:kmov|kand|kor|kxor|kxnor|knot|kshift|ktest|kortest|kunpck|kadd"
@@ -86,8 +90,17 @@ def arch_of(name: str) -> str:
     return "unknown"
 
 
+def is_mach_o(binary: Path) -> bool:
+    """A macOS binary: 64-bit Mach-O, or a universal file."""
+    with open(binary, "rb") as f:
+        return f.read(4) in (b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe")
+
+
 def check_x86(binary: Path, baseline: str, max_avx: int) -> list[str]:
-    asm = run(["objdump", "-d", "--no-show-raw-insn", str(binary)])
+    # GNU objdump on Linux does not read Mach-O; llvm-objdump does, and
+    # prints the same AT&T syntax.
+    tool = "llvm-objdump" if is_mach_o(binary) else "objdump"
+    asm = run([tool, "-d", "--no-show-raw-insn", str(binary)])
     total = avx512 = avx = 0
     examples: dict[str, int] = {}
     avx_examples: dict[str, int] = {}

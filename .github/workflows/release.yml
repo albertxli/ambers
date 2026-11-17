@@ -45,13 +45,15 @@ jobs:
   # Build Python wheels for each OS × Python version
   # ---------------------------------------------------------------
   build:
-    name: Build / ${{ matrix.os }} / ${{ matrix.python }}
+    name: Build / ${{ matrix.os }}
     needs: preflight
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        python: ["3.12", "3.13", "3.14"]
+        # One wheel per platform: the bindings are built against Python's
+        # stable interface (PyO3 `abi3-py312`), so the same file serves 3.12
+        # and every later version. `verify-install` installs it on each.
+        os: [ubuntu-latest, windows-latest, macos-latest, macos-15-intel, ubuntu-24.04-arm]
         include:
           # Portable CPU baseline per platform (GitHub issue #6). Never `native`:
           # that targets whatever CPU the runner VM happens to have.
@@ -67,6 +69,16 @@ jobs:
             rustflags: "-C target-cpu=x86-64-v2"
           - os: macos-latest
             rustflags: "-C target-cpu=apple-m1"
+          # Intel Macs and ARM Linux, each on a runner of its own kind (as
+          # Polars and DuckDB build them): nothing is cross-compiled, and the
+          # result is run where it was built.
+          - os: macos-15-intel
+            rustflags: "-C target-cpu=x86-64-v2"
+            cflags: "-march=nehalem -mtune=generic"
+          # No CPU flags: Rust's and gcc's default for aarch64 is the plain
+          # ARMv8.0 baseline.
+          - os: ubuntu-24.04-arm
+            rustflags: ""
     runs-on: ${{ matrix.os }}
     env:
       RUSTFLAGS: ${{ matrix.rustflags }}
@@ -79,17 +91,23 @@ jobs:
       # built in a container, which sees the files built here.
       - uses: ./.github/actions/build-frontend
 
+      # The interpreter the wheel is built with. On Linux the build runs in
+      # the manylinux container, which has its own.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - uses: PyO3/maturin-action@v1
         with:
           command: build
           # Linux: build inside the manylinux2014 container -> manylinux_2_17 wheels
           # (glibc 2.17+), instead of the runner host's glibc. Ignored on other OSes.
           manylinux: auto
-          args: --release -o dist -i python${{ matrix.python }}
+          args: --release -o dist -i python3.12
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wheel-${{ matrix.os }}-py${{ matrix.python }}
+          name: wheel-${{ matrix.os }}
           path: dist/*.whl
 
   # ---------------------------------------------------------------
@@ -145,6 +163,13 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             rustflags: "-C target-cpu=apple-m1"
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            rustflags: "-C target-cpu=x86-64-v2"
+            cflags: "-march=nehalem -mtune=generic"
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            rustflags: ""
     runs-on: ${{ matrix.os }}
     env:
       RUSTFLAGS: ${{ matrix.rustflags }}
@@ -267,6 +292,14 @@ jobs:
       - name: Check every wheel
         run: python3 scripts/check_wheel_isa.py --x86-baseline x86-64-v2 dist/
 
+      # The wheels are built against Python's stable interface (abi3): one
+      # file serves Python 3.12 and every later version. This fails if the
+      # extension module uses anything outside that interface.
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Check the wheels use only Python's stable interface
+        run: uvx abi3audit==0.0.26 --strict --report dist/*.whl
+
       - name: Check every CLI binary
         run: |
           # The script reads the architecture from the file name, so copy each
@@ -295,7 +328,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: wheel-ubuntu-latest-py3.13
+          name: wheel-ubuntu-latest
           path: dist
 
       - uses: actions/setup-python@v5
@@ -327,15 +360,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        python: ["3.12", "3.13", "3.14"]
+        # The platform's one wheel, on the oldest and the newest Python it
+        # claims to serve: what a stable-interface wheel has to prove.
+        os: [ubuntu-latest, windows-latest, macos-latest, macos-15-intel, ubuntu-24.04-arm]
+        python: ["3.12", "3.14"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/download-artifact@v4
         with:
-          name: wheel-${{ matrix.os }}-py${{ matrix.python }}
+          name: wheel-${{ matrix.os }}
           path: dist
 
       - uses: actions/setup-python@v5
@@ -369,7 +404,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: wheel-ubuntu-latest-py3.12
+          name: wheel-ubuntu-latest
           path: dist
 
       - name: Install wheel and smoke test
