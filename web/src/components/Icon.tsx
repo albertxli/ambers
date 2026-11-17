@@ -20,6 +20,15 @@ const PATHS = {
     </>
   ),
   filter: <path d="M4 6h16M7 12h10m-7 6h4" />,
+  list: <path d="M4 5h16M4 12h16M4 19h16M8 3v18" />,
+  more: (
+    <>
+      <circle cx="5.5" cy="12" r="1.2" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.2" fill="currentColor" />
+      <circle cx="18.5" cy="12" r="1.2" fill="currentColor" />
+    </>
+  ),
+  table: <path d="M4 4h16v16H4V4Zm0 5h16M9 4v16" />,
   plus: <path d="M12 5v14M5 12h14" />,
   stop: (
     <>

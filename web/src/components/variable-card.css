@@ -1,0 +1,222 @@
+/* The card that says what a variable is, beside its name. After the
+   design mock-up; colours and fonts come from theme/tokens.css only. */
+
+.variable-hover-card {
+  position: fixed;
+  z-index: 90;
+  overflow-y: auto;
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--selection));
+  border-radius: 11px;
+  background: var(--surface);
+  box-shadow:
+    0 14px 44px rgb(0 0 0 / 38%),
+    0 2px 8px rgb(0 0 0 / 20%);
+  scrollbar-width: thin;
+  scrollbar-color: var(--selection) transparent;
+  animation: variable-card-in 130ms ease-out;
+}
+
+.variable-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 43px;
+  padding: 9px 15px;
+  border-bottom: 1px solid var(--border);
+}
+
+.variable-card-heading > code {
+  overflow: hidden;
+  color: var(--heading);
+  font:
+    500 12px var(--font-data);
+  text-overflow: ellipsis;
+}
+
+.variable-card-heading > span:last-child {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 3px 6px;
+  color: var(--text-muted);
+  border: 1px solid var(--selection);
+  border-radius: 4px;
+  font-size: 9px;
+}
+
+.variable-card-label {
+  padding: 11px 16px 13px;
+}
+
+.variable-card-label > span,
+.variable-card-values > div > span {
+  color: var(--text-faint);
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+
+.variable-card-label > p {
+  margin-top: 6px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.variable-card-label > p.is-unavailable {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.variable-card-label > span {
+  display: block;
+  line-height: 1.2;
+}
+
+.variable-card-values {
+  margin: 0 15px 13px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--border);
+}
+
+.variable-card-values > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.variable-card-values small {
+  color: var(--text-faint);
+  font-size: 9px;
+}
+
+.variable-card-values > p {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.variable-card-values > p > code {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  min-width: 24px;
+  height: 19px;
+  padding: 0 4px;
+  border: 1px solid var(--selection);
+  border-radius: 4px;
+  color: var(--accent);
+  background: var(--panel);
+  font:
+    400 9px var(--font-data);
+}
+
+.variable-card-values > p > span {
+  overflow-wrap: anywhere;
+}
+
+.variable-card-values > p.variable-system-missing {
+  margin-bottom: 4px;
+  padding-bottom: 5px;
+  border-bottom: 1px dashed var(--border);
+}
+
+.variable-card-values > p.variable-system-missing > code {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 22%, var(--selection));
+}
+
+.variable-system-missing > small {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.variable-more-labels {
+  display: block;
+  margin: 6px 0 0 34px;
+}
+
+.variable-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 15px;
+  color: var(--text-faint);
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 35%, transparent);
+  font-size: 9px;
+}
+
+.variable-metadata-dot {
+  flex-shrink: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .variable-hover-card {
+    animation: none;
+  }
+}
+
+@keyframes variable-card-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.variable-card-values > p > .variable-user-missing {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--text-faint);
+}
+
+/* Type, measure and counts: what the file's metadata and the rows say. */
+.variable-card-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0 15px;
+  padding: 11px 0 12px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+}
+
+.variable-card-facts > div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.variable-card-facts dt {
+  color: var(--text-faint);
+}
+
+.variable-card-facts dd {
+  color: var(--text);
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+}
+
+.variable-card-warning {
+  margin: 0 15px 12px;
+  padding: 7px 9px;
+  color: var(--warning);
+  border: 1px solid color-mix(in srgb, var(--warning) 28%, var(--selection));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warning) 7%, transparent);
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}

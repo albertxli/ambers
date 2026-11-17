@@ -64,13 +64,19 @@ test("the mode changes what cells show, and the selected cell is shown in full",
   await expect(selected).toHaveText("Satisfied");
   await expect(full).toHaveText("Satisfied");
 
-  await page.getByRole("button", { name: "Codes" }).click();
+  // The inspector says which stored value a label stands for.
+  await expect(page.locator(".inspector")).toContainText("Stored code");
+
+  await page.getByRole("radio", { name: "Codes" }).click();
   await expect(selected).toHaveText("4.00");
   await expect(full).toHaveText("4.00");
-  await page.getByRole("button", { name: "Both" }).click();
-  await expect(selected).toHaveText(/^4\.00\s+Satisfied$/);
-  await page.getByRole("button", { name: "Labels" }).click();
+  // Both: the label, with the stored value beside it as a tag.
+  await page.getByRole("radio", { name: "Both" }).click();
+  await expect(selected.locator(".cell-value-both > span:first-child")).toHaveText("Satisfied");
+  await expect(selected.locator(".cell-value-code")).toHaveText("4.00");
+  await page.getByRole("radio", { name: "Labels" }).click();
   await expect(selected).toHaveText("Satisfied");
+  await expect(page.getByRole("radio", { name: "Labels" })).toBeChecked();
 
   // The arrow keys move the selection.
   await page.keyboard.press("ArrowDown");

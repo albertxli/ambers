@@ -1,26 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { Variable } from "../../api/client";
-import { MIN_WIDTH, defaultWidth, gutterWidth, typeTag } from "./columns";
+import { MIN_COLUMN } from "../../components/grid/useGrid";
+import { variable as make } from "../../test/variable";
+import { defaultWidth, gutterWidth, typeTag } from "./columns";
 
 function variable(name: string, kind: string, width: number): Variable {
-  return {
-    index: 0,
-    name,
-    label: "",
-    kind,
-    format: "F8.2",
-    measure: "",
-    role: "",
-    numeric: kind !== "text",
-    width,
-    values: [],
-    missing: "",
-    valid: 0,
-    missing_count: 0,
-    label_check: "",
-    filter_kind: kind === "text" ? "text" : "number",
-  };
+  return make({ name, kind, width });
 }
 
 describe("typeTag", () => {
@@ -36,9 +22,26 @@ describe("defaultWidth", () => {
   it("grows with the variable's width, within limits", () => {
     const narrow = defaultWidth(variable("q", "numeric", 1));
     const wide = defaultWidth(variable("q", "text", 30));
-    expect(narrow).toBeGreaterThanOrEqual(MIN_WIDTH);
+    expect(narrow).toBeGreaterThanOrEqual(MIN_COLUMN);
     expect(wide).toBeGreaterThan(narrow);
     expect(defaultWidth(variable("q", "text", 5000))).toBe(420);
+  });
+
+  it("makes room for the code beside a label in Both mode", () => {
+    const gender = make({
+      name: "gender",
+      kind: "categorical",
+      width: 6,
+      values: [
+        { code: "1.00", label: "Male", user_missing: false },
+        { code: "2.00", label: "Female", user_missing: false },
+      ],
+    });
+    expect(defaultWidth(gender, "both")).toBeGreaterThan(defaultWidth(gender, "labels"));
+    expect(defaultWidth(gender, "codes")).toBe(defaultWidth(gender, "labels"));
+    // A variable without labels shows the same in every mode.
+    const age = variable("age", "numeric", 8);
+    expect(defaultWidth(age, "both")).toBe(defaultWidth(age, "labels"));
   });
 
   it("never cuts the variable's name", () => {

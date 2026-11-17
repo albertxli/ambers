@@ -178,11 +178,17 @@ test("a block of cells is selected and copied for a spreadsheet", async ({ page 
   expect(await clipboard()).toBe("Female\tDissatisfied\nMale\tNeutral");
 
   // As the mode shows them.
-  await page.getByRole("button", { name: "Codes" }).click();
+  await page.getByRole("radio", { name: "Codes" }).click();
   await page.getByRole("button", { name: "Copy range" }).click();
   await expect(page.getByRole("button", { name: "Copied" })).toBeVisible();
   expect(await clipboard()).toBe("2.00\t2.00\n1.00\t3.00");
-  await page.getByRole("button", { name: "Labels" }).click();
+  await page.getByRole("radio", { name: "Both" }).click();
+  await page.getByRole("button", { name: "Copy range" }).click();
+  await expect(page.getByRole("button", { name: "Copied" })).toBeVisible();
+  expect(await clipboard()).toBe(
+    "Female (2.00)\tDissatisfied (2.00)\nMale (1.00)\tNeutral (3.00)",
+  );
+  await page.getByRole("radio", { name: "Labels" }).click();
 
   // Esc goes back to the cell the selection started from.
   await page.keyboard.press("Escape");
@@ -211,7 +217,8 @@ test("the keys are listed on request", async ({ page }) => {
   await page.getByRole("button", { name: "Keyboard shortcuts" }).click();
   const panel = page.getByRole("dialog", { name: "Keyboard shortcuts" });
   await expect(panel).toContainText("Copy the selection");
-  await expect(panel).toContainText("Add a filter");
+  await expect(panel).toContainText("add a filter");
+  await expect(panel).toContainText("Resize a column");
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
   // `?` opens it too, from the grid.

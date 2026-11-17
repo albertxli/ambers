@@ -25,6 +25,8 @@ interface Props {
   loaded: number;
   /** What the server said about rules it could not use, by rule id. */
   problems: ReadonlyMap<string, string>;
+  /** False while the Data View is hidden: its shortcut is then another view's. */
+  active: boolean;
 }
 
 type Stage = "column" | "operator" | "value";
@@ -48,7 +50,7 @@ function useSettled<T>(value: T, delay: number): T {
  * pass; this only says what is asked.
  */
 export function FilterBar(props: Props) {
-  const { dataset, variables, offered, filters, onChange, kept, loaded, problems } = props;
+  const { dataset, variables, offered, filters, onChange, kept, loaded, problems, active } = props;
   const menuId = useId();
   const [open, setOpen] = useState(false);
   const [stage, setStage] = useState<Stage>("column");
@@ -105,6 +107,7 @@ export function FilterBar(props: Props) {
       }
     };
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (!active || document.querySelector("dialog[open]")) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         startFilter();
@@ -116,7 +119,7 @@ export function FilterBar(props: Props) {
       document.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, []);
+  }, [active]);
 
   // The builder hangs under the bar, inside the window.
   useLayoutEffect(() => {

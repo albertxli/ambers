@@ -6,7 +6,7 @@ import { Icon } from "../../components/Icon";
 import { count, percent } from "../../lib/format";
 import type { Shown } from "./blocks";
 import { COPY_LIMIT, type CopyState } from "./copy";
-import { type Bounds, cellsIn, columnsIn, rowsIn } from "./selection";
+import { type Bounds, cellsIn, columnsIn, rowsIn } from "../../components/grid/selection";
 
 interface Props {
   dataset: string;
@@ -51,11 +51,14 @@ export function Inspector(props: Props) {
   const cells = cellsIn(bounds);
   const range = cells > 1;
   // One cell, asked for by itself: independent of what the grid has loaded.
+  // Unless codes are shown it is asked for with its stored value beside
+  // the label, whatever the grid shows.
+  const mode = shown.mode === "codes" ? "codes" : "both";
   const cell = useQuery({
     queryKey: [
       "cell",
       dataset,
-      shown.mode,
+      mode,
       shown.filterMode,
       JSON.stringify(shown.filters),
       row,
@@ -66,7 +69,7 @@ export function Inspector(props: Props) {
         offset: row,
         limit: 1,
         variables: [variable.index],
-        mode: shown.mode,
+        mode,
         filters: shown.filters,
         filter_mode: shown.filterMode,
       }),
@@ -76,6 +79,8 @@ export function Inspector(props: Props) {
   });
   const line = cell.data?.rows[0];
   const text = line?.cells[0]?.text ?? "";
+  /** The stored value, when the text is its label. */
+  const code = line?.cells[0]?.code;
   // The previous cell's text stays, dimmed, until this one's arrives.
   const pending = !range && (cell.isPlaceholderData || cell.isPending);
   const missing = countedRows > 0 ? variable.missing_count / countedRows : 0;
@@ -102,7 +107,12 @@ export function Inspector(props: Props) {
             {columnsIn(bounds) === 1 ? "variable" : "variables"}
           </code>
         ) : (
-          <code className={text === "" ? "is-empty" : ""}>{text === "" ? "(empty)" : text}</code>
+          <code className={text === "" ? "is-empty" : ""}>
+            {text === "" ? "(empty)" : text}
+            {shown.mode === "both" && code !== undefined && (
+              <span className="cell-value-code">{code}</span>
+            )}
+          </code>
         )}
         {/* Pressed with the mouse, it leaves the keyboard with the grid. */}
         <button
@@ -138,10 +148,17 @@ export function Inspector(props: Props) {
             <dt>Type</dt>
             <dd>{variable.kind}</dd>
           </div>
-          <div>
-            <dt>Format</dt>
-            <dd>{variable.format}</dd>
-          </div>
+          {code === undefined ? (
+            <div>
+              <dt>Format</dt>
+              <dd>{variable.format}</dd>
+            </div>
+          ) : (
+            <div>
+              <dt>Stored code</dt>
+              <dd>{code}</dd>
+            </div>
+          )}
           <div>
             <dt>Missing</dt>
             <dd>

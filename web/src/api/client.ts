@@ -12,6 +12,7 @@ import type { RowsPage } from "./generated/RowsPage";
 import type { RowsRequest } from "./generated/RowsRequest";
 import type { ServerInfo } from "./generated/ServerInfo";
 import type { StarRequest } from "./generated/StarRequest";
+import type { ValueOrder } from "./generated/ValueOrder";
 import type { ValueTable } from "./generated/ValueTable";
 import type { Variables } from "./generated/Variables";
 
@@ -26,13 +27,17 @@ export type { FilterMode } from "./generated/FilterMode";
 export type { FilterOperator } from "./generated/FilterOperator";
 export type { FilterProblem } from "./generated/FilterProblem";
 export type { KindOperators } from "./generated/KindOperators";
+export type { LabelAudit } from "./generated/LabelAudit";
 export type { LoadState } from "./generated/LoadState";
 export type { Row } from "./generated/Row";
 export type { RowsPage } from "./generated/RowsPage";
 export type { RowsRequest } from "./generated/RowsRequest";
 export type { ServerInfo } from "./generated/ServerInfo";
+export type { ValueLabel } from "./generated/ValueLabel";
+export type { ValueOrder } from "./generated/ValueOrder";
 export type { ValueRow } from "./generated/ValueRow";
 export type { ValueTable } from "./generated/ValueTable";
+export type { ValueTotals } from "./generated/ValueTotals";
 export type { Variable } from "./generated/Variable";
 export type { Variables } from "./generated/Variables";
 
@@ -78,6 +83,19 @@ export const api = {
   rows: (id: string, request: RowsRequest) => post<RowsPage>(`/datasets/${id}/rows`, request),
   values: (id: string, variable: number, offset = 0, limit = 1000) =>
     call<ValueTable>(`/datasets/${id}/variables/${variable}/values?offset=${offset}&limit=${limit}`),
+  /**
+   * One page of a variable's values with their counts, sorted, without the
+   * row that counts missing cases (the answer's `totals` has it).
+   */
+  valuePage: (
+    id: string,
+    variable: number,
+    page: { offset: number; limit: number; search: string; order: ValueOrder },
+  ) =>
+    call<ValueTable>(
+      `/datasets/${id}/variables/${variable}/values?offset=${page.offset}&limit=${page.limit}` +
+        `&order=${page.order}&search=${encodeURIComponent(page.search)}`,
+    ),
   /** The most frequent values of a variable whose code or label contains `search`. */
   suggest: (id: string, variable: number, search: string, top: number) =>
     call<ValueTable>(

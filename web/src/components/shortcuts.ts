@@ -1,5 +1,5 @@
-// The keys of the Data View, as the shortcuts panel lists them. `mod` is
-// written Ctrl, or ⌘ on a Mac.
+// The keys of the two grids (Data View, Variable View), as the shortcuts
+// dialog lists them. `mod` is written Ctrl, or ⌘ on a Mac.
 
 export interface Shortcut {
   keys: string[];
@@ -19,10 +19,10 @@ export function shortcutGroups(mac: boolean): ShortcutGroup[] {
       shortcuts: [
         { keys: ["↑", "↓", "←", "→"], does: "Move one cell" },
         { keys: ["Page Up", "Page Down"], does: "Move one screen" },
-        { keys: ["Home", "End"], does: "First or last variable of the row" },
+        { keys: ["Home", "End"], does: "First or last column of the row" },
         { keys: [`${mod} + ↑`, `${mod} + ↓`], does: "First or last row" },
-        { keys: [`${mod} + ←`, `${mod} + →`], does: "First or last variable" },
-        { keys: [`${mod} + Home`, `${mod} + End`], does: "First or last cell of the file" },
+        { keys: [`${mod} + ←`, `${mod} + →`], does: "First or last column" },
+        { keys: [`${mod} + Home`, `${mod} + End`], does: "First or last cell" },
       ],
     },
     {
@@ -37,15 +37,24 @@ export function shortcutGroups(mac: boolean): ShortcutGroup[] {
       ],
     },
     {
-      title: "Filtering",
+      title: "Columns",
       shortcuts: [
-        { keys: [`${mod} + K`], does: "Add a filter" },
-        { keys: ["↑", "↓", "Enter"], does: "Choose in the filter builder" },
-        { keys: ["Esc"], does: "Close the filter builder" },
+        { keys: ["Drag header edge"], does: "Resize a column" },
+        { keys: ["Double-click edge"], does: "Back to the column's own width" },
+        { keys: ["←", "→"], does: "On a header edge: resize by 10 pixels (Shift: 50)" },
+        { keys: ["Enter"], does: "On a header edge: back to its own width" },
       ],
     },
     {
-      title: "This panel",
+      title: "Filtering and searching",
+      shortcuts: [
+        { keys: [`${mod} + K`], does: "Data: add a filter. Variables: search" },
+        { keys: ["↑", "↓", "Enter"], does: "Choose in the filter builder" },
+        { keys: ["Esc"], does: "Close the filter builder, a card or a dialog" },
+      ],
+    },
+    {
+      title: "This list",
       shortcuts: [{ keys: ["?"], does: "Show or hide the keyboard shortcuts" }],
     },
   ];

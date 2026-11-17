@@ -1,0 +1,312 @@
+/* The grid both views draw: virtualised rows and columns, a sticky header
+   and row numbers, the selection. Colours and fonts come from
+   theme/tokens.css only. */
+
+.grid {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--panel);
+  color: var(--text);
+  font: 400 11px var(--font-data);
+  scrollbar-color: var(--selection) var(--panel);
+  scrollbar-width: thin;
+  outline: none;
+  user-select: none;
+}
+
+.grid-canvas {
+  position: relative;
+  min-width: 100%;
+}
+
+.grid-head {
+  position: sticky;
+  z-index: 3;
+  top: 0;
+  width: 100%;
+}
+
+.grid-corner,
+.grid-th {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--selection);
+  font-weight: 600;
+}
+
+.grid-corner {
+  position: sticky;
+  z-index: 4;
+  left: 0;
+  justify-content: flex-end;
+  padding: 0 10px;
+  color: var(--text-faint);
+}
+
+.grid-th {
+  color: var(--heading);
+  cursor: default;
+  user-select: none;
+}
+
+/* A header's content: the name and, in the Data View, the kind of variable.
+   It is a button so that it can be pointed at and pressed. */
+.grid-th-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  padding: 0 10px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition: background 120ms;
+}
+
+.grid-th-button:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.grid-th-button:focus-visible {
+  outline-offset: -3px;
+}
+
+.grid-th-button.has-card {
+  cursor: help;
+}
+
+.grid-th-button.is-compact .grid-th-type {
+  display: none;
+}
+
+/* A column with selected cells. */
+.grid-th.is-selected {
+  color: var(--cursor);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.grid-th-name {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.grid-th-type {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 8px;
+  letter-spacing: 0.02em;
+}
+
+/* The right edge of a header: drag to resize, double-click or Enter to
+   reset, arrow keys to resize from the keyboard. */
+.column-resize-handle {
+  position: absolute;
+  z-index: 4;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+  outline: none;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.column-resize-handle::after {
+  position: absolute;
+  top: 20%;
+  right: 0;
+  width: 2px;
+  height: 60%;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0;
+  content: "";
+  transition: opacity 120ms;
+}
+
+.grid-th:hover > .column-resize-handle::after {
+  opacity: 0.65;
+}
+
+.column-resize-handle:hover::after,
+.column-resize-handle:focus-visible::after,
+.column-resize-handle.is-resizing::after {
+  top: 0;
+  height: 100%;
+  background: var(--cursor);
+  opacity: 1;
+}
+
+body.is-resizing-columns,
+body.is-resizing-columns * {
+  cursor: col-resize !important;
+}
+
+body.is-resizing-columns {
+  user-select: none;
+}
+
+.grid.is-column-resizing .grid-th-button {
+  pointer-events: none;
+}
+
+.grid-row {
+  position: absolute;
+  left: 0;
+  width: 100%;
+}
+
+.grid-number,
+.grid-cell {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-right: 1px solid var(--grid-line);
+  border-bottom: 1px solid var(--grid-line);
+  white-space: nowrap;
+}
+
+.grid-cell {
+  display: block;
+  overflow: hidden;
+  background: var(--panel);
+  line-height: 26px;
+  text-overflow: ellipsis;
+  cursor: cell;
+  touch-action: none;
+}
+
+.grid-row.is-odd .grid-cell {
+  background: var(--stripe);
+}
+
+.grid-row:hover .grid-cell {
+  background: var(--surface);
+}
+
+.grid-row.is-current .grid-cell {
+  background: var(--selection);
+  border-bottom-color: color-mix(in srgb, var(--accent) 30%, var(--selection));
+}
+
+.grid-cell.is-unlabeled {
+  color: var(--warning);
+}
+
+.grid-cell.is-user_missing,
+.grid-cell.is-missing {
+  color: var(--text-faint);
+}
+
+/* A selected block of cells: a tint, and a line around the block. */
+.grid-row .grid-cell.in-range {
+  --range-top: transparent;
+  --range-bottom: transparent;
+  --range-left: transparent;
+  --range-right: transparent;
+  background: color-mix(in srgb, var(--accent) 17%, var(--panel));
+  box-shadow:
+    inset 0 1px var(--range-top),
+    inset 0 -1px var(--range-bottom),
+    inset 1px 0 var(--range-left),
+    inset -1px 0 var(--range-right);
+}
+
+.grid-row .grid-cell.range-top {
+  --range-top: var(--cursor);
+}
+
+.grid-row .grid-cell.range-bottom {
+  --range-bottom: var(--cursor);
+}
+
+.grid-row .grid-cell.range-left {
+  --range-left: var(--cursor);
+}
+
+.grid-row .grid-cell.range-right {
+  --range-right: var(--cursor);
+}
+
+/* The highlighted cell: where the selection started. */
+.grid-row .grid-cell.is-active {
+  color: var(--panel);
+  background: var(--cursor);
+  font-weight: 600;
+}
+
+.grid:focus-visible .grid-cell.is-active {
+  outline: 1px solid var(--text);
+  outline-offset: -2px;
+}
+
+.grid-number {
+  position: sticky;
+  z-index: 2;
+  left: 0;
+  justify-content: flex-end;
+  color: var(--text-faint);
+  background: var(--surface);
+  border-right-color: var(--selection);
+  font-variant-numeric: tabular-nums;
+}
+
+.grid-number.is-selected {
+  color: var(--cursor);
+  box-shadow: inset 2px 0 var(--cursor);
+}
+
+/* A cell whose block has not arrived yet. */
+.grid-wait {
+  display: inline-block;
+  width: min(60%, 90px);
+  height: 7px;
+  vertical-align: middle;
+  border-radius: 4px;
+  background: var(--grid-line);
+}
+
+/* Both: the label, then the stored value as a tag. */
+.cell-value-both {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  height: 100%;
+}
+
+.cell-value-both > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cell-value-code {
+  flex-shrink: 0;
+  padding: 1px 4px;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.grid-cell.is-active .cell-value-code {
+  color: var(--panel);
+  border-color: color-mix(in srgb, var(--panel) 40%, transparent);
+  background: transparent;
+}

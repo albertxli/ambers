@@ -11,9 +11,14 @@ export function stayLocal(page: Page) {
   });
 }
 
+/** From the launch page into the Data View of a fixture. */
+export async function openFile(page: Page, name: string) {
+  await page.goto(`/?token=${TOKEN}`);
+  await page.getByRole("button", { name: `Open ${name}`, exact: true }).click();
+  await expect(page.getByRole("columnheader", { name: /^id/ })).toBeVisible();
+}
+
 /** From the launch page into the Data View of `survey.sav`. */
 export async function openSurvey(page: Page) {
-  await page.goto(`/?token=${TOKEN}`);
-  await page.getByRole("button", { name: "Open survey.sav", exact: true }).click();
-  await expect(page.getByRole("columnheader", { name: /^id/ })).toBeVisible();
+  await openFile(page, "survey.sav");
 }

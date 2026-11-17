@@ -1,5 +1,5 @@
-/* Data View: top bar, toolbar, grid, inspector, status bar. Colours and
-   fonts come from theme/tokens.css only. */
+/* Data View: toolbar, inspector, status bar (the Variable View uses the
+   same three). Colours and fonts come from theme/tokens.css only. */
 
 .topbar,
 .toolbar,
@@ -7,107 +7,6 @@
   display: flex;
   align-items: center;
   flex: none;
-}
-
-/* --- top bar ------------------------------------------------------------ */
-
-.topbar {
-  justify-content: space-between;
-  gap: 16px;
-  height: 68px;
-  padding: 0 18px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-}
-
-.file-identity {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  min-width: 0;
-}
-
-/* Back to the launch page. */
-.viewer-back {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
-  margin-right: 4px;
-  padding-right: 15px;
-  color: var(--text-muted);
-  border-right: 1px solid var(--selection);
-  font-size: 11px;
-}
-
-.viewer-back:hover {
-  color: var(--accent);
-}
-
-.file-identity > div:last-child {
-  min-width: 0;
-}
-
-.file-icon {
-  flex: none;
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--surface));
-  border-radius: 8px;
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
-  font: 600 14px var(--font-data);
-}
-
-.title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.title-row h1 {
-  overflow: hidden;
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.file-badge {
-  padding: 2px 5px;
-  color: var(--accent);
-  background: var(--panel);
-  border: 1px solid var(--selection);
-  border-radius: var(--radius-small);
-  font: 600 9px var(--font-data);
-}
-
-.file-identity p {
-  margin-top: 3px;
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 11px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.file-identity p span {
-  padding: 0 3px;
-  color: var(--text-faint);
-}
-
-.file-warning {
-  flex: none;
-  padding: 3px 8px;
-  color: var(--warning);
-  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--surface));
-  border-radius: var(--radius);
-  font-size: 11px;
 }
 
 /* --- toolbar ------------------------------------------------------------ */
@@ -123,9 +22,71 @@
   border-bottom: 1px solid var(--border);
 }
 
-.toolbar > .segmented {
-  flex: none;
-  margin-top: 1px;
+/* Right of the filter bar: what cells show, and which columns. */
+.toolbar-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.value-display-switch {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  width: 174px;
+  height: 34px;
+  padding: 3px;
+  border: 1px solid var(--selection);
+  border-radius: 8px;
+  background: var(--panel);
+  isolation: isolate;
+}
+
+.value-display-indicator {
+  position: absolute;
+  z-index: -1;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / 3);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--selection));
+  border-radius: 5px;
+  background: var(--selection);
+  box-shadow:
+    0 1px 4px rgb(0 0 0 / 18%),
+    inset 0 1px color-mix(in srgb, var(--text) 4%, transparent);
+  transition: transform 170ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.value-display-switch > button {
+  min-width: 0;
+  color: var(--text-muted);
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1;
+  transition: color 130ms;
+}
+
+.value-display-switch > button:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.value-display-switch > button.is-selected {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.value-display-switch > button:focus-visible {
+  outline-offset: 0;
+}
+
+.value-display-switch[aria-disabled="true"] {
+  opacity: 0.45;
+}
+
+.value-display-switch > button:disabled {
+  cursor: not-allowed;
 }
 
 .tool-button {
@@ -155,18 +116,6 @@
   font: 500 10px var(--font-data);
 }
 
-.grid-hint {
-  flex: none;
-  padding-top: 10px;
-  color: var(--text-faint);
-  font-size: 10px;
-  white-space: nowrap;
-}
-
-.grid-hint > span {
-  padding-inline: 5px;
-}
-
 kbd {
   padding: 2px 4px;
   color: var(--text-muted);
@@ -191,232 +140,6 @@ kbd {
 .icon-button:hover {
   color: var(--text);
   background: var(--selection);
-}
-
-/* --- grid --------------------------------------------------------------- */
-
-.grid {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  background: var(--panel);
-  color: var(--text);
-  font: 400 11px var(--font-data);
-  scrollbar-color: var(--selection) var(--panel);
-  scrollbar-width: thin;
-  outline: none;
-  user-select: none;
-}
-
-.grid-canvas {
-  position: relative;
-  min-width: 100%;
-}
-
-.grid-head {
-  position: sticky;
-  z-index: 3;
-  top: 0;
-  width: 100%;
-}
-
-.grid-corner,
-.grid-th {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--selection);
-  font-weight: 600;
-}
-
-.grid-corner {
-  position: sticky;
-  z-index: 4;
-  left: 0;
-  justify-content: flex-end;
-  padding: 0 10px;
-  color: var(--text-faint);
-}
-
-.grid-th {
-  gap: 8px;
-  padding: 0 10px;
-  color: var(--heading);
-  cursor: default;
-  user-select: none;
-}
-
-/* A column with selected cells. */
-.grid-th.is-selected {
-  color: var(--cursor);
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
-}
-
-.grid-th-name {
-  flex: 1;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.grid-th-type {
-  flex: none;
-  color: var(--text-faint);
-  font-size: 8px;
-  letter-spacing: 0.02em;
-}
-
-/* The right edge of a header: drag to resize, double-click to reset. */
-.grid-th-edge {
-  position: absolute;
-  z-index: 1;
-  top: 0;
-  right: -4px;
-  width: 8px;
-  height: 100%;
-  cursor: col-resize;
-  touch-action: none;
-}
-
-.grid-th-edge::after {
-  content: "";
-  position: absolute;
-  top: 6px;
-  bottom: 6px;
-  left: 3px;
-  width: 2px;
-  border-radius: 1px;
-  background: transparent;
-  transition: background 100ms ease;
-}
-
-.grid-th-edge:hover::after,
-.grid-th-edge:active::after,
-.grid-th-edge.is-dragged::after {
-  background: var(--accent);
-}
-
-.grid-row {
-  position: absolute;
-  left: 0;
-  width: 100%;
-}
-
-.grid-number,
-.grid-cell {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  padding: 0 10px;
-  border-right: 1px solid var(--grid-line);
-  border-bottom: 1px solid var(--grid-line);
-  white-space: nowrap;
-}
-
-.grid-cell {
-  display: block;
-  overflow: hidden;
-  background: var(--panel);
-  line-height: 26px;
-  text-overflow: ellipsis;
-  cursor: cell;
-  touch-action: none;
-}
-
-.grid-row.is-odd .grid-cell {
-  background: var(--stripe);
-}
-
-.grid-row:hover .grid-cell {
-  background: var(--surface);
-}
-
-.grid-row.is-current .grid-cell {
-  background: var(--selection);
-  border-bottom-color: color-mix(in srgb, var(--accent) 30%, var(--selection));
-}
-
-.grid-cell.is-unlabeled {
-  color: var(--warning);
-}
-
-.grid-cell.is-user_missing,
-.grid-cell.is-missing {
-  color: var(--text-faint);
-}
-
-/* A selected block of cells: a tint, and a line around the block. */
-.grid-row .grid-cell.in-range {
-  --range-top: transparent;
-  --range-bottom: transparent;
-  --range-left: transparent;
-  --range-right: transparent;
-  background: color-mix(in srgb, var(--accent) 17%, var(--panel));
-  box-shadow:
-    inset 0 1px var(--range-top),
-    inset 0 -1px var(--range-bottom),
-    inset 1px 0 var(--range-left),
-    inset -1px 0 var(--range-right);
-}
-
-.grid-row .grid-cell.range-top {
-  --range-top: var(--cursor);
-}
-
-.grid-row .grid-cell.range-bottom {
-  --range-bottom: var(--cursor);
-}
-
-.grid-row .grid-cell.range-left {
-  --range-left: var(--cursor);
-}
-
-.grid-row .grid-cell.range-right {
-  --range-right: var(--cursor);
-}
-
-/* The highlighted cell: where the selection started. */
-.grid-row .grid-cell.is-active {
-  color: var(--panel);
-  background: var(--cursor);
-  font-weight: 600;
-}
-
-.grid:focus-visible .grid-cell.is-active {
-  outline: 1px solid var(--text);
-  outline-offset: -2px;
-}
-
-.grid-number {
-  position: sticky;
-  z-index: 2;
-  left: 0;
-  justify-content: flex-end;
-  color: var(--text-faint);
-  background: var(--surface);
-  border-right-color: var(--selection);
-  font-variant-numeric: tabular-nums;
-}
-
-.grid-number.is-selected {
-  color: var(--cursor);
-  box-shadow: inset 2px 0 var(--cursor);
-}
-
-/* A cell whose block has not arrived yet. */
-.grid-wait {
-  display: inline-block;
-  width: min(60%, 90px);
-  height: 7px;
-  vertical-align: middle;
-  border-radius: 4px;
-  background: var(--grid-line);
 }
 
 /* --- inspector ---------------------------------------------------------- */
@@ -628,82 +351,6 @@ kbd {
 
 /* --- keyboard shortcuts ------------------------------------------------- */
 
-.shortcuts-backdrop {
-  position: fixed;
-  z-index: 200;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgb(0 0 0 / 0.5);
-}
-
-.shortcuts-panel {
-  width: min(720px, 100%);
-  max-height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--selection));
-  border-radius: var(--radius-large);
-  box-shadow: 0 22px 70px rgb(0 0 0 / 0.5);
-}
-
-.shortcuts-panel header {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 12px 12px 18px;
-  border-bottom: 1px solid var(--border);
-}
-
-.shortcuts-panel h2 {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.shortcuts-groups {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
-  gap: 18px 28px;
-  padding: 18px;
-  overflow: auto;
-  scrollbar-width: thin;
-}
-
-.shortcuts-groups h3 {
-  margin-bottom: 8px;
-  color: var(--text-muted);
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-
-.shortcuts-groups dl > div {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 5px 0;
-  border-bottom: 1px solid var(--grid-line);
-}
-
-.shortcuts-groups dt {
-  flex: none;
-  display: flex;
-  gap: 4px;
-}
-
-.shortcuts-groups dd {
-  color: var(--text-muted);
-  font-size: 11px;
-  text-align: right;
-}
-
 @keyframes pulse {
   50% {
     opacity: 0.35;
@@ -711,10 +358,6 @@ kbd {
 }
 
 @media (max-width: 900px) {
-  .grid-hint {
-    display: none;
-  }
-
   .inspector {
     grid-template-columns: 160px 1fr;
   }
@@ -722,5 +365,22 @@ kbd {
   .metadata,
   .file-identity p {
     display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .value-display-indicator {
+    transition: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .toolbar-actions {
+    margin-left: auto;
+  }
+
+  .value-display-switch {
+    width: 168px;
+    height: 32px;
   }
 }

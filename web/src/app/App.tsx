@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { ApiFailure, api } from "../api/client";
 import type { DatasetInfo, FileList, ServerInfo } from "../api/client";
 import { ServerNotice } from "../components/ServerNotice";
+import { DatasetShell } from "../features/dataset/DatasetShell";
 import { Launcher } from "../features/launcher/Launcher";
 import { type Route, datasetFromQuery, parseRoute, routeHash } from "./route";
-import { DATASET_VIEWS, DEFAULT_VIEW, FILES_VIEW } from "./views";
+import { DEFAULT_VIEW, FILES_VIEW } from "./views";
 
 /** How often the page tells the server it is still open. */
 const HEARTBEAT = 5000;
@@ -106,8 +107,6 @@ export function App() {
     document.title = dataset ? `${name ?? "Data"} · ambers` : "Data files · ambers";
   }, [dataset, name]);
 
-  const view = DATASET_VIEWS.find((one) => one.id === route.view) ?? DATASET_VIEWS[0];
-  const Screen = view?.component;
   const open = (id: string) => {
     window.location.hash = routeHash({ view: DEFAULT_VIEW, dataset: id });
   };
@@ -122,7 +121,18 @@ export function App() {
         {stopped && !dismissed && (
           <ServerNotice command={command} onDismiss={() => setDismissed(true)} />
         )}
-        {dataset && Screen ? <Screen key={dataset} dataset={dataset} /> : <Launcher onOpen={open} />}
+        {dataset ? (
+          <DatasetShell
+            key={dataset}
+            dataset={dataset}
+            view={route.view}
+            onView={(view) => {
+              window.location.hash = routeHash({ view, dataset });
+            }}
+          />
+        ) : (
+          <Launcher onOpen={open} />
+        )}
       </section>
     </main>
   );

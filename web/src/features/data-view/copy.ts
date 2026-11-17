@@ -3,8 +3,14 @@
 // clipboard as tab-separated text, which a spreadsheet pastes as cells.
 
 import { api } from "../../api/client";
+import type { Cell } from "../../api/client";
 import type { Shown } from "./blocks";
-import { type Bounds, cellsIn, columnsIn, tabSeparated } from "./selection";
+import {
+  type Bounds,
+  cellsIn,
+  columnsIn,
+  tabSeparated,
+} from "../../components/grid/selection";
 
 /** The most cells one copy takes. */
 export const COPY_LIMIT = 50_000;
@@ -17,6 +23,14 @@ export type CopyState = "idle" | "copying" | "copied" | "failed" | "too-many";
 /** Whether a selection is small enough to copy. */
 export function canCopy(bounds: Bounds): boolean {
   return cellsIn(bounds) <= COPY_LIMIT;
+}
+
+/**
+ * A cell as text. In Both mode a labelled value comes as its label with
+ * the stored value beside it: `Male (1)`.
+ */
+export function cellText(cell: Cell): string {
+  return cell.code === undefined ? cell.text : `${cell.text} (${cell.code})`;
 }
 
 /** The windows of rows to ask for, to get rows `top..=bottom` of `columns` variables. */
@@ -54,7 +68,7 @@ export async function rangeText(
       filters: shown.filters,
       filter_mode: shown.filterMode,
     });
-    for (const row of page.rows) lines.push(row.cells.map((cell) => cell.text));
+    for (const row of page.rows) lines.push(row.cells.map(cellText));
   }
   return tabSeparated(lines);
 }

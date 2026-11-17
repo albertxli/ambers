@@ -86,30 +86,3 @@
 .notice.is-error h1 {
   color: var(--danger);
 }
-
-/* Two or three choices side by side, one of them on. */
-.segmented {
-  display: flex;
-  padding: 2px;
-  background: var(--surface);
-  border: 1px solid var(--selection);
-  border-radius: var(--radius);
-}
-
-.segmented button {
-  height: 24px;
-  padding: 0 9px;
-  color: var(--text-muted);
-  border-radius: 5px;
-  font-size: 11px;
-}
-
-.segmented button:hover {
-  color: var(--text);
-}
-
-.segmented button[aria-pressed="true"] {
-  color: var(--accent);
-  background: var(--selection);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
-}
