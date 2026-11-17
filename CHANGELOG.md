@@ -4,6 +4,8 @@ All notable changes to ambers are documented in this file.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-17
+
 - Viewer: a bar under the grid in Data View shows the highlighted cell in full, wrapped over up to three lines, as Variable View already did; `v` hides or shows it in both views
 - Viewer: columns can be resized. `[` and `]` make the current column narrower or wider, `w` widens it to the room the window has (again: back to its own width), and the right edge of a column in the header line can be dragged with the mouse
 - Viewer: the side panels (one respondent's answers, a variable's value table) can be resized with `-` and `+` or by dragging their left border

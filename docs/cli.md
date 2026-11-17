@@ -64,7 +64,7 @@ uvx --from ambers am info file.sav   # once, without installing
 Check that it works:
 
 ```bash
-am --version               # ambers 0.5.0
+am --version               # ambers 0.6.0
 am --help                  # the commands
 am info --help             # one command's options
 ```

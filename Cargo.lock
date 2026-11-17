@@ -39,7 +39,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "ambers"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "arrow",
  "encoding_rs",
@@ -52,7 +52,7 @@ dependencies = [
 
 [[package]]
 name = "ambers-cli"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "ambers",
  "ambers-codebook",
@@ -73,7 +73,7 @@ dependencies = [
 
 [[package]]
 name = "ambers-codebook"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "ambers",
  "arrow",
@@ -83,7 +83,7 @@ dependencies = [
 
 [[package]]
 name = "ambers-dataset"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "ambers",
  "ambers-codebook",
@@ -95,7 +95,7 @@ dependencies = [
 
 [[package]]
 name = "ambers-py"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "ambers",
  "ambers-cli",
@@ -107,7 +107,7 @@ dependencies = [
 
 [[package]]
 name = "ambers-web"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "ambers",
  "ambers-codebook",
