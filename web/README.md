@@ -31,11 +31,12 @@ The dev server passes `/api` on to the ambers server the way the command line ta
 |---|---|
 | `src/api/` | `client.ts`, the only code that calls the server. `generated/` is written from the Rust structs in `crates/ambers-web/src/api.rs`: do not edit it. After changing `api.rs`, run `AMBERS_UPDATE_BINDINGS=1 cargo test -p ambers-web typescript` |
 | `src/app/` | The shell: the address (`#/<view>/<dataset>`) and the list of screens (`views.ts`) |
-| `src/features/<name>/` | One folder per screen (`launcher`, `data-view`), or per part that screens share (`filters`). A new screen is a folder here and one entry in `views.ts` |
-| `src/components/` | Pieces used across features: icons, the server-stopped notice |
+| `src/features/<name>/` | One folder per screen (`launcher`, `data-view`, `variable-view`), or per part that screens share (`filters`, and `dataset`: the top bar with the Data / Variables tabs around the views of a file). A new view of a file is a folder here and one entry in `views.ts` |
+| `src/components/` | Pieces used across features: the grid both views draw (`grid/`), the card that describes a variable, the shortcuts dialog, icons, the server-stopped notice |
 | `src/theme/` | `tokens.css`: every colour and font, as roles. Components never name a colour |
-| `src/lib/` | Small helpers |
+| `src/lib/` | Small helpers: number formats, how a variable is worded |
+| `src/test/` | What tests share |
 
-The page never holds the data. It asks the server for the cells near the screen, in blocks, and the server does the formatting, filtering and counting. TanStack Table holds the grid's columns and their state (sizes, which are shown), never rows: see `docs/decisions/0009-tanstack-table-for-columns.md`.
+The page never holds the data. It asks the server for the cells near the screen, in blocks, and the server does the formatting, filtering and counting. TanStack Table holds the Data View's columns and their state (sizes, which are shown), never data rows: see `docs/decisions/0009-tanstack-table-for-columns.md`. The Variable View's table holds the variables, which are metadata. A variable's value distribution is searched, sorted and paged on the server: `docs/decisions/0010-value-distributions-on-the-server.md`.
 
 Colours are the open Dracula palette (MIT). Do not add Dracula Pro values: see `docs/decisions/0004-open-dracula-palette.md`.

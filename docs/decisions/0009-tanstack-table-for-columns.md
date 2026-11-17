@@ -29,3 +29,7 @@ The column side of a data grid is where a table library earns its place: state t
 - A feature of the library that needs rows (its filtering, sorting, grouping, cell selection) is not available as such: the server does the work and the table holds the state (`manual…` options) when such a feature is added.
 - Cells are drawn only for the columns on screen, with no per-cell objects: measured on a 916-variable file, a frame while scrolling sideways takes about 10 ms.
 - Copying a selection fetches its cells from the server, so it is capped (50,000 cells).
+
+## Note (2026-11-16): the Variable View
+
+"No rows in the table" is about the data. The Variable View's table (`useVariableTable.ts`) does hold rows: the file's variables, which the page has anyway for the Data View's column headers (916 for the largest file tried, 750 KB). The table sorts them; which are listed is decided before, by plain functions with tests (`variables.ts`). Both views draw through one grid (`components/grid/`), which is given its columns and asks its view for each cell; it knows nothing of TanStack Table. The handle that resizes a column is the page's own too (pointer capture, arrow keys), so the library's column-resizing feature is no longer registered: only sizes, visibility and, in the Variable View, sorting.

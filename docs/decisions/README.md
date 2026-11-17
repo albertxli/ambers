@@ -15,3 +15,4 @@ Add a record when a decision changes the shape of the project (a new crate, a de
 | [0007](0007-server-lifecycle.md) | The server stops by itself, and there is one per ambers version | 2026-11-12 |
 | [0008](0008-browser-filter-conditions.md) | The browser filter sends conditions, and a missing value passes only "is empty" | 2026-11-16 |
 | [0009](0009-tanstack-table-for-columns.md) | TanStack Table holds the columns and their state; rows stay on the server | 2026-11-16 |
+| [0010](0010-value-distributions-on-the-server.md) | A variable's value distribution is searched, sorted and paged on the server | 2026-11-16 |

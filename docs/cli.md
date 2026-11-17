@@ -352,7 +352,7 @@ These are the checks of `ambers.validate()` (see [validate.md](validate.md)), ru
 
 ## `am open`: the file in your browser
 
-> In development. Today the page has a list of your data files and a Data View: a grid of every row and variable that scrolls smoothly on files of any size, value labels / codes / both, a filter bar, a chooser for the variables shown, resizable columns, selecting and copying blocks of cells, and the selected cell shown in full. A Variable View is not there yet; `am view` has one. A binary built without the front end shows a basic page with a file's first rows instead, and says so when it starts.
+> In development. Today the page has a list of your data files and two views of a file. The Data View is a grid of every row and variable that scrolls smoothly on files of any size, with value labels / codes / both, a filter bar, a chooser for the variables shown, resizable columns, and selecting and copying blocks of cells. The Variable View lists every variable with its type, labels, counts and label check, and shows how the values of a variable are spread. Exporting is not there yet. A binary built without the front end shows a basic page with a file's first rows instead, and says so when it starts.
 
 ```bash
 am open survey.sav                 # serve the file and open it in the browser
@@ -375,7 +375,13 @@ am open big.sav --memory 8         # load at most 8 GB of data
 
 **The files page.** Without a file, the page lists the `.sav` and `.zsav` files of the folder (and its sub-folders) with their rows and variables, and remembers the files you opened and starred. Search by name, label or folder, sort by name, rows or date, and click a file to open it; "Files" at the top of a file's view comes back. The page can only list and open files in that folder, files you named on the command line, and files you opened before: it cannot look elsewhere on the disk.
 
-**In the page.** Click a cell or move with the arrow keys; PgUp / PgDn, Home / End and Ctrl+arrows work as in a spreadsheet. Drag the right edge of a column's header to resize it; double-click the edge to reset it. The strip under the grid shows the selected cell in full. While a file loads, the grid already works and the status bar shows the progress. "Keyboard shortcuts" in the status bar, or `?`, lists every key.
+**In the page.** "Data" and "Variables" at the top switch between the two views of the file; each stays as you left it (filters, selection, column widths, where you had scrolled to). In both, click a cell or move with the arrow keys; PgUp / PgDn, Home / End and Ctrl+arrows work as in a spreadsheet. The strip under the grid shows the selected cell in full. While a file loads, both views already work and the status bar shows the progress. "Keyboard shortcuts" in the status bar, or `?`, lists every key.
+
+**Column widths.** Drag the right edge of a column's header to resize it; double-click the edge to put the column back to its own width. From the keyboard, Tab to an edge: ← and → resize by 10 pixels (50 with Shift), Home and End go to the narrowest and widest, Enter resets.
+
+**Labels, Codes, Both.** The switch right of the filter bar chooses what cells show: value labels, the stored values, or the label with its stored value beside it as a small tag. It is greyed out for a file without value labels. Under the grid, "Stored code" says which value a label stands for.
+
+**What a variable is.** Rest the pointer on a column's header (or click it) for a card with the variable's label, its first value labels, how it is stored and formatted, its measure, valid and missing cases, any user-missing values the file declares, and what the label check found.
 
 **Filtering rows.** The bar above the grid holds the conditions rows must meet. Click it, or press Ctrl+K (⌘K on a Mac), and build a condition in three steps: a column (found by name or label), a condition, a value. While you type a value, the most frequent values of the column that contain it are listed with their counts; click one to take it. Each condition becomes a chip: click it to change it, × to remove it. With more than one, choose "Match all" or "Match any". The line under the bar says how many rows match.
 
@@ -395,7 +401,26 @@ am open big.sav --memory 8         # load at most 8 GB of data
 
 **Choosing columns.** "Columns" lists the variables with a search box; untick the ones to hide, or show and hide everything the search finds at once. Hidden variables are still in the file, and can still be filtered on.
 
-**Selecting and copying.** Drag over cells to select a block; Shift+click or Shift+arrows extend it, Ctrl+A selects everything, Esc goes back to one cell. Ctrl+C, or "Copy range" under the grid, copies the block as the grid shows it (labels, codes or both), ready to paste into a spreadsheet. At most 50,000 cells are copied at once.
+**Selecting and copying.** Drag over cells to select a block; Shift+click or Shift+arrows extend it, Ctrl+A selects everything, Esc goes back to one cell. Ctrl+C, or "Copy range" under the grid, copies the block as the grid shows it (labels, codes, or both as `Male (1)`), ready to paste into a spreadsheet. At most 50,000 cells are copied at once.
+
+**The Variable View.** One row per variable:
+
+| Column | Shows |
+|---|---|
+| Name, Label | The variable's name and label. Rest the pointer on a name for its card |
+| Type | `Categorical`, `Numeric`, `Text` or `Date`, as the codebook has it. A numeric variable is categorical if it has value labels, is in a multiple-response set, or holds only 0 and 1; the type can change while a file loads |
+| Values | The first value labels, and `⋯` to see every value with its count |
+| N, Missing | Valid and missing cases, over the rows loaded |
+| Label check | `OK`, or what is wrong with the value labels: `2 unlabelled` (values in the data without a label), `1 duplicate` (a label carried by several codes). `—` for a variable that is not checked: the check is for numeric variables with value labels |
+| Format, Measure, User-missing | The print format (`F8.2`), the measurement level, and the values the file declares missing (`99`, `90 thru 99`) |
+
+- Search finds variables by name, label or value label (Ctrl+K goes to the search box); the two lists beside it keep one type, or the variables where the label check found unlabelled values, duplicate labels or no variable label.
+- Click a header to sort by that column (again to turn the order round, a third time for file order). The number at the left is the variable's position in the file, whatever the order.
+- Cells are selected and copied as in the Data View; a Values cell copies as `1 = Male; 2 = Female`.
+- Missing means system-missing, or an empty text. A value the file declares user-missing (99 = Refused) is a value: it counts as valid and is marked `user-missing`.
+- Counts cover the rows loaded so far; the status bar says how many.
+
+**How a variable's values are spread.** `⋯` in a Values cell opens the value distribution: valid, missing and total cases, then every code (with its label) or every distinct value with its count, its share of the valid cases and of all cases. Search the values, sort them (low to high, high to low, most frequent first), page through them 50 at a time, and "Copy table" for a spreadsheet (at most 50,000 values). A code found in the data without a label reads "Unlabelled code". For a text or number variable the values are counted when you open it, which takes a moment on a large file. While a file is still loading, the counts are of the rows loaded when you opened it; "Refresh" counts again.
 
 **If the server has stopped.** The page says so at the top and shows the command that brings it back, with a button to copy it. The rows already on the screen stay; nothing new can be shown until ambers runs again. When it does, the page reconnects by itself, on the same file when the new server has it open.
 
