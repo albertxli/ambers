@@ -1,6 +1,6 @@
 # The `ambers` command line
 
-`ambers` inspects SPSS `.sav` and `.zsav` files from a terminal: a quick summary of a file, and a full-screen viewer for its data and variables. It is a single program that needs no Python, no Rust and no SPSS.
+`ambers` inspects SPSS `.sav` and `.zsav` files from a terminal: a quick summary of a file, a viewer for its data and variables in your browser, and one inside the terminal. It needs no SPSS, and comes either with the Python package or as a single program that needs no Python.
 
 `am` is a short alias. Every example below works with either name.
 
@@ -20,15 +20,45 @@
 
 ## Install
 
-**Standalone program.** One line installs it, with no administrator rights:
+It is the same command either way; pick by whether you use Python.
+
+| | `uv add ambers` | `uv tool install ambers` | Standalone CLI |
+|---|---|---|---|
+| The Python library (`import ambers`) | yes | no | no |
+| CLI command access (`ambers` / `am`) | in that project: `uv run am` | from any folder | from any folder |
+| Needs | uv | uv | nothing |
+
+If you want both the library and the command everywhere, use the first two. Use `uv tool install` or the standalone CLI for the command, not both: with two copies on your PATH, which one runs depends on their order.
+
+**With [uv](https://docs.astral.sh/uv/).** This puts `ambers` and `am` on your PATH, to use from any folder:
 
 ```bash
-# macOS and Linux
+uv tool install ambers
+```
+
+Update it with `uv tool upgrade ambers`, remove it with `uv tool uninstall ambers`.
+
+In a project that has the library (`uv add ambers`), the command comes with it, for that project:
+
+```bash
+uv run am info file.sav
+```
+
+To run it once without installing anything:
+
+```bash
+uvx --from ambers am info file.sav
+```
+
+**Standalone CLI, no Python needed.** One line installs it, with no administrator rights. On macOS and Linux:
+
+```bash
 curl -LsSf https://raw.githubusercontent.com/albertxli/ambers/main/install.sh | sh
 ```
 
+On Windows:
+
 ```powershell
-# Windows
 powershell -NoProfile -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/albertxli/ambers/main/install.ps1 | iex"
 ```
 
@@ -41,7 +71,7 @@ The script downloads the program for your machine from the [latest release](http
 | Update | Run the same line again | Run the same line again (close any open `am view` first) |
 | Remove | Delete `ambers` and `am` from that folder | Delete the folder |
 
-Settings, as environment variables: `AMBERS_VERSION` (a version instead of the latest, e.g. `0.5.0`), `AMBERS_INSTALL_DIR` (another folder), and on Windows `AMBERS_NO_MODIFY_PATH=1` (leave PATH alone).
+Settings, as environment variables: `AMBERS_VERSION` (a version instead of the latest, e.g. `0.6.0`), `AMBERS_INSTALL_DIR` (another folder), and on Windows `AMBERS_NO_MODIFY_PATH=1` (leave PATH alone).
 
 Ready-made programs exist for these machines. On others (Windows on ARM, for one) the script says so; use the Python package there.
 
@@ -54,14 +84,6 @@ Ready-made programs exist for these machines. On others (Windows on ARM, for one
 | macOS, Intel | `ambers-<version>-x86_64-apple-darwin.tar.gz` |
 
 You can also download an archive yourself, unpack it, and run the program inside.
-
-**With the Python package.** The same commands come with it, run through Python:
-
-```bash
-uv tool install ambers     # puts `ambers` and `am` on your PATH
-uv run am info file.sav    # in a project that has `uv add ambers`
-uvx --from ambers am info file.sav   # once, without installing
-```
 
 Check that it works:
 

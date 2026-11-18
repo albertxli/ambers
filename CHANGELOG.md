@@ -4,6 +4,8 @@ All notable changes to ambers are documented in this file.
 
 ## [Unreleased]
 
+- Docs: the README and `docs/cli.md` say how to get the command line by what you use (`uv tool install ambers` with uv, the standalone CLI without Python) with a table of what each way gives, install commands that copy without comment lines, and a section on `am open`
+
 ## [0.6.0] - 2026-11-17
 
 - Viewer: a bar under the grid in Data View shows the highlighted cell in full, wrapped over up to three lines, as Variable View already did; `v` hides or shows it in both views

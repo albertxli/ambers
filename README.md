@@ -15,41 +15,63 @@ Pure Rust SPSS `.sav`/`.zsav` reader and writer — Arrow-native, zero C depende
 - Blazing fast read and write for SPSS `.sav` (bytecode) and `.zsav` (zlib) files
 - Rich metadata: variable labels, value labels, missing values, MR sets, measure levels, and more
 - Lazy reader via `scan_sav()` — Polars LazyFrame with projection and row limit pushdown
-- A command line, `ambers` (or `am`): a quick summary of a file, and an interactive terminal viewer for its data
+- A command line, `ambers` (or `am`): a quick summary of a file, a viewer for its data in your browser, and one in the terminal
 - Pure Rust with a native Python API — native Arrow integration, no C dependencies
 - Benchmarked up to 3–10x faster reads and 4–20x faster writes compared to current popular SPSS I/O libraries
 
 ## Installation
 
-**Python:**
+**Python library:**
 
 ```bash
 uv add ambers
 ```
 
-**Rust:**
+**Rust crate:**
 
 ```bash
 cargo add ambers
 ```
 
-**Command line:**
+**Command line** (`ambers`, or `am` for short). It is the same command either way; pick by whether you use Python.
+
+With [uv](https://docs.astral.sh/uv/):
 
 ```bash
-# macOS and Linux
+uv tool install ambers
+```
+
+This puts `ambers` and `am` on your PATH, to use from any folder. Update with `uv tool upgrade ambers`.
+
+Standalone CLI, no Python needed. On macOS and Linux:
+
+```bash
 curl -LsSf https://raw.githubusercontent.com/albertxli/ambers/main/install.sh | sh
 ```
 
+On Windows:
+
 ```powershell
-# Windows
 powershell -NoProfile -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/albertxli/ambers/main/install.ps1 | iex"
 ```
 
-A single program that needs no Python and no Rust. If you have the Python package, `uv tool install ambers` installs the same command.
+This downloads one program of about 5 MB that needs nothing else installed, and puts it on your PATH. Run the same line again to update.
+
+What each way gives you:
+
+| | `uv add ambers` | `uv tool install ambers` | Standalone CLI |
+|---|---|---|---|
+| The Python library (`import ambers`) | yes | no | no |
+| CLI command access (`ambers` / `am`) | in that project: `uv run am` | from any folder | from any folder |
+| Needs | uv | uv | nothing |
+
+If you want both the library and the command everywhere, use the first two: `uv add ambers` in each project, and `uv tool install ambers` once. Use `uv tool install` or the standalone CLI for the command, not both: with two copies on your PATH, which one runs depends on their order.
+
+Ready-made for Windows (x86-64), Linux (x86-64 and ARM 64-bit) and macOS (Apple Silicon and Intel). The Python library needs Python 3.12 or later.
 
 ## Command line
 
-The ambers CLI currently does two things: it prints a quick summary of a data file, and it lets you look through the data in an interactive terminal UI. `am` is a short alias for `ambers`.
+The ambers CLI does three things: it prints a quick summary of a data file, it opens the file in your browser, and it lets you look through the data in the terminal. `am` is a short alias for `ambers`.
 
 **`am info`** prints the file's summary and its variables:
 
@@ -77,7 +99,20 @@ am info survey.sav --counts   # also valid and missing counts per variable
 └───┴────────┴─────────────┴───────────────┴────┴─────────┘
 ```
 
-**`am view`** opens the data in a full-screen grid, like SPSS's Data View:
+**`am open`** opens the file in your browser:
+
+```bash
+am open survey.sav            # the file's data
+am open                       # choose from the data files in this folder
+```
+
+- **Data View**: every row and variable in a grid that scrolls smoothly whatever the size of the file. Value labels, stored codes, or both; a filter bar (a column, a condition, a value); choose which columns to show; select a block of cells and copy it into a spreadsheet.
+- **Variable View**: one row per variable with its type, label, value labels, valid and missing cases, format and measure, and a check of the value labels (values in the data without a label, labels shared by several codes).
+- **Value distribution** of any variable: every value with its count and share, searchable and sortable.
+
+It runs on your machine only. `am open` starts a small server that listens on `127.0.0.1`, the page loads nothing from the internet, and the data never leaves the computer. Ctrl+C stops it; it also stops by itself a few minutes after the page is closed.
+
+**`am view`** shows the data in a full-screen grid inside the terminal, for when there is no browser at hand (a remote shell, say):
 
 ```bash
 am view survey.sav
@@ -105,7 +140,7 @@ am view survey.sav
 | `c` | copy a cell; `C` copies a whole panel for pasting into a spreadsheet |
 | `?` | every key |
 
-See [cli.md](https://github.com/albertxli/ambers/blob/main/docs/cli.md) for the full guide: every option, all keys, filtering, copying, and task recipes.
+See [cli.md](https://github.com/albertxli/ambers/blob/main/docs/cli.md) for the full guide: every option of the three commands, the browser viewer's filters and views, all keys of the terminal viewer, copying, and task recipes.
 
 ## Python
 
