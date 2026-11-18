@@ -4,12 +4,15 @@
 #   curl -LsSf https://raw.githubusercontent.com/albertxli/ambers/main/install.sh | sh
 #
 # It downloads the archive for this machine from the latest GitHub Release and
-# puts the two programs in ~/.local/bin. Nothing else is touched, and no
-# administrator rights are needed. Run it again to update.
+# puts the two programs in ~/.local/bin. If that folder is not on your PATH,
+# one line that adds it is appended to your shell's start-up file (~/.zshrc
+# for zsh, the Mac's default). No administrator rights are needed. Run it
+# again to update.
 #
 # Settings (environment variables):
 #   AMBERS_VERSION          install this version (e.g. 0.5.0) instead of the latest
 #   AMBERS_INSTALL_DIR      install here instead of ~/.local/bin
+#   AMBERS_NO_MODIFY_PATH   set to 1 to leave the start-up files alone
 #   AMBERS_INSTALL_ARCHIVE  use this local .tar.gz instead of downloading (for testing)
 
 set -eu
@@ -85,13 +88,93 @@ done
 installed=$("$install_dir/ambers" --version 2>/dev/null) || fail "installed, but $install_dir/ambers does not run"
 say "Installed $installed to $install_dir (commands: ambers, am)"
 
+# The line that puts the folder on PATH, as it is written to a start-up file.
+if [ "$install_dir" = "$HOME/.local/bin" ]; then
+    # shellcheck disable=SC2016  # $HOME and $PATH are for the user's shell to fill in
+    path_line='export PATH="$HOME/.local/bin:$PATH"'
+else
+    path_line="export PATH=\"$install_dir:\$PATH\""
+fi
+
+# A path the way a person writes it: ~/.zshrc.
+short() {
+    case "$1" in
+        "$HOME"/*) say "~${1#"$HOME"}" ;;
+        *) say "$1" ;;
+    esac
+}
+
+by_hand() {
+    say "Add this line to your shell's start-up file (~/.zshrc, ~/.bashrc or ~/.profile),"
+    say "then open a new terminal window:"
+    say ""
+    say "    $path_line"
+}
+
+# Append the PATH line to the start-up file of the user's shell. The files are
+# tried in order; the second is for when the first cannot be written to (a
+# ~/.zshrc that belongs to root, left by something installed with sudo).
+add_to_path() {
+    case "${SHELL##*/}" in
+        zsh)
+            set -- "${ZDOTDIR:-$HOME}/.zshrc" "${ZDOTDIR:-$HOME}/.zprofile"
+            ;;
+        bash)
+            if [ "$os" = Darwin ]; then
+                # Terminal on a Mac starts bash as a login shell, which reads
+                # only the first of these that exists: never create one that
+                # would hide another.
+                set -- "$HOME/.profile"
+                for name in .bash_login .bash_profile; do
+                    if [ -e "$HOME/$name" ]; then set -- "$HOME/$name"; fi
+                done
+            else
+                set -- "$HOME/.bashrc"
+            fi
+            ;;
+        sh | dash | ksh | ash)
+            set -- "$HOME/.profile"
+            ;;
+        fish)
+            say "$install_dir is not on your PATH. To add it, run:"
+            say ""
+            say "    fish_add_path \"$install_dir\""
+            return
+            ;;
+        *)
+            say "$install_dir is not on your PATH."
+            by_hand
+            return
+            ;;
+    esac
+
+    for file in "$@"; do
+        if [ -f "$file" ] && grep -qF "$path_line" "$file" 2>/dev/null; then
+            say "$(short "$file") already puts $install_dir on your PATH."
+            say "Open a new terminal window, then try: am info yourfile.sav"
+            return
+        fi
+    done
+    for file in "$@"; do
+        if { printf '\n# Added by the ambers installer\n%s\n' "$path_line" >>"$file"; } 2>/dev/null; then
+            say "Added $install_dir to your PATH (a line in $(short "$file"))."
+            say "Open a new terminal window, then try: am info yourfile.sav"
+            return
+        fi
+    done
+    say "$install_dir is not on your PATH, and $(short "$1") could not be written to."
+    by_hand
+}
+
 case ":$PATH:" in
     *":$install_dir:"*) say "Try it: am info yourfile.sav" ;;
     *)
         say ""
-        say "$install_dir is not on your PATH. Add this line to your shell's start-up file"
-        say "(~/.zshrc, ~/.bashrc or ~/.profile), then open a new terminal:"
-        say ""
-        say "    export PATH=\"$install_dir:\$PATH\""
+        if [ "${AMBERS_NO_MODIFY_PATH:-}" = 1 ]; then
+            say "$install_dir is not on your PATH."
+            by_hand
+        else
+            add_to_path
+        fi
         ;;
 esac

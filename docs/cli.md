@@ -67,11 +67,11 @@ The script downloads the program for your machine from the [latest release](http
 | | macOS and Linux | Windows |
 |---|---|---|
 | Installed to | `~/.local/bin` | `%LOCALAPPDATA%\ambers\bin` |
-| PATH | The script tells you the line to add if the folder is not on it | Added to your user PATH (new terminal windows see it) |
+| PATH | If the folder is not on it, one line is added to your shell's start-up file (`~/.zshrc` for zsh, the Mac's default; `~/.bashrc` or `~/.profile` otherwise). New terminal windows see it | Added to your user PATH (new terminal windows see it) |
 | Update | Run the same line again | Run the same line again (close any open `am view` first) |
 | Remove | Delete `ambers` and `am` from that folder | Delete the folder |
 
-Settings, as environment variables: `AMBERS_VERSION` (a version instead of the latest, e.g. `0.6.0`), `AMBERS_INSTALL_DIR` (another folder), and on Windows `AMBERS_NO_MODIFY_PATH=1` (leave PATH alone).
+Settings, as environment variables: `AMBERS_VERSION` (a version instead of the latest, e.g. `0.6.0`), `AMBERS_INSTALL_DIR` (another folder), and `AMBERS_NO_MODIFY_PATH=1` (leave PATH alone; the script then prints the line to add yourself).
 
 Ready-made programs exist for these machines. On others (Windows on ARM, for one) the script says so; use the Python package there.
 

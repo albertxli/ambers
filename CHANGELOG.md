@@ -4,6 +4,7 @@ All notable changes to ambers are documented in this file.
 
 ## [Unreleased]
 
+- Install: `install.sh` (macOS, Linux) puts the folder on your PATH itself, as the Windows script always did: when `~/.local/bin` is not on it, one line is added to your shell's start-up file (`~/.zshrc` for zsh, `~/.bashrc` for bash on Linux, `~/.profile` or the bash login file on a Mac), so `am` works in the next terminal window without a step by hand. If `~/.zshrc` cannot be written to (it can belong to root after something was installed with `sudo`), `~/.zprofile` is used. Running the script again adds nothing twice; `AMBERS_NO_MODIFY_PATH=1` leaves the files alone
 - Docs: the README and `docs/cli.md` say how to get the command line by what you use (`uv tool install ambers` with uv, the standalone CLI without Python) with a table of what each way gives, install commands that copy without comment lines, and a section on `am open`
 
 ## [0.6.0] - 2026-11-17

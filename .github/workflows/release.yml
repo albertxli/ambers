@@ -241,9 +241,20 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
-          AMBERS_INSTALL_ARCHIVE=cli-dist/ambers-$version-${{ matrix.target }}.tar.gz \
+          archive=cli-dist/ambers-$version-${{ matrix.target }}.tar.gz
+          AMBERS_INSTALL_ARCHIVE=$archive AMBERS_NO_MODIFY_PATH=1 \
             AMBERS_INSTALL_DIR="$RUNNER_TEMP/ambers-bin" sh install.sh
           "$RUNNER_TEMP/ambers-bin/am" info tests/data/survey.sav --head 0
+          # As someone who never set a terminal up: an empty home, zsh, the
+          # folder not on PATH. The line the script adds must make `am` found.
+          home="$RUNNER_TEMP/first-home"
+          mkdir -p "$home"
+          AMBERS_INSTALL_ARCHIVE=$archive HOME="$home" SHELL=/bin/zsh sh install.sh
+          grep -qxF 'export PATH="$HOME/.local/bin:$PATH"' "$home/.zshrc"
+          HOME="$home" sh -c '. "$HOME/.zshrc" && am --version'
+          # A second run adds nothing more.
+          AMBERS_INSTALL_ARCHIVE=$archive HOME="$home" SHELL=/bin/zsh sh install.sh
+          test "$(grep -c 'ambers installer' "$home/.zshrc")" = 1
 
       - name: Install script (Windows)
         if: runner.os == 'Windows'
